@@ -46,15 +46,43 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
       }
 
       if (data.user) {
-        // Get user profile
-        const { data: profile, error: profileError } = await supabase
-          .from("users")
-          .select("*")
-          .eq("id", data.user.id)
-          .single()
+        // Wait a moment for the user to be fully authenticated
+        await new Promise((resolve) => setTimeout(resolve, 1000))
 
-        if (profileError) {
-          setError("Failed to load user profile")
+        // Get user profile with retry logic
+        let profile = null
+        let retries = 3
+
+        while (retries > 0 && !profile) {
+          try {
+            const { data: profileData, error: profileError } = await supabase
+              .from("users")
+              .select("*")
+              .eq("id", data.user.id)
+              .single()
+
+            if (profileError) {
+              console.log("Profile error:", profileError)
+              retries--
+              if (retries > 0) {
+                await new Promise((resolve) => setTimeout(resolve, 1000))
+                continue
+              }
+              throw profileError
+            }
+
+            profile = profileData
+          } catch (err) {
+            console.log("Retry error:", err)
+            retries--
+            if (retries > 0) {
+              await new Promise((resolve) => setTimeout(resolve, 1000))
+            }
+          }
+        }
+
+        if (!profile) {
+          setError("Failed to load user profile. Please try again.")
           return
         }
 

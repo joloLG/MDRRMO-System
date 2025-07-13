@@ -1,14 +1,26 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { RegisterPage } from "./components/register-page"
 import { LoginPage } from "./components/login-page"
 import { Dashboard } from "./components/dashboard"
+import { AdminDashboard } from "./components/admin-dashboard"
 
 export default function MobileApp() {
-  const [currentScreen, setCurrentScreen] = useState<"login" | "register" | "dashboard">("login")
+  const [currentScreen, setCurrentScreen] = useState<"login" | "register" | "dashboard" | "admin">("login")
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [userData, setUserData] = useState<any>(null)
+
+  useEffect(() => {
+    // Check if user is already logged in
+    const storedUser = localStorage.getItem("mdrrmo_user")
+    if (storedUser) {
+      const user = JSON.parse(storedUser)
+      setUserData(user)
+      setIsLoggedIn(true)
+      setCurrentScreen(user.user_type === "admin" ? "admin" : "dashboard")
+    }
+  }, [])
 
   // Handle successful registration
   const handleRegistrationSuccess = () => {
@@ -19,7 +31,7 @@ export default function MobileApp() {
   const handleLoginSuccess = (user: any) => {
     setUserData(user)
     setIsLoggedIn(true)
-    setCurrentScreen("dashboard")
+    setCurrentScreen(user.user_type === "admin" ? "admin" : "dashboard")
   }
 
   // Handle navigation to register
@@ -37,11 +49,16 @@ export default function MobileApp() {
     setUserData(null)
     setIsLoggedIn(false)
     setCurrentScreen("login")
+    localStorage.removeItem("mdrrmo_user")
   }
 
-  // If user is logged in, show dashboard
+  // If user is logged in, show appropriate dashboard
   if (isLoggedIn) {
-    return <Dashboard onLogout={handleLogout} userData={userData} />
+    if (userData?.user_type === "admin") {
+      return <AdminDashboard onLogout={handleLogout} userData={userData} />
+    } else {
+      return <Dashboard onLogout={handleLogout} userData={userData} />
+    }
   }
 
   // Show login or register based on current screen
