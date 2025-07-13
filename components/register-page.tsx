@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
+import { Eye, EyeOff } from "lucide-react" // Import icons from lucide-react
 
 interface RegisterPageProps {
   onRegistrationSuccess: () => void
@@ -22,37 +23,64 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
     birthday: "",
     mobileNumber: "",
     password: "",
+    confirmPassword: "", // Added confirm password field
   })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  const [showPassword, setShowPassword] = useState(false) // State for main password visibility
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false) // State for confirm password visibility
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
-    setError("")
+    setError("") // Clear error on input change
+    setSuccess("") // Clear success on input change
   }
 
   const handleRegister = async () => {
-    // Basic validation
+    // Basic validation for required fields
     if (
       !formData.firstName ||
       !formData.lastName ||
       !formData.email ||
       !formData.username ||
       !formData.password ||
+      !formData.confirmPassword || // Ensure confirm password is filled
       !formData.mobileNumber
     ) {
       setError("Please fill in all required fields")
       return
     }
 
+    // Password match validation
+    if (formData.password !== formData.confirmPassword) {
+      setError("Passwords do not match")
+      return
+    }
+
+    // Password policy validation
     if (formData.password.length < 6) {
-      setError("Password must be at least 6 characters long")
+      setError("Password must be at least 6 characters long.")
+      return
+    }
+    if (!/[A-Z]/.test(formData.password)) {
+      setError("Password must contain at least one uppercase letter.")
+      return
+    }
+    if (!/[0-9]/.test(formData.password)) {
+      setError("Password must contain at least one number.")
+      return
+    }
+    // Regex to check for special characters (anything not a letter, number, or common punctuation)
+    // For this policy, we explicitly disallow special characters
+    if (/[^a-zA-Z0-9]/.test(formData.password)) {
+      setError("Password must not contain special characters.")
       return
     }
 
     setIsLoading(true)
     setError("")
+    setSuccess("")
 
     try {
       // 1. Create auth user
@@ -227,15 +255,53 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
             <Label htmlFor="password" className="text-gray-700 font-medium">
               Password *
             </Label>
-            <Input
-              id="password"
-              type="password"
-              value={formData.password}
-              onChange={(e) => handleInputChange("password", e.target.value)}
-              className="border-orange-200 focus:border-orange-500"
-              required
-              disabled={isLoading}
-            />
+            <div className="relative mt-1">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                value={formData.password}
+                onChange={(e) => handleInputChange("password", e.target.value)}
+                className="border-orange-200 focus:border-orange-500 pr-10"
+                required
+                disabled={isLoading}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700"
+                disabled={isLoading}
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Password must be at least 6 characters, contain 1 uppercase letter, 1 number, and no special characters.
+            </p>
+          </div>
+
+          <div>
+            <Label htmlFor="confirmPassword" className="text-gray-700 font-medium">
+              Confirm Password *
+            </Label>
+            <div className="relative mt-1">
+              <Input
+                id="confirmPassword"
+                type={showConfirmPassword ? "text" : "password"}
+                value={formData.confirmPassword}
+                onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
+                className="border-orange-200 focus:border-orange-500 pr-10"
+                required
+                disabled={isLoading}
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700"
+                disabled={isLoading}
+              >
+                {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
           </div>
 
           <Button
