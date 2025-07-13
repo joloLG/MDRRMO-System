@@ -332,7 +332,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         {/* Emergency Text */}
         <div className="text-center bg-white/90 backdrop-blur-sm rounded-lg p-6 shadow-lg max-w-sm">
           <p className="text-gray-800 text-lg font-semibold mb-2">
-            {isEmergencyActive ? "Emergency Alert Sent!" : "Click to send an Emergency"}
+            {isEmergencyActive ? "Emergency Alert Sent!" : "Click SOS to send an Emergency"}
           </p>
           {isEmergencyActive && <p className="text-green-600 font-medium">Help is on the way. Stay calm and safe.</p>}
         </div>
