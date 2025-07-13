@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
+import { Eye, EyeOff } from "lucide-react" // Import icons from lucide-react
 
 interface LoginPageProps {
   onLoginSuccess: (userData: any) => void
@@ -19,6 +20,7 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
   })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
+  const [showPassword, setShowPassword] = useState(false) // New state for password visibility
 
   const handleInputChange = (field: string, value: string) => {
     setLoginData((prev) => ({ ...prev, [field]: value }))
@@ -146,16 +148,25 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
             <Label htmlFor="password" className="text-gray-700 font-medium">
               Password
             </Label>
-            <Input
-              id="password"
-              type="password"
-              value={loginData.password}
-              onChange={(e) => handleInputChange("password", e.target.value)}
-              className="border-orange-200 focus:border-orange-500 mt-1"
-              placeholder="Enter password"
-              required
-              disabled={isLoading}
-            />
+            <div className="relative mt-1">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"} 
+                value={loginData.password}
+                onChange={(e) => handleInputChange("password", e.target.value)}
+                className="border-orange-200 focus:border-orange-500 pr-10" 
+                required
+                disabled={isLoading}
+              />
+              <button
+                type="button" 
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700"
+                disabled={isLoading}
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />} {/* Toggle icon */}
+              </button>
+            </div>
           </div>
 
           <Button
