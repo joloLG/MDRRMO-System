@@ -6,6 +6,14 @@ import { Button } from "@/components/ui/button"
 import { AlertTriangle, Menu, User, LogOut, Bell } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 
+interface Notification { // Updated Notification interface
+  id: string;
+  emergency_report_id: string;
+  message: string;
+  is_read: boolean; // Corrected to match schema
+  created_at: string; // Corrected to match schema
+}
+
 interface DashboardProps {
   onLogout: () => void
   userData?: any
@@ -17,74 +25,123 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [showSOSConfirm, setShowSOSConfirm] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null)
-  const [notifications, setNotifications] = useState<any[]>([])
+  const [notifications, setNotifications] = useState<Notification[]>([]) // Explicitly type notifications state
   const [showNotifications, setShowNotifications] = useState(false)
 
   useEffect(() => {
-    // Get user data from props or localStorage
-    if (userData) {
-      setCurrentUser(userData)
-    } else {
-      const storedUser = localStorage.getItem("mdrrmo_user")
-      if (storedUser) {
-        setCurrentUser(JSON.parse(storedUser))
+    const checkSessionAndLoadUser = async () => {
+      let userFromPropsOrStorage = null;
+
+      // Prioritize user data from props
+      if (userData) {
+        userFromPropsOrStorage = userData;
+      } else {
+        // Fallback to localStorage if no userData prop
+        const storedUser = localStorage.getItem("mdrrmo_user");
+        if (storedUser) {
+          try {
+            userFromPropsOrStorage = JSON.parse(storedUser);
+          } catch (parseError) {
+            console.error("Error parsing stored user data in Dashboard:", parseError);
+            localStorage.removeItem("mdrrmo_user"); // Clear corrupted data
+            onLogout(); // Force logout if data is corrupted
+            return;
+          }
+        }
       }
+
+      // Verify Supabase session
+      try {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+        if (sessionError || !sessionData?.session) {
+          console.error("Supabase session invalid or not found:", sessionError);
+          onLogout(); // Force logout if session is invalid
+          return;
+        }
+
+        // If session is valid, ensure currentUser matches the session user
+        // and has the necessary profile data (from your 'users' table)
+        const { data: userProfile, error: profileError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', sessionData.session.user.id)
+          .single();
+
+        if (profileError || !userProfile) {
+          console.error("Error fetching user profile:", profileError);
+          onLogout(); // Force logout if profile cannot be fetched
+          return;
+        }
+
+        setCurrentUser(userProfile); // Set currentUser from fetched profile
+        
+        // Get user's location
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              setLocation({
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+              });
+            },
+            (error) => {
+              console.error("Error getting location:", error);
+            },
+          );
+        }
+
+        // Load notifications after user is set
+        loadNotifications(userProfile.id); // Pass user ID to loadNotifications
+      } catch (error) {
+        console.error("Unexpected error during session check:", error);
+        onLogout(); // Catch any unexpected errors and force logout
+      }
+    };
+
+    checkSessionAndLoadUser();
+
+    // Set up real-time notifications for the current user
+    let notificationsChannel: any;
+    if (currentUser?.id) { // This will re-run when currentUser is set by checkSessionAndLoadUser
+      notificationsChannel = supabase
+        .channel(`user_notifications_channel_${currentUser.id}`) // Use a unique channel name
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "user_notifications",
+            filter: `user_id=eq.${currentUser.id}`, // Filter by user_id as per schema
+          },
+          (payload) => {
+            console.log("New user notification received:", payload.new.message);
+            loadNotifications(currentUser.id); // Reload notifications to update the list
+          },
+        )
+        .subscribe();
     }
-
-    // Get user's location
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          })
-        },
-        (error) => {
-          console.error("Error getting location:", error)
-        },
-      )
-    }
-
-    // Load notifications
-    loadNotifications()
-
-    // Set up real-time notifications
-    const channel = supabase
-      .channel("user_notifications")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "user_notifications",
-          filter: `user_id=eq.${currentUser?.id}`,
-        },
-        (payload) => {
-          console.log("New notification:", payload)
-          loadNotifications()
-          // Show popup notification
-          alert(payload.new.message)
-        },
-      )
-      .subscribe()
 
     return () => {
-      supabase.removeChannel(channel)
+      if (notificationsChannel) {
+        supabase.removeChannel(notificationsChannel);
+      }
     }
-  }, [userData, currentUser?.id])
+  }, [userData, onLogout, currentUser?.id]) // Depend on currentUser?.id to trigger notification subscription setup
 
-  const loadNotifications = async () => {
-    if (!currentUser?.id) return
+  const loadNotifications = async (userId: string) => { // Accept userId as parameter
+    if (!userId) return
 
     const { data, error } = await supabase
       .from("user_notifications")
       .select("*")
-      .eq("user_id", currentUser.id)
-      .order("created_at", { ascending: false })
+      .eq("user_id", userId) // Corrected column name to user_id
+      .order("created_at", { ascending: false }) // Corrected column name to created_at
 
     if (!error && data) {
-      setNotifications(data)
+      setNotifications(data as Notification[]) // Cast data to Notification[]
+    } else if (error) {
+      console.error("Error loading user notifications:", error);
     }
   }
 
@@ -94,15 +151,14 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
   const confirmSOS = async () => {
     if (!location || !currentUser) {
-      alert("Location not available or user not logged in")
-      return
+      console.error("Location not available or user not logged in");
+      return;
     }
 
     setIsEmergencyActive(true)
     setShowSOSConfirm(false)
 
     try {
-      // Get address from coordinates (using a free geocoding service)
       let locationAddress = "Location unavailable"
       try {
         const response = await fetch(
@@ -115,44 +171,62 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         locationAddress = `${location.lat}, ${location.lng}`
       }
 
-      // Create emergency report
+      // Create emergency report using exact schema names
       const { data: reportData, error: reportError } = await supabase
         .from("emergency_reports")
         .insert({
-          user_id: currentUser.id,
-          firstName: currentUser.firstName,
-          middleName: currentUser.middleName || "",
-          lastName: currentUser.lastName,
-          mobileNumber: currentUser.mobileNumber,
-          latitude: location.lat,
-          longitude: location.lng,
-          location_address: locationAddress,
-          emergency_type: "SOS",
-          status: "active",
+          user_id: currentUser.id, // Matches schema
+          firstName: currentUser.firstName, // Matches schema
+          middleName: currentUser.middleName || null, // Matches schema
+          lastName: currentUser.lastName, // Matches schema
+          mobileNumber: currentUser.mobileNumber, // Matches schema
+          latitude: location.lat, // Matches schema
+          longitude: location.lng, // Matches schema
+          location_address: locationAddress, // Matches schema
+          emergency_type: "SOS", // Matches schema
+          status: "active", // Changed status from "pending" to "active"
+          created_at: new Date().toISOString(), // Matches schema
+          reportedAt: new Date().toISOString(), // Matches your schema's 'reportedAt' column
+          reporterMobile: currentUser.mobileNumber, // Matches schema
         })
         .select()
         .single()
 
       if (reportError) {
         console.error("Error creating report:", reportError)
-        alert("Failed to send emergency alert")
+        // Log the full error object for detailed debugging
+        console.error("Supabase Report Insert Error Details:", reportError);
+        console.error("Failed to send emergency alert: Please check Supabase RLS policies for 'emergency_reports' INSERT operation, or schema constraints.");
         return
       }
 
-      // Create admin notification
+      // Create admin notification using exact schema names
       await supabase.from("admin_notifications").insert({
-        emergency_report_id: reportData.id,
-        message: `🚨 EMERGENCY ALERT: ${currentUser.firstName} ${currentUser.lastName} needs help at ${locationAddress}`,
+        emergency_report_id: reportData.id, // Matches schema
+        message: `🚨 NEW EMERGENCY ALERT: ${currentUser.firstName} ${currentUser.lastName} needs help at ${locationAddress}`,
+        is_read: false, // Matches schema
+        type: 'new_report', // Matches schema
+        created_at: new Date().toISOString(), // Use created_at for consistency with admin-dashboard.tsx and schema
       })
 
       console.log("Emergency alert sent successfully!")
 
+      // Optionally, create a user notification for confirmation
+      await supabase.from("user_notifications").insert({
+        user_id: currentUser.id, // Corrected to user_id
+        emergency_report_id: reportData.id, // Corrected to emergency_report_id
+        message: "Your emergency alert has been sent. Help is on the way!",
+        is_read: false, // Corrected to is_read
+        created_at: new Date().toISOString(), // Corrected to created_at
+      });
+
+
       setTimeout(() => {
         setIsEmergencyActive(false)
       }, 5000)
-    } catch (error) {
+    } catch (error: any) {
       console.error("SOS Error:", error)
-      alert("Failed to send emergency alert")
+      console.error("Failed to send emergency alert: " + error.message);
       setIsEmergencyActive(false)
     }
   }
@@ -161,11 +235,20 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     setShowSOSConfirm(false)
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     console.log("LOGOUT FUNCTION CALLED!")
-    localStorage.removeItem("mdrrmo_user")
-    setShowUserMenu(false)
-    onLogout()
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error("Error signing out from Supabase:", error);
+      }
+    } catch (err) {
+      console.error("Unexpected error during Supabase signOut:", err);
+    } finally {
+      localStorage.removeItem("mdrrmo_user")
+      setShowUserMenu(false)
+      onLogout()
+    }
   }
 
   const handleUserMenuClick = (e: React.MouseEvent) => {
@@ -174,6 +257,19 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     e.stopPropagation()
     setShowUserMenu(!showUserMenu)
   }
+
+  const markNotificationAsRead = async (notificationId: string) => {
+    const { error } = await supabase
+      .from('user_notifications')
+      .update({ is_read: true }) // Corrected to is_read
+      .eq('id', notificationId);
+
+    if (error) {
+      console.error("Error marking notification as read:", error);
+    } else {
+      loadNotifications(currentUser.id); // Reload to update UI, pass currentUser.id
+    }
+  };
 
   return (
     <div
@@ -209,9 +305,9 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                 className="p-2 hover:bg-orange-600 rounded transition-colors relative"
               >
                 <Bell className="w-6 h-6" />
-                {notifications.filter((n) => !n.is_read).length > 0 && (
+                {notifications.filter((n) => !n.is_read).length > 0 && ( // Use is_read
                   <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                    {notifications.filter((n) => !n.is_read).length}
+                    {notifications.filter((n) => !n.is_read).length} {/* Use is_read */}
                   </span>
                 )}
               </button>
@@ -243,10 +339,12 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
               notifications.map((notification) => (
                 <div
                   key={notification.id}
-                  className={`p-4 border-b border-gray-100 ${!notification.is_read ? "bg-blue-50" : ""}`}
+                  className={`p-4 border-b border-gray-100 ${!notification.is_read ? "bg-blue-50" : ""}`} // Use is_read
+                  onClick={() => markNotificationAsRead(notification.id)} // Mark as read on click
+                  style={{ cursor: 'pointer' }}
                 >
                   <p className="text-sm text-gray-800">{notification.message}</p>
-                  <p className="text-xs text-gray-500 mt-1">{new Date(notification.created_at).toLocaleString()}</p>
+                  <p className="text-xs text-gray-500 mt-1">{new Date(notification.created_at).toLocaleString()}</p> {/* Use created_at */}
                 </div>
               ))
             )}
@@ -357,5 +455,3 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     </div>
   )
 }
-
-
