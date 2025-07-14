@@ -31,8 +31,12 @@ interface Report {
   userId: string;
 }
 
-export default function DashboardPage() {
-  const [user, setUser] = useState<any>(null);
+interface DashboardPageProps {
+  onLogout: () => void;
+  userData: any;
+}
+
+export default function DashboardPage({ onLogout, userData }: DashboardPageProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [reports, setReports] = useState<Report[]>([]);
@@ -82,18 +86,7 @@ export default function DashboardPage() {
     }
   }, []);
 
-  // Fetch logged-in user data from localStorage
-  useEffect(() => {
-    const storedUser = localStorage.getItem("mdrrmo_user");
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    } else {
-      // Handle case where user is not logged in or session expired
-      // Redirect to login or show appropriate message
-      setError("User not logged in. Please log in to view dashboard.");
-      setLoading(false);
-    }
-  }, []);
+
 
   // Real-time Notifications Listener
   useEffect(() => {
@@ -125,12 +118,12 @@ export default function DashboardPage() {
 
   // Fetch User's Reports (also make it real-time for status updates)
   useEffect(() => {
-    if (!db || !user?.id) return; // Ensure Firebase is initialized and user ID is available
+    if (!db || !userData?.id) return; // Ensure Firebase is initialized and user ID is available
 
     const reportsCollectionRef = collection(db, `artifacts/${process.env.NEXT_PUBLIC_APP_ID}/public/data/reports`);
     const q = query(
       reportsCollectionRef,
-      where("userId", "==", user.id),
+      where("userId", "==", userData.id),
       orderBy("reportedAt", "desc") // Order by report time
     );
 
@@ -148,7 +141,7 @@ export default function DashboardPage() {
     });
 
     return () => unsubscribe(); // Clean up listener
-  }, [db, user?.id]); // Re-run if db or user.id changes
+  }, [db, userData?.id]); // Re-run if db or user.id changes
 
   const markAllNotificationsAsRead = useCallback(async () => {
     if (!db || !userId) return;
@@ -185,7 +178,10 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 p-8">
-      <h1 className="text-3xl font-bold text-gray-800 mb-8">Welcome, {user?.firstName || "User"}!</h1>
+       <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold text-gray-800">Welcome, {userData?.firstName || "User"}!</h1>
+        <Button onClick={onLogout} variant="outline">Logout</Button>
+      </div>
 
       {/* Notifications Section */}
       <Card className="mb-8 shadow-lg rounded-lg">

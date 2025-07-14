@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react"
 import { RegisterPage } from "./components/register-page"
 import { LoginPage } from "./components/login-page"
-import { Dashboard } from "./components/dashboard"
-import { AdminDashboard } from "./components/admin-dashboard"
+import Dashboard from "./components/dashboard"
+import AdminDashboard from "./components/admin-dashboard"
 
 export default function MobileApp() {
   const [currentScreen, setCurrentScreen] = useState<"login" | "register" | "dashboard" | "admin">("login")

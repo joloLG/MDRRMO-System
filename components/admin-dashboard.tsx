@@ -31,8 +31,12 @@ interface Report {
   userId: string; // ID of the user who reported
 }
 
-export default function AdminDashboardPage() {
-  const [adminUser, setAdminUser] = useState<any>(null);
+interface AdminDashboardPageProps {
+  onLogout: () => void;
+  userData: any;
+}
+
+export default function AdminDashboardPage({ onLogout, userData }: AdminDashboardPageProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [allReports, setAllReports] = useState<Report[]>([]);
@@ -81,18 +85,7 @@ export default function AdminDashboardPage() {
     }
   }, []);
 
-  // Fetch logged-in admin user data (assuming role check is done elsewhere or implicit)
-  useEffect(() => {
-    const storedUser = localStorage.getItem("mdrrmo_user"); // Assuming admin user is also stored here
-    if (storedUser) {
-      setAdminUser(JSON.parse(storedUser));
-      // You might add a check here to ensure the user actually has admin privileges
-      // e.g., if (parsedUser.role !== 'admin') { setError("Access Denied"); }
-    } else {
-      setError("Admin not logged in. Please log in as an administrator.");
-      setLoading(false);
-    }
-  }, []);
+
 
   // Real-time Notifications Listener for Admins
   useEffect(() => {
@@ -182,7 +175,10 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 p-8">
-      <h1 className="text-3xl font-bold text-gray-800 mb-8">Admin Dashboard</h1>
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold text-gray-800">Admin Dashboard</h1>
+        <Button onClick={onLogout} variant="outline">Logout</Button>
+      </div>
 
       {/* Notifications Section */}
       <Card className="mb-8 shadow-lg rounded-lg">
