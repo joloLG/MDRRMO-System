@@ -1,38 +1,37 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react" // Removed useCallback
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { supabase } from "@/lib/supabase" // Assuming supabase is already configured
-import { Bell, CheckCircle, LogOut } from "lucide-react" // Added LogOut icon
+import { supabase } from "@/lib/supabase"
+import { Bell, LogOut } from "lucide-react" // Removed CheckCircle
 
 // Define interfaces for data structures
 interface Notification {
   id: string;
   message: string;
-  timestamp: string; // Supabase timestamps are typically ISO strings
+  timestamp: string;
   isRead: boolean;
-  type: 'new_report' | 'report_update'; // Admin-specific notification types
-  reportId?: string; // Optional: link to a specific report
+  type: 'new_report' | 'report_update';
+  reportId?: string;
 }
 
 interface Report {
   id: string;
   title: string;
   description: string;
-  status: string; // e.g., 'pending', 'in-progress', 'resolved'
-  reportedAt: string; // Supabase timestamps are typically ISO strings
-  respondedAt?: string; // Supabase timestamps are typically ISO strings
-  userId: string; // ID of the user who reported
+  status: string;
+  reportedAt: string;
+  respondedAt?: string;
+  userId: string;
 }
 
 // Props for the AdminDashboard component
-interface AdminDashboardProps { // Renamed from AdminDashboardPageProps for consistency with named export
-  onLogout: () => void; // Function to handle logout
-  userData: any; // User data passed from MobileApp.tsx
+interface AdminDashboardProps {
+  onLogout: () => void;
+  userData: any;
 }
 
-// Changed to named export 'AdminDashboard'
 export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [adminUser, setAdminUser] = useState<any>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -40,17 +39,13 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [allReports, setAllReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isLoadingAction, setIsLoadingAction] = useState(false); // For actions like marking as read
 
   // Set admin user data from props
   useEffect(() => {
     if (userData) {
       setAdminUser(userData);
-      // You might still add a check here to ensure the user actually has admin privileges
-      // e.g., if (userData.user_type !== 'admin') { setError("Access Denied"); }
-      setLoading(false); // User data is available, stop loading
+      setLoading(false);
     } else {
-      // Fallback if userData is not immediately available (e.g., direct access without localStorage check)
       const storedUser = localStorage.getItem("mdrrmo_user");
       if (storedUser) {
         try {
@@ -68,171 +63,62 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     }
   }, [userData]);
 
-
-  // Supabase Real-time Notifications Listener for Admins
+  // Fetch Admin Notifications once on load (NOT real-time)
   useEffect(() => {
-    // Initial fetch of notifications
-    const fetchInitialNotifications = async () => {
+    const fetchAdminNotifications = async () => {
       const { data, error } = await supabase
-        .from('notifications')
+        .from('admin_notifications') // Corrected table name
         .select('*')
-        .eq('type', 'new_report') // Admins get notifications for new reports
+        .eq('type', 'new_report')
         .order('timestamp', { ascending: false });
 
       if (error) {
         console.error("Error fetching initial admin notifications:", error);
         setError("Failed to load notifications.");
-        return [];
+      } else {
+        const fetchedNotifications: Notification[] = data.map((item: any) => ({
+          id: item.id,
+          message: item.message,
+          timestamp: item.timestamp,
+          isRead: item.isRead,
+          type: item.type,
+          reportId: item.reportId,
+        }));
+        setNotifications(fetchedNotifications);
+        setUnreadCount(fetchedNotifications.filter((n) => !n.isRead).length);
       }
-      return data || [];
     };
+    fetchAdminNotifications();
+  }, []); // Empty dependency array to fetch once on mount
 
-    // Set up real-time subscription
-    const notificationsChannel = supabase
-      .channel('admin_notifications_channel')
-      .on(
-        'postgres_changes',
-        {
-          event: '*', // Listen to INSERT, UPDATE, DELETE
-          schema: 'public',
-          table: 'notifications',
-          filter: 'type=eq.new_report' // Filter for new_report type
-        },
-        (payload) => {
-          // Handle real-time changes
-          // For simplicity, re-fetch all relevant notifications on any change
-          fetchInitialNotifications().then(data => {
-            const fetchedNotifications: Notification[] = data.map((item: any) => ({
-              id: item.id,
-              message: item.message,
-              timestamp: item.timestamp,
-              isRead: item.isRead,
-              type: item.type,
-              reportId: item.reportId,
-            }));
-            setNotifications(fetchedNotifications);
-            setUnreadCount(fetchedNotifications.filter((n) => !n.isRead).length);
-          });
-        }
-      )
-      .subscribe();
-
-    // Fetch initial data and then let real-time updates handle subsequent changes
-    fetchInitialNotifications().then(data => {
-      const fetchedNotifications: Notification[] = data.map((item: any) => ({
-        id: item.id,
-        message: item.message,
-        timestamp: item.timestamp,
-        isRead: item.isRead,
-        type: item.type,
-        reportId: item.reportId,
-      }));
-      setNotifications(fetchedNotifications);
-      setUnreadCount(fetchedNotifications.filter((n) => !n.isRead).length);
-    }).catch(err => {
-      console.error("Error setting up initial notifications:", err);
-      setError("Failed to load notifications.");
-    });
-
-    return () => {
-      supabase.removeChannel(notificationsChannel); // Clean up subscription
-    };
-  }, []); // Empty dependency array means this runs once on mount
-
-  // Supabase Real-time Reports Listener for Admins
+  // Fetch All Reports once on load (NOT real-time)
   useEffect(() => {
-    // Initial fetch of all reports
-    const fetchInitialReports = async () => {
+    const fetchAllReports = async () => {
       const { data, error } = await supabase
-        .from('reports')
+        .from('emergency_reports') // Corrected table name
         .select('*')
         .order('reportedAt', { ascending: false });
 
       if (error) {
         console.error("Error fetching initial reports:", error);
         setError("Failed to load reports.");
-        return [];
+      } else {
+        const fetchedReports: Report[] = data.map((item: any) => ({
+          id: item.id,
+          title: item.title,
+          description: item.description,
+          status: item.status,
+          reportedAt: item.reportedAt,
+          respondedAt: item.respondedAt,
+          userId: item.userId,
+        }));
+        setAllReports(fetchedReports);
       }
-      return data || [];
     };
+    fetchAllReports();
+  }, []); // Empty dependency array to fetch once on mount
 
-    // Set up real-time subscription
-    const reportsChannel = supabase
-      .channel('all_reports_channel')
-      .on(
-        'postgres_changes',
-        {
-          event: '*', // Listen to INSERT, UPDATE, DELETE
-          schema: 'public',
-          table: 'reports',
-        },
-        (payload) => {
-          // For simplicity, re-fetch all reports on any change
-          fetchInitialReports().then(data => {
-            const fetchedReports: Report[] = data.map((item: any) => ({
-              id: item.id,
-              title: item.title,
-              description: item.description,
-              status: item.status,
-              reportedAt: item.reportedAt,
-              respondedAt: item.respondedAt,
-              userId: item.userId,
-            }));
-            setAllReports(fetchedReports);
-          });
-        }
-      )
-      .subscribe();
-
-    // Fetch initial data and then let real-time updates handle subsequent changes
-    fetchInitialReports().then(data => {
-      const fetchedReports: Report[] = data.map((item: any) => ({
-        id: item.id,
-        title: item.title,
-        description: item.description,
-        status: item.status,
-        reportedAt: item.reportedAt,
-        respondedAt: item.respondedAt,
-        userId: item.userId,
-      }));
-      setAllReports(fetchedReports);
-    }).catch(err => {
-      console.error("Error setting up initial reports:", err);
-      setError("Failed to load reports.");
-    });
-
-    return () => {
-      supabase.removeChannel(reportsChannel); // Clean up subscription
-    };
-  }, []); // Empty dependency array means this runs once on mount
-
-  const markAllNotificationsAsRead = useCallback(async () => {
-    setIsLoadingAction(true);
-    try {
-      // Update all unread notifications for admins (type 'new_report')
-      const { error: updateError } = await supabase // Corrected syntax here
-        .from('notifications')
-        .update({ isRead: true })
-        .eq('type', 'new_report')
-        .eq('isRead', false); // Only update unread ones
-
-      if (updateError) {
-        console.error("Error marking admin notifications as read:", updateError);
-        setError("Failed to mark notifications as read.");
-        return;
-      }
-
-      // Optimistic update of local state
-      setUnreadCount(0);
-      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-    } catch (err: any) { // Added type annotation for 'err'
-      console.error("Error marking admin notifications as read:", err);
-      setError("Failed to mark notifications as read: " + err.message); // Added message for clarity
-    } finally {
-      setIsLoadingAction(false);
-    }
-  }, [notifications]); // Dependency on notifications to ensure correct filter for unread
-
+  // Removed markAllNotificationsAsRead function as it was part of real-time / new features
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center text-lg">Loading Admin Dashboard...</div>;
@@ -254,7 +140,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         </Button>
       </div>
 
-      {/* Notifications Section */}
+      {/* Notifications Section (No Mark All as Read button) */}
       <Card className="mb-8 shadow-lg rounded-lg">
         <CardHeader className="bg-blue-600 text-white rounded-t-lg flex flex-row items-center justify-between">
           <CardTitle className="text-xl font-semibold flex items-center">
@@ -265,16 +151,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
               </span>
             )}
           </CardTitle>
-          {unreadCount > 0 && (
-            <Button
-              onClick={markAllNotificationsAsRead}
-              disabled={isLoadingAction}
-              className="bg-blue-800 hover:bg-blue-900 text-white text-sm py-1 px-3 rounded-full flex items-center"
-            >
-              <CheckCircle size={16} className="mr-1" />
-              {isLoadingAction ? "Marking..." : "Mark All as Read"}
-            </Button>
-          )}
+          {/* Mark All as Read button removed */}
         </CardHeader>
         <CardContent className="p-6">
           {notifications.length === 0 ? (
@@ -290,7 +167,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                 >
                   <span className="flex-grow">{notification.message}</span>
                   <span className="text-xs text-gray-500 ml-4">
-                    {new Date(notification.timestamp).toLocaleString()} {/* Convert ISO string to Date */}
+                    {new Date(notification.timestamp).toLocaleString()}
                   </span>
                 </li>
               ))}
@@ -332,7 +209,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                           {report.status}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-sm text-gray-800">{report.userId}</td> {/* Displaying user ID for now */}
+                      <td className="py-3 px-4 text-sm text-gray-800">{report.userId}</td>
                       <td className="py-3 px-4 text-sm text-gray-800">{new Date(report.reportedAt).toLocaleString()}</td>
                       <td className="py-3 px-4 text-sm text-gray-800">
                         {report.respondedAt ? new Date(report.respondedAt).toLocaleString() : "N/A"}
