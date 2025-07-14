@@ -1,370 +1,280 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Bell, MapPin, User, Phone, Clock, CheckCircle } from "lucide-react"
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase" // Assuming supabase is already configured
+import { Bell, CheckCircle } from "lucide-react" // For notification icon and read icon
 
-interface AdminDashboardProps {
-  onLogout: () => void
-  userData: any
+// Firebase Imports (ensure these are correctly installed: npm install firebase)
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, query, where, orderBy, onSnapshot, updateDoc, doc, getDocs } from 'firebase/firestore';
+
+// Define interfaces for data structures
+interface Notification {
+  id: string;
+  message: string;
+  timestamp: Date;
+  isRead: boolean;
+  type: 'new_report' | 'report_update'; // Admin-specific notification types
+  reportId?: string; // Optional: link to a specific report
 }
 
-export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
-  const [notifications, setNotifications] = useState<any[]>([])
-  const [emergencyReports, setEmergencyReports] = useState<any[]>([])
-  const [selectedReport, setSelectedReport] = useState<any>(null)
-  const [showNotifications, setShowNotifications] = useState(false)
+interface Report {
+  id: string;
+  title: string;
+  description: string;
+  status: string; // e.g., 'pending', 'in-progress', 'resolved'
+  reportedAt: Date; // Timestamp when report was created
+  respondedAt?: Date; // Timestamp when MDRRMO responded
+  userId: string; // ID of the user who reported
+}
 
+export default function AdminDashboardPage() {
+  const [adminUser, setAdminUser] = useState<any>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [allReports, setAllReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Firebase instances
+  const [db, setDb] = useState<any>(null);
+  const [auth, setAuth] = useState<any>(null);
+  const [userId, setUserId] = useState<string | null>(null); // Firebase user ID
+
+  // Initialize Firebase and authenticate
   useEffect(() => {
-    loadNotifications()
-    loadEmergencyReports()
-
-    // Set up real-time notifications
-    const channel = supabase
-      .channel("admin_notifications")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "admin_notifications",
-        },
-        (payload) => {
-          console.log("New admin notification:", payload)
-          loadNotifications()
-          loadEmergencyReports()
-        },
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [])
-
-  const loadNotifications = async () => {
-    const { data, error } = await supabase
-      .from("admin_notifications")
-      .select(`
-        *,
-        emergency_reports (
-          id,
-          firstName,
-          lastName,
-          latitude,
-          longitude,
-          location_address,
-          status,
-          created_at
-        )
-      `)
-      .order("created_at", { ascending: false })
-
-    if (!error && data) {
-      setNotifications(data)
-    }
-  }
-
-  const loadEmergencyReports = async () => {
-    const { data, error } = await supabase
-      .from("emergency_reports")
-      .select("*")
-      .order("created_at", { ascending: false })
-
-    if (!error && data) {
-      setEmergencyReports(data)
-    }
-  }
-
-  const handleRespondToEmergency = async (reportId: string) => {
     try {
-      // Update report status
-      const { error: updateError } = await supabase
-        .from("emergency_reports")
-        .update({
-          status: "responded",
-          responded_at: new Date().toISOString(),
-          admin_response: "Emergency team dispatched",
-        })
-        .eq("id", reportId)
+      const appId = process.env.NEXT_PUBLIC_APP_ID || 'default-app-id';
+      const firebaseConfig = JSON.parse(process.env.NEXT_PUBLIC_FIREBASE_CONFIG || '{}');
 
-      if (updateError) {
-        console.error("Error updating report:", updateError)
-        return
-      }
+      const app = initializeApp(firebaseConfig);
+      const firestoreDb = getFirestore(app);
+      const firebaseAuth = getAuth(app);
 
-      // Get the report details
-      const report = emergencyReports.find((r) => r.id === reportId)
-      if (!report) return
+      setDb(firestoreDb);
+      setAuth(firebaseAuth);
 
-      // Send notification to user
-      await supabase.from("user_notifications").insert({
-        user_id: report.user_id,
-        emergency_report_id: reportId,
-        message: "🚨 MDRRMO Emergency Team is on the Way! Stay calm and safe.",
-      })
+      const unsubscribeAuth = onAuthStateChanged(firebaseAuth, async (currentUser) => {
+        if (currentUser) {
+          setUserId(currentUser.uid);
+        } else {
+          // Sign in anonymously if no user is logged in via custom token
+          try {
+            await signInAnonymously(firebaseAuth);
+            setUserId(firebaseAuth.currentUser?.uid || crypto.randomUUID()); // Fallback for anonymous
+          } catch (authError) {
+            console.error("Firebase Auth Error:", authError);
+            setError("Failed to authenticate with Firebase for real-time features.");
+          }
+        }
+        setLoading(false); // Auth state ready
+      });
 
-      // Mark admin notification as read
-      await supabase.from("admin_notifications").update({ is_read: true }).eq("emergency_report_id", reportId)
-
-      // Reload data
-      loadNotifications()
-      loadEmergencyReports()
-
-      alert("Response sent to user!")
-    } catch (error) {
-      console.error("Error responding to emergency:", error)
-      alert("Failed to send response")
+      return () => unsubscribeAuth();
+    } catch (e) {
+      console.error("Firebase Initialization Error:", e);
+      setError("Failed to initialize Firebase. Real-time features may not work.");
+      setLoading(false);
     }
+  }, []);
+
+  // Fetch logged-in admin user data (assuming role check is done elsewhere or implicit)
+  useEffect(() => {
+    const storedUser = localStorage.getItem("mdrrmo_user"); // Assuming admin user is also stored here
+    if (storedUser) {
+      setAdminUser(JSON.parse(storedUser));
+      // You might add a check here to ensure the user actually has admin privileges
+      // e.g., if (parsedUser.role !== 'admin') { setError("Access Denied"); }
+    } else {
+      setError("Admin not logged in. Please log in as an administrator.");
+      setLoading(false);
+    }
+  }, []);
+
+  // Real-time Notifications Listener for Admins
+  useEffect(() => {
+    if (!db || !userId) return; // Ensure Firebase is initialized and userId is available
+
+    const notificationsCollectionRef = collection(db, `artifacts/${process.env.NEXT_PUBLIC_APP_ID}/public/data/notifications`);
+    const q = query(
+      notificationsCollectionRef,
+      where("type", "==", "new_report"), // Assuming admins get notifications for new reports
+      orderBy("timestamp", "desc")
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedNotifications: Notification[] = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: doc.data().timestamp.toDate(), // Convert Firestore Timestamp to Date object
+      })) as Notification[];
+
+      setNotifications(fetchedNotifications);
+      setUnreadCount(fetchedNotifications.filter((n) => !n.isRead).length);
+    }, (err) => {
+      console.error("Error fetching real-time admin notifications:", err);
+      setError("Failed to load real-time admin notifications.");
+    });
+
+    return () => unsubscribe(); // Clean up listener on component unmount
+  }, [db, userId]); // Re-run if db or userId changes
+
+  // Fetch All Reports (real-time for status updates)
+  useEffect(() => {
+    if (!db) return; // Ensure Firebase is initialized
+
+    const reportsCollectionRef = collection(db, `artifacts/${process.env.NEXT_PUBLIC_APP_ID}/public/data/reports`);
+    const q = query(
+      reportsCollectionRef,
+      orderBy("reportedAt", "desc") // Order by report time
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedReports: Report[] = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        reportedAt: doc.data().reportedAt.toDate(), // Convert Firestore Timestamp to Date
+        respondedAt: doc.data().respondedAt ? doc.data().respondedAt.toDate() : undefined, // Optional
+      })) as Report[];
+      setAllReports(fetchedReports);
+    }, (err) => {
+      console.error("Error fetching real-time all reports:", err);
+      setError("Failed to load real-time report history.");
+    });
+
+    return () => unsubscribe(); // Clean up listener
+  }, [db]); // Re-run if db changes
+
+  const markAllNotificationsAsRead = useCallback(async () => {
+    if (!db || !userId) return;
+
+    setLoading(true);
+    try {
+      const unreadNotifications = notifications.filter(n => !n.isRead);
+      const batch = db.batch(); // Use a batch write for efficiency
+
+      unreadNotifications.forEach(notification => {
+        const notificationRef = doc(db, `artifacts/${process.env.NEXT_PUBLIC_APP_ID}/public/data/notifications`, notification.id);
+        batch.update(notificationRef, { isRead: true });
+      });
+
+      await batch.commit();
+      setUnreadCount(0); // Optimistic update
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true }))); // Update local state
+    } catch (err) {
+      console.error("Error marking admin notifications as read:", err);
+      setError("Failed to mark notifications as read.");
+    } finally {
+      setLoading(false);
+    }
+  }, [db, userId, notifications]);
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center text-lg">Loading Admin Dashboard...</div>;
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "active":
-        return "bg-red-500"
-      case "responded":
-        return "bg-yellow-500"
-      case "resolved":
-        return "bg-green-500"
-      default:
-        return "bg-gray-500"
-    }
+  if (error) {
+    return <div className="min-h-screen flex items-center justify-center text-red-600 text-lg">{error}</div>;
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-orange-500 text-white p-4 shadow-lg">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold">MDRRMO Admin Dashboard</h1>
-            <p className="text-orange-100">Emergency Response Center</p>
-          </div>
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={() => setShowNotifications(!showNotifications)}
-              className="relative p-2 hover:bg-orange-600 rounded transition-colors"
-            >
-              <Bell className="w-6 h-6" />
-              {notifications.filter((n) => !n.is_read).length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                  {notifications.filter((n) => !n.is_read).length}
-                </span>
-              )}
-            </button>
-            <Button
-              onClick={onLogout}
-              variant="outline"
-              className="text-white border-white hover:bg-orange-600 bg-transparent"
-            >
-              Logout
-            </Button>
-          </div>
-        </div>
-      </div>
+    <div className="min-h-screen bg-gray-100 p-8">
+      <h1 className="text-3xl font-bold text-gray-800 mb-8">Admin Dashboard</h1>
 
-      <div className="p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Statistics Cards */}
-          <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Active Emergencies</p>
-                    <p className="text-2xl font-bold text-red-600">
-                      {emergencyReports.filter((r) => r.status === "active").length}
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-                    <Bell className="w-6 h-6 text-red-600" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Responded</p>
-                    <p className="text-2xl font-bold text-yellow-600">
-                      {emergencyReports.filter((r) => r.status === "responded").length}
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
-                    <Clock className="w-6 h-6 text-yellow-600" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Resolved</p>
-                    <p className="text-2xl font-bold text-green-600">
-                      {emergencyReports.filter((r) => r.status === "resolved").length}
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                    <CheckCircle className="w-6 h-6 text-green-600" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Emergency Reports List */}
-          <div className="lg:col-span-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Emergency Reports</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4 max-h-96 overflow-y-auto">
-                  {emergencyReports.map((report) => (
-                    <div
-                      key={report.id}
-                      className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer"
-                      onClick={() => setSelectedReport(report)}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-2">
-                            <User className="w-4 h-4 text-gray-500" />
-                            <span className="font-medium">
-                              {report.firstName} {report.middleName} {report.lastName}
-                            </span>
-                            <Badge className={`${getStatusColor(report.status)} text-white`}>
-                              {report.status.toUpperCase()}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center space-x-2 text-sm text-gray-600 mb-1">
-                            <Phone className="w-4 h-4" />
-                            <span>{report.mobileNumber}</span>
-                          </div>
-                          <div className="flex items-center space-x-2 text-sm text-gray-600 mb-1">
-                            <MapPin className="w-4 h-4" />
-                            <span>{report.location_address}</span>
-                          </div>
-                          <div className="flex items-center space-x-2 text-sm text-gray-600">
-                            <Clock className="w-4 h-4" />
-                            <span>{new Date(report.created_at).toLocaleString()}</span>
-                          </div>
-                        </div>
-                        {report.status === "active" && (
-                          <Button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleRespondToEmergency(report.id)
-                            }}
-                            className="bg-green-500 hover:bg-green-600"
-                            size="sm"
-                          >
-                            Respond
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Map View */}
-          <div className="lg:col-span-1">
-            <Card>
-              <CardHeader>
-                <CardTitle>Location Map</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {selectedReport ? (
-                  <div className="space-y-4">
-                    <div className="bg-gray-100 rounded-lg p-4 h-64 flex items-center justify-center">
-                      <div className="text-center">
-                        <MapPin className="w-12 h-12 text-red-500 mx-auto mb-2" />
-                        <p className="font-medium">
-                          {selectedReport.firstName} {selectedReport.lastName}
-                        </p>
-                        <p className="text-sm text-gray-600">{selectedReport.location_address}</p>
-                        <p className="text-xs text-gray-500 mt-2">
-                          Lat: {selectedReport.latitude}
-                          <br />
-                          Lng: {selectedReport.longitude}
-                        </p>
-                        <a
-                          href={`https://www.google.com/maps?q=${selectedReport.latitude},${selectedReport.longitude}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-block mt-2 text-blue-500 hover:underline text-sm"
-                        >
-                          Open in Google Maps
-                        </a>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <h4 className="font-medium">Contact Information</h4>
-                      <p className="text-sm">
-                        <strong>Name:</strong> {selectedReport.firstName} {selectedReport.middleName}{" "}
-                        {selectedReport.lastName}
-                      </p>
-                      <p className="text-sm">
-                        <strong>Phone:</strong> {selectedReport.mobileNumber}
-                      </p>
-                      <p className="text-sm">
-                        <strong>Status:</strong> {selectedReport.status}
-                      </p>
-                      <p className="text-sm">
-                        <strong>Time:</strong> {new Date(selectedReport.created_at).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="h-64 flex items-center justify-center text-gray-500">
-                    Select an emergency report to view location
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </div>
-
-      {/* Notifications Dropdown */}
-      {showNotifications && (
-        <div className="fixed top-20 right-4 bg-white rounded-lg shadow-xl border border-gray-200 w-80 max-h-96 overflow-y-auto z-50">
-          <div className="p-4 border-b border-gray-200">
-            <h3 className="font-semibold text-gray-800">Emergency Notifications</h3>
-          </div>
-          <div className="max-h-64 overflow-y-auto">
-            {notifications.length === 0 ? (
-              <div className="p-4 text-gray-500 text-center">No notifications</div>
-            ) : (
-              notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${!notification.is_read ? "bg-red-50" : ""}`}
-                  onClick={() => {
-                    if (notification.emergency_reports) {
-                      setSelectedReport(notification.emergency_reports)
-                      setShowNotifications(false)
-                    }
-                  }}
-                >
-                  <p className="text-sm text-gray-800">{notification.message}</p>
-                  <p className="text-xs text-gray-500 mt-1">{new Date(notification.created_at).toLocaleString()}</p>
-                </div>
-              ))
+      {/* Notifications Section */}
+      <Card className="mb-8 shadow-lg rounded-lg">
+        <CardHeader className="bg-blue-600 text-white rounded-t-lg flex flex-row items-center justify-between">
+          <CardTitle className="text-xl font-semibold flex items-center">
+            <Bell className="mr-2" size={24} /> Notifications
+            {unreadCount > 0 && (
+              <span className="ml-2 px-3 py-1 bg-red-500 text-white text-sm font-bold rounded-full">
+                {unreadCount} Unread
+              </span>
             )}
-          </div>
-        </div>
-      )}
+          </CardTitle>
+          {unreadCount > 0 && (
+            <Button
+              onClick={markAllNotificationsAsRead}
+              disabled={loading}
+              className="bg-blue-800 hover:bg-blue-900 text-white text-sm py-1 px-3 rounded-full flex items-center"
+            >
+              <CheckCircle size={16} className="mr-1" />
+              {loading ? "Marking..." : "Mark All as Read"}
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="p-6">
+          {notifications.length === 0 ? (
+            <p className="text-gray-600">No new notifications.</p>
+          ) : (
+            <ul className="space-y-3">
+              {notifications.map((notification) => (
+                <li
+                  key={notification.id}
+                  className={`p-3 rounded-lg flex items-center ${
+                    !notification.isRead ? "bg-blue-50 border border-blue-200 font-medium" : "bg-gray-50 text-gray-600"
+                  }`}
+                >
+                  <span className="flex-grow">{notification.message}</span>
+                  <span className="text-xs text-gray-500 ml-4">
+                    {notification.timestamp.toLocaleString()}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* All Reports History Section */}
+      <Card className="shadow-lg rounded-lg">
+        <CardHeader className="bg-orange-600 text-white rounded-t-lg">
+          <CardTitle className="text-xl font-semibold">All Report History</CardTitle>
+        </CardHeader>
+        <CardContent className="p-6">
+          {allReports.length === 0 ? (
+            <p className="text-gray-600">No reports have been submitted yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white rounded-lg overflow-hidden">
+                <thead className="bg-gray-200">
+                  <tr>
+                    <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Report Title</th>
+                    <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Status</th>
+                    <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Reported By</th>
+                    <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Reported At</th>
+                    <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Responded At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allReports.map((report) => (
+                    <tr key={report.id} className="border-b border-gray-200 last:border-b-0 hover:bg-gray-50">
+                      <td className="py-3 px-4 text-sm text-gray-800">{report.title}</td>
+                      <td className="py-3 px-4 text-sm text-gray-800">
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                          report.status === 'resolved' ? 'bg-green-100 text-green-800' :
+                          report.status === 'in-progress' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {report.status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-800">{report.userId}</td> {/* Displaying user ID for now */}
+                      <td className="py-3 px-4 text-sm text-gray-800">{report.reportedAt.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-sm text-gray-800">
+                        {report.respondedAt ? report.respondedAt.toLocaleString() : "N/A"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
-  )
+  );
 }
