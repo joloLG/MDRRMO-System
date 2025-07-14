@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react"
 import { RegisterPage } from "./components/register-page"
 import { LoginPage } from "./components/login-page"
-import Dashboard from "./components/dashboard"
-import AdminDashboard from "./components/admin-dashboard"
+import DashboardPage from "./components/dashboard"
+import AdminDashboardPage from "./components/admin-dashboard"
 
 export default function MobileApp() {
   const [currentScreen, setCurrentScreen] = useState<"login" | "register" | "dashboard" | "admin">("login")
@@ -55,18 +55,17 @@ export default function MobileApp() {
   // If user is logged in, show appropriate dashboard
   if (isLoggedIn) {
     if (userData?.user_type === "admin") {
-      return <AdminDashboard onLogout={handleLogout} userData={userData} />
+      return <AdminDashboardPage onLogout={handleLogout} userData={userData} />;
     } else {
-      return <Dashboard onLogout={handleLogout} userData={userData} />
+      return <DashboardPage onLogout={handleLogout} userData={userData} />;
     }
   }
 
-  // Show login or register based on current screen
-  switch (currentScreen) {
-    case "register":
-      return <RegisterPage onRegistrationSuccess={handleRegistrationSuccess} onGoToLogin={handleGoToLogin} />
-    case "login":
-    default:
-      return <LoginPage onLoginSuccess={handleLoginSuccess} onGoToRegister={handleGoToRegister} />
-  }
+  // Render login/register screens
+  return (
+    <div>
+      {currentScreen === "login" && <LoginPage onGoToRegister={() => setCurrentScreen("register")} onLoginSuccess={handleLoginSuccess} />}
+      {currentScreen === "register" && <RegisterPage onGoToLogin={() => setCurrentScreen("login")} onRegistrationSuccess={handleRegistrationSuccess} />}
+    </div>
+  );
 }

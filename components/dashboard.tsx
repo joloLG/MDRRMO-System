@@ -4,21 +4,17 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase" // Assuming supabase is already configured
-import { Bell, CheckCircle } from "lucide-react" // For notification icon and read icon
-
-// Firebase Imports (ensure these are correctly installed: npm install firebase)
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, query, where, orderBy, onSnapshot, updateDoc, doc, getDocs } from 'firebase/firestore';
+import { Bell, CheckCircle, LogOut } from "lucide-react" // Added LogOut icon
 
 // Define interfaces for data structures
 interface Notification {
   id: string;
   message: string;
-  timestamp: Date;
+  timestamp: string; // Supabase timestamps are typically ISO strings
   isRead: boolean;
   recipientUserId: string;
   reportId?: string; // Optional: link to a specific report
+  type?: string; // Optional: type of notification
 }
 
 interface Report {
@@ -26,147 +22,229 @@ interface Report {
   title: string;
   description: string;
   status: string; // e.g., 'pending', 'in-progress', 'resolved'
-  reportedAt: Date; // Timestamp when report was created
-  respondedAt?: Date; // Timestamp when MDRRMO responded
+  reportedAt: string; // Supabase timestamps are typically ISO strings
+  respondedAt?: string; // Supabase timestamps are typically ISO strings
   userId: string;
 }
 
+// Props for the DashboardPage component
 interface DashboardPageProps {
-  onLogout: () => void;
-  userData: any;
+  onLogout: () => void; // Function to handle logout
+  userData: any; // User data passed from MobileApp.tsx
 }
 
 export default function DashboardPage({ onLogout, userData }: DashboardPageProps) {
+  const [user, setUser] = useState<any>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isLoadingAction, setIsLoadingAction] = useState(false); // For actions like marking as read
 
-  // Firebase instances
-  const [db, setDb] = useState<any>(null);
-  const [auth, setAuth] = useState<any>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-
-  // Initialize Firebase and authenticate
+  // Set user data from props
   useEffect(() => {
-    try {
-      const appId = process.env.NEXT_PUBLIC_APP_ID || 'default-app-id';
-      const firebaseConfig = JSON.parse(process.env.NEXT_PUBLIC_FIREBASE_CONFIG || '{}');
-
-      const app = initializeApp(firebaseConfig);
-      const firestoreDb = getFirestore(app);
-      const firebaseAuth = getAuth(app);
-
-      setDb(firestoreDb);
-      setAuth(firebaseAuth);
-
-      const unsubscribeAuth = onAuthStateChanged(firebaseAuth, async (currentUser) => {
-        if (currentUser) {
-          setUserId(currentUser.uid);
-        } else {
-          // Sign in anonymously if no user is logged in via custom token
-          try {
-            await signInAnonymously(firebaseAuth);
-            setUserId(firebaseAuth.currentUser?.uid || crypto.randomUUID()); // Fallback for anonymous
-          } catch (authError) {
-            console.error("Firebase Auth Error:", authError);
-            setError("Failed to authenticate with Firebase for real-time features.");
-          }
+    if (userData) {
+      setUser(userData);
+      setLoading(false); // User data is available, stop loading
+    } else {
+      // Fallback if userData is not immediately available (e.g., direct access without localStorage check)
+      const storedUser = localStorage.getItem("mdrrmo_user");
+      if (storedUser) {
+        try {
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
+        } catch (parseError) {
+          console.error("Error parsing stored user data:", parseError);
+          setError("Corrupted user data in local storage. Please log in again.");
+          localStorage.removeItem("mdrrmo_user"); // Clear corrupted data
         }
-        setLoading(false); // Auth state ready
-      });
-
-      return () => unsubscribeAuth();
-    } catch (e) {
-      console.error("Firebase Initialization Error:", e);
-      setError("Failed to initialize Firebase. Real-time features may not work.");
-    } finally {
+      } else {
+        setError("User not logged in. Please log in to view dashboard.");
+      }
       setLoading(false);
     }
-  }, []);
+  }, [userData]);
 
 
-
-  // Real-time Notifications Listener
+  // Supabase Real-time Notifications Listener for User
   useEffect(() => {
-    if (!db || !userId) return; // Ensure Firebase is initialized and userId is available
+    if (!user?.id) {
+      // If user is not yet loaded, or not logged in, don't set up subscription
+      return;
+    }
 
-    const notificationsCollectionRef = collection(db, `artifacts/${process.env.NEXT_PUBLIC_APP_ID}/public/data/notifications`);
-    const q = query(
-      notificationsCollectionRef,
-      where("recipientUserId", "==", userId),
-      orderBy("timestamp", "desc")
-    );
+    // Initial fetch of notifications for the current user
+    const fetchInitialNotifications = async () => {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('recipientUserId', user.id) // Filter by recipient user ID
+        .order('timestamp', { ascending: false });
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedNotifications: Notification[] = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: doc.data().timestamp.toDate(), // Convert Firestore Timestamp to Date object
-      })) as Notification[];
+      if (error) {
+        console.error("Error fetching initial user notifications:", error);
+        setError("Failed to load notifications.");
+        return [];
+      }
+      return data || [];
+    };
 
+    // Set up real-time subscription
+    const notificationsChannel = supabase
+      .channel(`user_notifications_channel_${user.id}`) // Unique channel for each user
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'notifications',
+          filter: `recipientUserId=eq.${user.id}` // Filter for current user's notifications
+        },
+        (payload) => {
+          // Re-fetch all relevant notifications on any change
+          fetchInitialNotifications().then(data => {
+            const fetchedNotifications: Notification[] = data.map((item: any) => ({
+              id: item.id,
+              message: item.message,
+              timestamp: item.timestamp,
+              isRead: item.isRead,
+              recipientUserId: item.recipientUserId,
+              reportId: item.reportId,
+              type: item.type,
+            }));
+            setNotifications(fetchedNotifications);
+            setUnreadCount(fetchedNotifications.filter((n) => !n.isRead).length);
+          });
+        }
+      )
+      .subscribe();
+
+    // Fetch initial data and then let real-time updates handle subsequent changes
+    fetchInitialNotifications().then(data => {
+      const fetchedNotifications: Notification[] = data.map((item: any) => ({
+        id: item.id,
+        message: item.message,
+        timestamp: item.timestamp,
+        isRead: item.isRead,
+        recipientUserId: item.recipientUserId,
+        reportId: item.reportId,
+        type: item.type,
+      }));
       setNotifications(fetchedNotifications);
       setUnreadCount(fetchedNotifications.filter((n) => !n.isRead).length);
-    }, (err) => {
-      console.error("Error fetching real-time notifications:", err);
-      setError("Failed to load real-time notifications.");
+    }).catch(err => {
+      console.error("Error setting up initial notifications:", err);
+      setError("Failed to load notifications.");
     });
 
-    return () => unsubscribe(); // Clean up listener on component unmount
-  }, [db, userId]); // Re-run if db or userId changes
+    return () => {
+      supabase.removeChannel(notificationsChannel); // Clean up subscription
+    };
+  }, [user?.id]); // Re-run if user.id changes
 
-  // Fetch User's Reports (also make it real-time for status updates)
+  // Supabase Real-time Reports Listener for User
   useEffect(() => {
-    if (!db || !userData?.id) return; // Ensure Firebase is initialized and user ID is available
+    if (!user?.id) {
+      // If user is not yet loaded, or not logged in, don't set up subscription
+      return;
+    }
 
-    const reportsCollectionRef = collection(db, `artifacts/${process.env.NEXT_PUBLIC_APP_ID}/public/data/reports`);
-    const q = query(
-      reportsCollectionRef,
-      where("userId", "==", userData.id),
-      orderBy("reportedAt", "desc") // Order by report time
-    );
+    // Initial fetch of user's reports
+    const fetchInitialReports = async () => {
+      const { data, error } = await supabase
+        .from('reports')
+        .select('*')
+        .eq('userId', user.id) // Filter by user ID
+        .order('reportedAt', { ascending: false });
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedReports: Report[] = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        reportedAt: doc.data().reportedAt.toDate(), // Convert Firestore Timestamp to Date
-        respondedAt: doc.data().respondedAt ? doc.data().respondedAt.toDate() : undefined, // Optional
-      })) as Report[];
+      if (error) {
+        console.error("Error fetching initial user reports:", error);
+        setError("Failed to load reports.");
+        return [];
+      }
+      return data || [];
+    };
+
+    // Set up real-time subscription
+    const reportsChannel = supabase
+      .channel(`user_reports_channel_${user.id}`) // Unique channel for each user
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'reports',
+          filter: `userId=eq.${user.id}` // Filter for current user's reports
+        },
+        (payload) => {
+          // Re-fetch all reports on any change
+          fetchInitialReports().then(data => {
+            const fetchedReports: Report[] = data.map((item: any) => ({
+              id: item.id,
+              title: item.title,
+              description: item.description,
+              status: item.status,
+              reportedAt: item.reportedAt,
+              respondedAt: item.respondedAt,
+              userId: item.userId,
+            }));
+            setReports(fetchedReports);
+          });
+        }
+      )
+      .subscribe();
+
+    // Fetch initial data and then let real-time updates handle subsequent changes
+    fetchInitialReports().then(data => {
+      const fetchedReports: Report[] = data.map((item: any) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        status: item.status,
+        reportedAt: item.reportedAt,
+        respondedAt: item.respondedAt,
+        userId: item.userId,
+      }));
       setReports(fetchedReports);
-    }, (err) => {
-      console.error("Error fetching real-time reports:", err);
-      setError("Failed to load real-time report history.");
+    }).catch(err => {
+      console.error("Error setting up initial reports:", err);
+      setError("Failed to load reports.");
     });
 
-    return () => unsubscribe(); // Clean up listener
-  }, [db, userData?.id]); // Re-run if db or user.id changes
+    return () => {
+      supabase.removeChannel(reportsChannel); // Clean up subscription
+    };
+  }, [user?.id]); // Re-run if user.id changes
 
   const markAllNotificationsAsRead = useCallback(async () => {
-    if (!db || !userId) return;
+    if (!user?.id) return; // Ensure user is loaded
 
-    setLoading(true);
+    setIsLoadingAction(true);
     try {
-      const unreadNotifications = notifications.filter(n => !n.isRead);
-      const batch = db.batch(); // Use a batch write for efficiency
+      // Update all unread notifications for the current user
+      const { error } = await supabase
+        .from('notifications')
+        .update({ isRead: true })
+        .eq('recipientUserId', user.id)
+        .eq('isRead', false); // Only update unread ones
 
-      unreadNotifications.forEach(notification => {
-        const notificationRef = doc(db, `artifacts/${process.env.NEXT_PUBLIC_APP_ID}/public/data/notifications`, notification.id);
-        batch.update(notificationRef, { isRead: true });
-      });
+      if (error) {
+        console.error("Error marking notifications as read:", error);
+        setError("Failed to mark notifications as read.");
+        return;
+      }
 
-      await batch.commit();
-      setUnreadCount(0); // Optimistic update
-      setNotifications(prev => prev.map(n => ({ ...n, isRead: true }))); // Update local state
+      // Optimistic update of local state
+      setUnreadCount(0);
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
     } catch (err) {
       console.error("Error marking notifications as read:", err);
       setError("Failed to mark notifications as read.");
     } finally {
-      setLoading(false);
+      setIsLoadingAction(false);
     }
-  }, [db, userId, notifications]);
-
+  }, [user?.id, notifications]); // Dependency on user.id and notifications
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center text-lg">Loading Dashboard...</div>;
@@ -178,9 +256,14 @@ export default function DashboardPage({ onLogout, userData }: DashboardPageProps
 
   return (
     <div className="min-h-screen bg-gray-100 p-8">
-       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-800">Welcome, {userData?.firstName || "User"}!</h1>
-        <Button onClick={onLogout} variant="outline">Logout</Button>
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold text-gray-800">Welcome, {user?.firstName || "User"}!</h1>
+        <Button
+          onClick={onLogout}
+          className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-md flex items-center"
+        >
+          <LogOut size={20} className="mr-2" /> Logout
+        </Button>
       </div>
 
       {/* Notifications Section */}
@@ -197,11 +280,11 @@ export default function DashboardPage({ onLogout, userData }: DashboardPageProps
           {unreadCount > 0 && (
             <Button
               onClick={markAllNotificationsAsRead}
-              disabled={loading}
+              disabled={isLoadingAction}
               className="bg-blue-800 hover:bg-blue-900 text-white text-sm py-1 px-3 rounded-full flex items-center"
             >
               <CheckCircle size={16} className="mr-1" />
-              {loading ? "Marking..." : "Mark All as Read"}
+              {isLoadingAction ? "Marking..." : "Mark All as Read"}
             </Button>
           )}
         </CardHeader>
@@ -219,7 +302,7 @@ export default function DashboardPage({ onLogout, userData }: DashboardPageProps
                 >
                   <span className="flex-grow">{notification.message}</span>
                   <span className="text-xs text-gray-500 ml-4">
-                    {notification.timestamp.toLocaleString()}
+                    {new Date(notification.timestamp).toLocaleString()} {/* Convert ISO string to Date */}
                   </span>
                 </li>
               ))}
@@ -260,9 +343,9 @@ export default function DashboardPage({ onLogout, userData }: DashboardPageProps
                           {report.status}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-sm text-gray-800">{report.reportedAt.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-sm text-gray-800">{new Date(report.reportedAt).toLocaleString()}</td>
                       <td className="py-3 px-4 text-sm text-gray-800">
-                        {report.respondedAt ? report.respondedAt.toLocaleString() : "N/A"}
+                        {report.respondedAt ? new Date(report.respondedAt).toLocaleString() : "N/A"}
                       </td>
                     </tr>
                   ))}
