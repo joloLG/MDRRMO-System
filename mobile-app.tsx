@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react"
 import { RegisterPage } from "./components/register-page"
 import { LoginPage } from "./components/login-page"
-import DashboardPage from "./components/dashboard"
-import AdminDashboardPage from "./components/admin-dashboard"
+import { Dashboard } from "./components/dashboard" // Corrected named import
+import { AdminDashboard } from "./components/admin-dashboard" // Corrected named import
+import { supabase } from "@/lib/supabase" // Import supabase for logout
 
 export default function MobileApp() {
   const [currentScreen, setCurrentScreen] = useState<"login" | "register" | "dashboard" | "admin">("login")
@@ -15,10 +16,18 @@ export default function MobileApp() {
     // Check if user is already logged in
     const storedUser = localStorage.getItem("mdrrmo_user")
     if (storedUser) {
-      const user = JSON.parse(storedUser)
-      setUserData(user)
-      setIsLoggedIn(true)
-      setCurrentScreen(user.user_type === "admin" ? "admin" : "dashboard")
+      try {
+        const user = JSON.parse(storedUser)
+        setUserData(user)
+        setIsLoggedIn(true)
+        setCurrentScreen(user.user_type === "admin" ? "admin" : "dashboard")
+      } catch (parseError) {
+        console.error("Error parsing stored user data in MobileApp:", parseError);
+        // If data is corrupted, clear it and force login
+        localStorage.removeItem("mdrrmo_user");
+        setIsLoggedIn(false);
+        setCurrentScreen("login");
+      }
     }
   }, [])
 
@@ -45,27 +54,37 @@ export default function MobileApp() {
   }
 
   // Handle logout
-  const handleLogout = () => {
-    setUserData(null)
-    setIsLoggedIn(false)
-    setCurrentScreen("login")
-    localStorage.removeItem("mdrrmo_user")
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error("Error signing out from Supabase:", error);
+      }
+    } catch (err) {
+      console.error("Unexpected error during Supabase signOut:", err);
+    } finally {
+      setUserData(null)
+      setIsLoggedIn(false)
+      setCurrentScreen("login")
+      localStorage.removeItem("mdrrmo_user")
+    }
   }
 
   // If user is logged in, show appropriate dashboard
   if (isLoggedIn) {
     if (userData?.user_type === "admin") {
-      return <AdminDashboardPage onLogout={handleLogout} userData={userData} />;
+      return <AdminDashboard onLogout={handleLogout} userData={userData} />
     } else {
-      return <DashboardPage onLogout={handleLogout} userData={userData} />;
+      return <Dashboard onLogout={handleLogout} userData={userData} />
     }
   }
 
-  // Render login/register screens
-  return (
-    <div>
-      {currentScreen === "login" && <LoginPage onGoToRegister={() => setCurrentScreen("register")} onLoginSuccess={handleLoginSuccess} />}
-      {currentScreen === "register" && <RegisterPage onGoToLogin={() => setCurrentScreen("login")} onRegistrationSuccess={handleRegistrationSuccess} />}
-    </div>
-  );
+  // Show login or register based on current screen
+  switch (currentScreen) {
+    case "register":
+      return <RegisterPage onRegistrationSuccess={handleRegistrationSuccess} onGoToLogin={handleGoToLogin} />
+    case "login":
+    default:
+      return <LoginPage onLoginSuccess={handleLoginSuccess} onGoToRegister={handleGoToRegister} />
+  }
 }

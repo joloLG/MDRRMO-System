@@ -27,13 +27,13 @@ interface Report {
   userId: string;
 }
 
-// Props for the DashboardPage component
-interface DashboardPageProps {
+// Props for the Dashboard component
+interface DashboardProps {
   onLogout: () => void; // Function to handle logout
   userData: any; // User data passed from MobileApp.tsx
 }
 
-export default function DashboardPage({ onLogout, userData }: DashboardPageProps) {
+export function Dashboard({ onLogout, userData }: DashboardProps) { // Changed to named export 'Dashboard'
   const [user, setUser] = useState<any>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -223,14 +223,14 @@ export default function DashboardPage({ onLogout, userData }: DashboardPageProps
     setIsLoadingAction(true);
     try {
       // Update all unread notifications for the current user
-      const { error } = await supabase
+      const { error: updateError } = await supabase // Corrected syntax here
         .from('notifications')
         .update({ isRead: true })
         .eq('recipientUserId', user.id)
         .eq('isRead', false); // Only update unread ones
 
-      if (error) {
-        console.error("Error marking notifications as read:", error);
+      if (updateError) {
+        console.error("Error marking notifications as read:", updateError);
         setError("Failed to mark notifications as read.");
         return;
       }
@@ -238,9 +238,9 @@ export default function DashboardPage({ onLogout, userData }: DashboardPageProps
       // Optimistic update of local state
       setUnreadCount(0);
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-    } catch (err) {
+    } catch (err: any) { // Added type annotation for 'err'
       console.error("Error marking notifications as read:", err);
-      setError("Failed to mark notifications as read.");
+      setError("Failed to mark notifications as read: " + err.message); // Added message for clarity
     } finally {
       setIsLoadingAction(false);
     }

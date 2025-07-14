@@ -26,13 +26,14 @@ interface Report {
   userId: string; // ID of the user who reported
 }
 
-// Props for the AdminDashboardPage component
-interface AdminDashboardPageProps {
+// Props for the AdminDashboard component
+interface AdminDashboardProps { // Renamed from AdminDashboardPageProps for consistency with named export
   onLogout: () => void; // Function to handle logout
   userData: any; // User data passed from MobileApp.tsx
 }
 
-export default function AdminDashboardPage({ onLogout, userData }: AdminDashboardPageProps) {
+// Changed to named export 'AdminDashboard'
+export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [adminUser, setAdminUser] = useState<any>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -209,14 +210,14 @@ export default function AdminDashboardPage({ onLogout, userData }: AdminDashboar
     setIsLoadingAction(true);
     try {
       // Update all unread notifications for admins (type 'new_report')
-      const { error } = await supabase
+      const { error: updateError } = await supabase // Corrected syntax here
         .from('notifications')
         .update({ isRead: true })
         .eq('type', 'new_report')
         .eq('isRead', false); // Only update unread ones
 
-      if (error) {
-        console.error("Error marking admin notifications as read:", error);
+      if (updateError) {
+        console.error("Error marking admin notifications as read:", updateError);
         setError("Failed to mark notifications as read.");
         return;
       }
@@ -224,9 +225,9 @@ export default function AdminDashboardPage({ onLogout, userData }: AdminDashboar
       // Optimistic update of local state
       setUnreadCount(0);
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-    } catch (err) {
+    } catch (err: any) { // Added type annotation for 'err'
       console.error("Error marking admin notifications as read:", err);
-      setError("Failed to mark notifications as read.");
+      setError("Failed to mark notifications as read: " + err.message); // Added message for clarity
     } finally {
       setIsLoadingAction(false);
     }
