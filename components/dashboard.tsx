@@ -109,13 +109,17 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         .on(
           "postgres_changes",
           {
-            event: "INSERT",
+            event: "*", // Listen for INSERT, UPDATE, DELETE
             schema: "public",
             table: "user_notifications",
             filter: `user_id=eq.${currentUser.id}`, // Filter by user_id as per schema
           },
           (payload) => {
-            console.log("New user notification received:", payload.new.message);
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              console.log("New user notification received:", payload.new?.message);
+            } else {
+              console.log("User notification change received, reloading:", payload);
+            }
             loadNotifications(currentUser.id); // Reload notifications to update the list
           },
         )
@@ -258,6 +262,20 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     setShowUserMenu(!showUserMenu)
   }
 
+  const markAllAsRead = async () => {
+    if (!currentUser) return;
+    const { error } = await supabase
+      .from("user_notifications")
+      .update({ is_read: true })
+      .eq("user_id", currentUser.id)
+      .eq("is_read", false);
+    if (!error) {
+      loadNotifications(currentUser.id);
+    } else {
+      console.error("Error marking all as read:", error);
+    }
+  };
+
   const markNotificationAsRead = async (notificationId: string) => {
     const { error } = await supabase
       .from('user_notifications')
@@ -267,7 +285,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     if (error) {
       console.error("Error marking notification as read:", error);
     } else {
-      loadNotifications(currentUser.id); // Reload to update UI, pass currentUser.id
+      loadNotifications(currentUser.id);
     }
   };
 
@@ -329,8 +347,20 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       {/* Notifications Dropdown */}
       {showNotifications && (
         <div className="fixed top-20 right-4 bg-white rounded-lg shadow-xl border border-gray-200 w-80 max-h-96 overflow-y-auto z-50">
-          <div className="p-4 border-b border-gray-200">
+          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
             <h3 className="font-semibold text-gray-800">Notifications</h3>
+            {notifications.some(n => !n.is_read) && (
+              <Button
+                size="sm"
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs py-1 px-2 rounded-full ml-2"
+                onClick={(e) => {
+                  e.stopPropagation(); // Prevent dropdown from closing
+                  markAllAsRead();
+                }}
+              >
+                Mark all as read
+              </Button>
+            )}
           </div>
           <div className="max-h-64 overflow-y-auto">
             {notifications.length === 0 ? (
@@ -340,7 +370,9 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                 <div
                   key={notification.id}
                   className={`p-4 border-b border-gray-100 ${!notification.is_read ? "bg-blue-50" : ""}`} // Use is_read
-                  onClick={() => markNotificationAsRead(notification.id)} // Mark as read on click
+                  onClick={async () => {
+                    await markNotificationAsRead(notification.id);
+                  }} // Mark as read on click
                   style={{ cursor: 'pointer' }}
                 >
                   <p className="text-sm text-gray-800">{notification.message}</p>

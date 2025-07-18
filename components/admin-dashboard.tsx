@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
-import { Bell, LogOut, CheckCircle, MapPin, Send, CheckSquare } from "lucide-react" // Added CheckSquare icon
+import { Bell, LogOut, CheckCircle, MapPin, Send, CheckSquare, Map } from "lucide-react" // Added Map and CheckSquare icons
 
 // Define interfaces for data structures
 interface Notification {
@@ -154,16 +154,16 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
           schema: 'public',
           table: 'admin_notifications',
           filter: 'type=eq.new_report'
         },
         (payload) => {
-          console.log("Admin notification received:", payload);
+          console.log('New admin notification received, refetching:', payload);
           fetchAdminNotifications().then(data => {
             setNotifications(data);
-            setUnreadCount(data.filter((n) => !n.is_read).length);
+            setUnreadCount(data.filter(n => !n.is_read).length);
           });
         }
       )
@@ -173,7 +173,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       supabase.removeChannel(notificationsChannel);
     };
   }, [fetchAdminNotifications]);
-
 
   // Function to fetch all reports (used for initial load and real-time updates)
   const fetchAllReports = useCallback(async () => {
@@ -278,448 +277,204 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     };
   }, [fetchAllReports, selectedReport]);
 
-  const markAllNotificationsAsRead = useCallback(async () => {
-    if (unreadCount === 0) return;
+const markAllNotificationsAsRead = useCallback(async () => {
+  if (unreadCount === 0) return;
+  const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id);
+  if (unreadIds.length === 0) return;
 
-    setIsLoadingAction(true);
-    try {
-      const { error: updateError } = await supabase
-        .from('admin_notifications')
-        .update({ is_read: true })
-        .eq('is_read', false);
-
-      if (updateError) {
-        console.error("Error marking admin notifications as read:", updateError);
-        setError("Failed to mark notifications as read.");
-      } else {
-        setUnreadCount(0);
-        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-      }
-    } catch (err: any) {
-      console.error("Error marking notifications as read:", err);
-      setError("Failed to mark notifications as read: " + err.message);
-    } finally {
-      setIsLoadingAction(false);
-    }
-  }, [unreadCount, notifications]);
-
-  const handleReportClick = (report: Report) => {
-    setSelectedReport(report);
-    setAdminNotes(report.admin_response || ''); // Load existing admin notes
-  };
-
-  const handleNotificationClick = useCallback(async (notification: Notification) => {
-    if (!notification.is_read) {
-      const { error: updateError } = await supabase
-        .from('admin_notifications')
-        .update({ is_read: true })
-        .eq('id', notification.id);
-
-      if (updateError) {
-        console.error("Error marking notification as read:", updateError);
-        setError("Failed to mark notification as read.");
-      } else {
-        setNotifications(prev => prev.map(n =>
-          n.id === notification.id ? { ...n, is_read: true } : n
-        ));
-        setUnreadCount(prev => prev > 0 ? prev - 1 : 0);
-      }
-    }
-
-    if (notification.emergency_report_id) {
-      const { data: reportData, error: reportError } = await supabase
-        .from('emergency_reports')
-        .select('*')
-        .eq('id', notification.emergency_report_id)
-        .single();
-
-      if (reportError) {
-        console.error("Error fetching report for notification:", reportError);
-        setError(`Failed to load report details for notification: ${reportError.message || 'Unknown error'}. Please check your Supabase RLS policies for 'emergency_reports' SELECT operation.`);
-      } else if (reportData) {
-        setSelectedReport(reportData as Report);
-        setAdminNotes(reportData.admin_response || ''); // Load notes when report is selected
-      }
-    }
-
-    setShowNotificationsDropdown(false);
-  }, []);
-
-  const handleRespondToIncident = useCallback(async () => {
-    if (!selectedReport) {
-      setError("No report selected to respond to.");
-      return;
-    }
-    setIsLoadingAction(true);
-    setError(null);
-
-    try {
-      const { data: updatedReport, error: updateReportError } = await supabase
-        .from('emergency_reports')
-        .update({
-          status: 'in-progress',
-          admin_response: selectedTeam, // Store the selected team name
-          responded_at: new Date().toISOString(),
-        })
-        .eq('id', selectedReport.id)
-        .select()
-        .single();
-
-      if (updateReportError) {
-        console.error("Error updating report status:", updateReportError);
-        setError(`Failed to update report status: ${updateReportError.message}. Check RLS policies for 'emergency_reports' UPDATE.`);
-        setIsLoadingAction(false);
-        return;
-      }
-
-      setSelectedReport(updatedReport as Report);
-
-      const userNotificationMessage = `Your emergency report (${selectedReport.emergency_type}) is OTW. Team ${selectedTeam} is responding.`;
-      const { error: userNotificationError } = await supabase
-        .from('user_notifications')
-        .insert({
-          user_id: selectedReport.user_id,
-          emergency_report_id: selectedReport.id,
-          message: userNotificationMessage,
-          is_read: false,
-          created_at: new Date().toISOString(),
-        });
-
-      if (userNotificationError) {
-        console.error("Error sending user notification:", userNotificationError);
-      }
-
-      console.log(`Incident ${selectedReport.id} responded to by ${selectedTeam}. User notified.`);
-      fetchAllReports();
-
-    } catch (err: any) {
-      console.error("Error responding to incident:", err);
-      setError(`An unexpected error occurred: ${err.message}`);
-    } finally {
-      setIsLoadingAction(false);
-    }
-  }, [selectedReport, selectedTeam, fetchAllReports]);
-
-  const handleResolveIncident = useCallback(async () => {
-    if (!selectedReport) {
-      setError("No report selected to resolve.");
-      return;
-    }
-    setIsLoadingAction(true);
-    setError(null);
-
-    try {
-      const { data: updatedReport, error: updateReportError } = await supabase
-        .from('emergency_reports')
-        .update({
-          status: 'resolved', // Change status to 'resolved'
-          admin_response: adminNotes, // Store admin notes here
-          resolved_at: new Date().toISOString(), // Set resolved_at timestamp
-        })
-        .eq('id', selectedReport.id)
-        .select()
-        .single();
-
-      if (updateReportError) {
-        console.error("Error resolving report:", updateReportError);
-        setError(`Failed to resolve report: ${updateReportError.message}. Check RLS policies for 'emergency_reports' UPDATE.`);
-        setIsLoadingAction(false);
-        return;
-      }
-
-      setSelectedReport(updatedReport as Report);
-
-      const userNotificationMessage = `Your emergency report (${selectedReport.emergency_type}) has been resolved. Admin notes: ${adminNotes || 'N/A'}`;
-      const { error: userNotificationError } = await supabase
-        .from('user_notifications')
-        .insert({
-          user_id: selectedReport.user_id,
-          emergency_report_id: selectedReport.id,
-          message: userNotificationMessage,
-          is_read: false,
-          created_at: new Date().toISOString(),
-        });
-
-      if (userNotificationError) {
-        console.error("Error sending user notification:", userNotificationError);
-      }
-
-      console.log(`Incident ${selectedReport.id} resolved. User notified.`);
-      fetchAllReports();
-
-    } catch (err: any) {
-      console.error("Error resolving incident:", err);
-      setError(`An unexpected error occurred: ${err.message}`);
-    } finally {
-      setIsLoadingAction(false);
-    }
-  }, [selectedReport, adminNotes, fetchAllReports]);
-
-
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center text-lg">Loading Admin Dashboard...</div>;
-  }
-
+  setIsLoadingAction(true);
+  const { error } = await supabase.from('admin_notifications').update({ is_read: true }).in('id', unreadIds);
   if (error) {
-    return <div className="min-h-screen flex items-center justify-center text-red-600 text-lg">{error}</div>;
+    console.error("Error marking all as read:", error);
+    setError("Failed to mark all notifications as read.");
+  } else {
+    // No need to fetch, we can update locally
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    setUnreadCount(0);
   }
+  setIsLoadingAction(false);
+}, [notifications, unreadCount]);
 
-  return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Top Header */}
-      <header className="bg-orange-600 text-white p-4 flex justify-between items-center shadow-md">
-        <div className="flex items-center">
-          <h1 className="text-2xl font-bold mr-2">MDRRMO Admin Dashboard</h1>
-          <p className="text-orange-100 text-sm">Emergency Response Center</p>
-        </div>
+const handleReportClick = (report: Report) => {
+  setSelectedReport(report);
+  setAdminNotes(report.admin_response || '');
+};
+
+const handleNotificationClick = useCallback(async (notification: Notification) => {
+  if (!notification.is_read) {
+    const { error } = await supabase.from('admin_notifications').update({ is_read: true }).eq('id', notification.id);
+    if (error) {
+      console.error('Error marking notification as read:', error);
+    } else {
+      setNotifications(prev => prev.map(n => n.id === notification.id ? { ...n, is_read: true } : n));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    }
+  }
+  if (notification.emergency_report_id) {
+    const report = allReports.find(r => r.id === notification.emergency_report_id);
+    if (report) {
+      handleReportClick(report);
+    }
+  }
+  setShowNotificationsDropdown(false);
+}, [allReports]);
+
+const handleRespondToIncident = useCallback(async () => {
+  if (!selectedReport) return;
+  setIsLoadingAction(true);
+  setError(null);
+  try {
+    const { data: updatedReport, error: updateError } = await supabase.from('emergency_reports').update({ status: 'in-progress', admin_response: selectedTeam, responded_at: new Date().toISOString() }).eq('id', selectedReport.id).select().single();
+    if (updateError) throw updateError;
+
+    const { error: notificationError } = await supabase.from('user_notifications').insert({ user_id: selectedReport.user_id, emergency_report_id: selectedReport.id, message: `Your emergency report for ${selectedReport.emergency_type} is OTW. Team ${selectedTeam} is responding.` });
+    if (notificationError) console.error('Error sending user notification:', notificationError);
+
+    await fetchAllReports();
+    setSelectedReport(updatedReport as Report);
+  } catch (err: any) {
+    setError(`Failed to respond: ${err.message}. Check RLS policies.`);
+  } finally {
+    setIsLoadingAction(false);
+  }
+}, [selectedReport, selectedTeam, fetchAllReports]);
+
+const handleSaveNotes = useCallback(async () => {
+  if (!selectedReport) return;
+  setIsLoadingAction(true);
+  try {
+    const { error } = await supabase.from('emergency_reports').update({ admin_response: adminNotes }).eq('id', selectedReport.id);
+    if (error) throw error;
+    setAllReports(prev => prev.map(r => r.id === selectedReport.id ? { ...r, admin_response: adminNotes } : r));
+  } catch (err: any) {
+    setError(`Failed to save notes: ${err.message}.`);
+  } finally {
+    setIsLoadingAction(false);
+  }
+}, [selectedReport, adminNotes]);
+
+if (error) {
+  return <div className="flex justify-center items-center h-screen text-red-500">Error: {error}</div>;
+}
+
+return (
+  <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8">
+    <header className="flex justify-between items-center mb-8">
+      <h1 className="text-3xl font-bold text-gray-800">Admin Dashboard</h1>
+      <div className="flex items-center space-x-4">
         <div className="relative">
-          <Button
-            onClick={() => setShowNotificationsDropdown(prev => !prev)}
-            className="bg-orange-700 hover:bg-orange-800 text-white p-3 rounded-full relative"
-          >
-            <Bell size={24} />
-            {unreadCount > 0 && (
-              <span className="absolute top-0 right-0 -mt-1 -mr-1 px-2 py-1 text-xs font-bold bg-red-500 rounded-full">
-                {unreadCount}
-              </span>
-            )}
+          <Button variant="ghost" size="icon" onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}>
+            <Bell className="h-6 w-6" />
+            {unreadCount > 0 && <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />}
           </Button>
           {showNotificationsDropdown && (
-            <Card className="absolute right-0 mt-2 w-80 bg-white shadow-lg rounded-lg z-20">
-              <CardHeader className="bg-blue-600 text-white rounded-t-lg flex flex-row items-center justify-between p-3">
-                <CardTitle className="text-base font-semibold">Emergency Notifications</CardTitle>
-                {unreadCount > 0 && (
-                  <Button
-                    onClick={markAllNotificationsAsRead}
-                    disabled={isLoadingAction}
-                    className="bg-blue-800 hover:bg-blue-900 text-white text-xs py-1 px-2 rounded-full"
-                  >
-                    {isLoadingAction ? "Marking..." : "Mark All as Read"}
-                  </Button>
-                )}
-              </CardHeader>
-              <CardContent className="p-3 max-h-60 overflow-y-auto">
-                {notifications.length === 0 ? (
-                  <p className="text-gray-600 text-sm">No new notifications.</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {notifications.map((notification) => (
-                      <li
-                        key={notification.id}
-                        className={`p-2 rounded-md text-sm cursor-pointer ${
-                          !notification.is_read ? "bg-blue-50 border border-blue-200 font-medium" : "bg-gray-50 text-gray-600"
-                        }`}
-                        onClick={() => handleNotificationClick(notification)}
-                      >
-                        <p>{notification.message}</p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {new Date(notification.created_at).toLocaleString()}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </CardContent>
-            </Card>
+            <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl z-20">
+              <div className="p-4 font-bold border-b">Notifications</div>
+              <ul className="max-h-96 overflow-y-auto">
+                {notifications.length > 0 ? notifications.map(n => (
+                  <li key={n.id} onClick={() => handleNotificationClick(n)} className={`p-4 border-b hover:bg-gray-100 cursor-pointer ${!n.is_read ? 'font-semibold' : ''}`}>
+                    <p className="text-sm text-gray-700">{n.message}</p>
+                    <p className="text-xs text-gray-500 mt-1">{new Date(n.created_at).toLocaleString()}</p>
+                  </li>
+                )) : <li className="p-4 text-center text-gray-500">No new notifications.</li>}
+              </ul>
+              {unreadCount > 0 && (
+                <div className="p-2 border-t">
+                  <Button variant="link" className="w-full" onClick={markAllNotificationsAsRead} disabled={isLoadingAction}>Mark all as read</Button>
+                </div>
+              )}
+            </div>
           )}
-          <Button
-            onClick={onLogout}
-            className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-md ml-4 flex items-center"
-          >
-            <LogOut size={20} className="mr-2" /> Logout
-          </Button>
         </div>
-      </header>
+        <Button onClick={onLogout} variant="destructive"><LogOut className="mr-2 h-4 w-4" /> Logout</Button>
+      </div>
+    </header>
 
-      {/* Main Content Area */}
-      <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8">
-        {/* Left Column - Emergency Stats */}
-        <div className="md:col-span-2 grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-          <Card className="shadow-lg rounded-lg">
-            <CardHeader className="bg-red-500 text-white rounded-t-lg">
-              <CardTitle className="text-xl font-semibold flex items-center">
-                Active Emergencies <Bell className="ml-2" size={20} />
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-6 text-center">
-              <p className="text-5xl font-bold text-red-600">{activeEmergenciesCount}</p>
-            </CardContent>
-          </Card>
+    <main className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="shadow"><CardHeader><CardTitle>Active Emergencies</CardTitle></CardHeader><CardContent><p className="text-4xl font-bold text-red-600">{activeEmergenciesCount}</p></CardContent></Card>
+          <Card className="shadow"><CardHeader><CardTitle>In-Progress</CardTitle></CardHeader><CardContent><p className="text-4xl font-bold text-yellow-600">{respondedCount}</p></CardContent></Card>
+          <Card className="shadow"><CardHeader><CardTitle>Resolved Today</CardTitle></CardHeader><CardContent><p className="text-4xl font-bold text-green-600">{resolvedCount}</p></CardContent></Card>
+      </div>
 
-          <Card className="shadow-lg rounded-lg">
-            <CardHeader className="bg-yellow-500 text-white rounded-t-lg">
-              <CardTitle className="text-xl font-semibold flex items-center">
-                Responded <CheckCircle className="ml-2" size={20} />
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-6 text-center">
-              <p className="text-5xl font-bold text-yellow-600">{respondedCount}</p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-lg rounded-lg">
-            <CardHeader className="bg-green-500 text-white rounded-t-lg">
-              <CardTitle className="text-xl font-semibold flex items-center">
-                Resolved <CheckCircle className="ml-2" size={20} />
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-6 text-center">
-              <p className="text-5xl font-bold text-green-600">{resolvedCount}</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right Column - Location Map and Respond/Resolve Incident */}
-        <div className="md:col-span-1 space-y-8">
-          <Card className="shadow-lg rounded-lg">
-            <CardHeader className="bg-purple-600 text-white rounded-t-lg">
-              <CardTitle className="text-xl font-semibold">Location Map</CardTitle>
-            </CardHeader>
-            <CardContent className="p-6">
-              {selectedReport ? (
-                <div className="space-y-4">
-                  <div className="text-center">
-                    <MapPin size={48} className="mx-auto text-purple-600 mb-2" />
-                    <h3 className="text-lg font-semibold text-gray-800">{selectedReport.firstName} {selectedReport.lastName}</h3>
-                    <p className="text-gray-600 text-sm">{selectedReport.location_address}</p>
-                  </div>
-                  <div className="text-center">
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${selectedReport.latitude},${selectedReport.longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline text-sm"
-                    >
-                      Open in Google Maps
-                    </a>
-                  </div>
-                  <div className="border-t pt-4 mt-4">
-                    <h4 className="font-semibold text-gray-700">Contact Information</h4>
-                    <p className="text-gray-600 text-sm">{selectedReport.mobileNumber || "N/A"}</p>
-                  </div>
-
-                  {/* Admin Notes Field */}
-                  <div className="border-t pt-4 mt-4">
-                    <h4 className="font-semibold text-gray-700 mb-2">Admin Notes:</h4>
-                    <textarea
-                      value={adminNotes}
-                      onChange={(e) => setAdminNotes(e.target.value)}
-                      placeholder="Add notes about the incident..."
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 resize-y"
-                      rows={3}
-                    ></textarea>
-                  </div>
-
-                  {/* Respond to Incident Section (Visible if status is 'pending') */}
-                  {selectedReport.status === 'pending' && (
-                    <div className="border-t pt-4 mt-4">
-                      <h4 className="font-semibold text-gray-700 mb-3">Respond to Incident</h4>
-                      <div className="flex flex-col space-y-3">
-                        <label htmlFor="response-team" className="text-sm font-medium text-gray-700">Select Team:</label>
-                        <select
-                          id="response-team"
-                          value={selectedTeam}
-                          onChange={(e) => setSelectedTeam(e.target.value)}
-                          className="p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="TEAM 1">TEAM 1</option>
-                          <option value="TEAM 2">TEAM 2</option>
-                          <option value="TEAM 3">TEAM 3</option>
-                        </select>
-                        <Button
-                          onClick={handleRespondToIncident}
-                          disabled={isLoadingAction}
-                          className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md flex items-center justify-center"
-                        >
-                          <Send size={20} className="mr-2" />
-                          {isLoadingAction ? "Responding..." : "Respond to Incident"}
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Resolve Incident Section (Visible if status is 'in-progress') */}
-                  {selectedReport.status === 'in-progress' && (
-                    <div className="border-t pt-4 mt-4">
-                      <h4 className="font-semibold text-gray-700 mb-3">Resolve Incident</h4>
-                      <Button
-                        onClick={handleResolveIncident}
-                        disabled={isLoadingAction}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md flex items-center justify-center"
+      <div className="lg:col-span-2">
+        <Card className="shadow-lg h-full">
+          <CardHeader className="bg-gray-800 text-white"><CardTitle className="flex items-center"><MapPin className="mr-3" />Incident Details & Actions</CardTitle></CardHeader>
+          <CardContent className="p-6">
+            {selectedReport ? (
+              <div>
+                <h3 className="text-2xl font-bold mb-2">{selectedReport.emergency_type}</h3>
+                <p className="text-gray-600 mb-4">Reported by: <span className="font-medium">{selectedReport.firstName} {selectedReport.lastName}</span></p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                  <div>
+                    <p className="text-sm text-gray-500">Location</p>
+                    <div className="flex items-center">
+                      <p className="font-semibold">{selectedReport.location_address}</p>
+                      <Button 
+                        variant="link" 
+                        size="icon" 
+                        className="ml-2 h-5 w-5"
+                        onClick={() => window.open(`https://www.google.com/maps?q=${selectedReport.latitude},${selectedReport.longitude}`, '_blank')}
                       >
-                        <CheckSquare size={20} className="mr-2" />
-                        {isLoadingAction ? "Resolving..." : "Mark as Resolved"}
+                        <Map className="h-5 w-5 text-blue-600" />
                       </Button>
                     </div>
-                  )}
-
+                  </div>
+                  <div><p className="text-sm text-gray-500">Contact</p><p className="font-semibold">{selectedReport.mobileNumber}</p></div>
+                  <div><p className="text-sm text-gray-500">Reported At</p><p className="font-semibold">{new Date(selectedReport.created_at).toLocaleString()}</p></div>
+                  <div><p className="text-sm text-gray-500">Status</p><p className={`font-bold ${selectedReport.status === 'pending' ? 'text-red-600' : selectedReport.status === 'in-progress' ? 'text-yellow-600' : 'text-green-600'}`}>{selectedReport.status}</p></div>
                 </div>
-              ) : (
-                <p className="text-gray-600 text-center">Select a report from the table to view its location.</p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Bottom Section - All Reports History */}
-        <div className="md:col-span-3">
-          <Card className="shadow-lg rounded-lg">
-            <CardHeader className="bg-orange-600 text-white rounded-t-lg">
-              <CardTitle className="text-xl font-semibold">All Report History</CardTitle>
-            </CardHeader>
-            <CardContent className="p-6">
-              {allReports.length === 0 ? (
-                <p className="text-gray-600">No reports have been submitted yet.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full bg-white rounded-lg overflow-hidden">
-                    <thead className="bg-gray-200">
-                      <tr>
-                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Report Type</th>
-                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Status</th>
-                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Reported By</th>
-                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Contact</th>
-                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Reported At</th>
-                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Responded At</th>
-                        <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700">Resolved At</th> {/* Added Resolved At */}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {allReports.map((report) => (
-                        <tr
-                          key={report.id}
-                          className="border-b border-gray-200 last:border-b-0 hover:bg-gray-50 cursor-pointer"
-                          onClick={() => handleReportClick(report)}
-                        >
-                          <td className="py-3 px-4 text-sm text-gray-800">{report.emergency_type}</td>
-                          <td className="py-3 px-4 text-sm text-gray-800">
-                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                              report.status === 'resolved' ? 'bg-green-100 text-green-800' :
-                              report.status === 'in-progress' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-red-100 text-red-800' // Pending status
-                            }`}>
-                              {report.status === 'in-progress' ? `OTW (${report.admin_response})` : report.status} {/* Show OTW with team */}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-sm text-gray-800">{report.firstName} {report.lastName}</td>
-                          <td className="py-3 px-4 text-sm text-gray-800">{report.mobileNumber || "N/A"}</td>
-                          <td className="py-3 px-4 text-sm text-gray-800">{new Date(report.reportedAt).toLocaleString()}</td>
-                          <td className="py-3 px-4 text-sm text-gray-800">
-                            {report.responded_at ? new Date(report.responded_at).toLocaleString() : "N/A"}
-                          </td>
-                          <td className="py-3 px-4 text-sm text-gray-800">
-                            {report.resolved_at ? new Date(report.resolved_at).toLocaleString() : "N/A"} {/* Display resolved_at */}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                {selectedReport.status === 'pending' && (
+                  <div className="p-4 border rounded-lg bg-gray-50 mb-6">
+                    <h4 className="font-semibold mb-3">Respond to Incident</h4>
+                    <div className="space-y-4">
+                      <div>
+                        <label htmlFor="team-select" className="block text-sm font-medium mb-1">Select response team:</label>
+                        <select id="team-select" value={selectedTeam} onChange={(e) => setSelectedTeam(e.target.value)} className="w-full p-2 border rounded-md shadow-sm"><option>TEAM 1</option><option>TEAM 2</option><option>TEAM 3</option></select>
+                      </div>
+                      <Button onClick={handleRespondToIncident} disabled={isLoadingAction} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><Send size={18} className="mr-2" />{isLoadingAction ? 'Responding...' : 'Send Response'}</Button>
+                    </div>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <label htmlFor="admin-notes" className="font-semibold">Admin Notes:</label>
+                  <textarea id="admin-notes" value={adminNotes} onChange={(e) => setAdminNotes(e.target.value)} placeholder="Add notes..." className="w-full p-2 border rounded-md" rows={3}></textarea>
+                  <Button onClick={handleSaveNotes} disabled={isLoadingAction} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">{isLoadingAction ? 'Saving...' : 'Save Notes'}</Button>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-full"><p className="text-gray-500">Select a report to view details.</p></div>
+            )}
+          </CardContent>
+        </Card>
       </div>
-    </div>
-  );
+
+      <div className="lg:col-span-1">
+        <Card className="shadow-lg h-full">
+          <CardHeader className="bg-gray-800 text-white"><CardTitle>All Reports</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-y-auto h-[600px]">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-100 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase">Details</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {allReports.map((report) => (
+                    <tr key={report.id} onClick={() => handleReportClick(report)} className={`hover:bg-gray-100 cursor-pointer ${selectedReport?.id === report.id ? 'bg-blue-100' : ''}`}>
+                      <td className="px-4 py-3 whitespace-nowrap"><div className="text-sm font-medium">{report.firstName} {report.lastName}</div><div className="text-xs text-gray-500">{report.emergency_type}</div></td>
+                      <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${report.status === 'pending' ? 'bg-red-100 text-red-800' : report.status === 'in-progress' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>{report.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </main>
+  </div>
+);
 }
