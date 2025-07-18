@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
-import { Bell, LogOut, CheckCircle, MapPin, Send, CheckSquare, Map } from "lucide-react" // Added Map and CheckSquare icons
+import { Bell, LogOut, CheckCircle, MapPin, Send, Map } from "lucide-react" // Added Map icon
 
 // Define interfaces for data structures
 interface Notification {
@@ -62,7 +62,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [isLoadingAction, setIsLoadingAction] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState<string>('TEAM 1');
-  const [adminNotes, setAdminNotes] = useState<string>(''); // New state for admin notes
+  const [barangay, setBarangay] = useState<string>(''); // New state for barangay
 
   // Set admin user data from props
   useEffect(() => {
@@ -139,40 +139,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     return fetchedNotifications;
   }, []);
 
-  // Supabase Real-time Notifications Listener for Admins
-  useEffect(() => {
-    fetchAdminNotifications().then(data => {
-      setNotifications(data);
-      setUnreadCount(data.filter((n) => !n.is_read).length);
-    }).catch(err => {
-      console.error("Error setting up initial notifications:", err);
-      setError("Failed to load notifications.");
-    });
 
-    const notificationsChannel = supabase
-      .channel('admin_notifications_channel')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'admin_notifications',
-          filter: 'type=eq.new_report'
-        },
-        (payload) => {
-          console.log('New admin notification received, refetching:', payload);
-          fetchAdminNotifications().then(data => {
-            setNotifications(data);
-            setUnreadCount(data.filter(n => !n.is_read).length);
-          });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(notificationsChannel);
-    };
-  }, [fetchAdminNotifications]);
 
   // Function to fetch all reports (used for initial load and real-time updates)
   const fetchAllReports = useCallback(async () => {
@@ -189,93 +156,74 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     return data || [];
   }, []);
 
-  // Supabase Real-time Reports Listener for Admins
+  // Consolidated Real-time Listener for Reports and Notifications
   useEffect(() => {
-    fetchAllReports().then(data => {
-      const fetchedReports: Report[] = data.map((item: any) => ({
-        id: item.id,
-        user_id: item.user_id,
-        firstName: item.firstName,
-        middleName: item.middleName,
-        lastName: item.lastName,
-        mobileNumber: item.mobileNumber,
-        latitude: item.latitude,
-        longitude: item.longitude,
-        location_address: item.location_address,
-        emergency_type: item.emergency_type,
-        status: item.status,
-        admin_response: item.admin_response,
-        created_at: item.created_at,
-        responded_at: item.responded_at,
-        resolved_at: item.resolved_at,
-        reportedAt: item.reportedAt,
-        reporterMobile: item.reporterMobile,
-      }));
-      setAllReports(fetchedReports);
+    // Define a single function to fetch all data and update state
+    const fetchAllData = async () => {
+      try {
+        const [reportsData, notificationsData] = await Promise.all([
+          fetchAllReports(),
+          fetchAdminNotifications(),
+        ]);
 
-      setActiveEmergenciesCount(fetchedReports.filter(r => r.status === 'pending').length);
-      setRespondedCount(fetchedReports.filter(r => r.status === 'in-progress').length);
-      setResolvedCount(fetchedReports.filter(r => r.status === 'resolved').length);
+        // Process and set reports
+        const fetchedReports: Report[] = reportsData.map((item: any) => ({ ...item }));
+        setAllReports(fetchedReports);
+        setActiveEmergenciesCount(fetchedReports.filter(r => r.status.trim().toLowerCase() === 'pending' || r.status.trim().toLowerCase() === 'active').length);
+        setRespondedCount(fetchedReports.filter(r => r.status.trim().toLowerCase() === 'responded').length);
+        setResolvedCount(fetchedReports.filter(r => r.status.trim().toLowerCase() === 'resolved').length);
 
-      if (fetchedReports.length > 0 && !selectedReport) {
-        setSelectedReport(fetchedReports[0]);
+        // Process and set notifications
+        setNotifications(notificationsData);
+        setUnreadCount(notificationsData.filter(n => !n.is_read).length);
+
+      } catch (err: any) {
+        console.error("Error fetching data:", err);
+        setError(`Failed to load data: ${err.message}`);
       }
-    }).catch(err => {
-      console.error("Error setting up initial reports:", err);
-      setError("Failed to load reports.");
-    });
+    };
 
+    // Initial data fetch
+    fetchAllData();
+
+    // Set up a single real-time channel for all changes
     const reportsChannel = supabase
-      .channel('all_reports_channel')
+      .channel('custom-all-reports-realtime-channel')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'emergency_reports',
-        },
+        { event: '*', schema: 'public', table: 'emergency_reports' },
         (payload) => {
-          console.log("Report change received:", payload);
-          fetchAllReports().then(data => {
-            const fetchedReports: Report[] = data.map((item: any) => ({
-              id: item.id,
-              user_id: item.user_id,
-              firstName: item.firstName,
-              middleName: item.middleName,
-              lastName: item.lastName,
-              mobileNumber: item.mobileNumber,
-              latitude: item.latitude,
-              longitude: item.longitude,
-              location_address: item.location_address,
-              emergency_type: item.emergency_type,
-              status: item.status,
-              admin_response: item.admin_response,
-              created_at: item.created_at,
-              responded_at: item.responded_at,
-              resolved_at: item.resolved_at,
-              reportedAt: item.reportedAt,
-              reporterMobile: item.reporterMobile,
-            }));
-            setAllReports(fetchedReports);
-
-            setActiveEmergenciesCount(fetchedReports.filter(r => r.status === 'pending').length);
-            setRespondedCount(fetchedReports.filter(r => r.status === 'in-progress').length);
-            setResolvedCount(fetchedReports.filter(r => r.status === 'resolved').length);
-
-            if (selectedReport && payload.eventType === 'UPDATE' && payload.new.id === selectedReport.id) {
-              setSelectedReport(payload.new as Report);
-            } else if (payload.eventType === 'INSERT' && !selectedReport) {
-              setSelectedReport(payload.new as Report);
-            }
-          });
+          console.log('Change received on emergency_reports, refetching all data:', payload);
+          fetchAllData(); // Refetch everything to ensure UI is in sync
         }
       )
       .subscribe();
 
+    // Cleanup subscription on component unmount
     return () => {
       supabase.removeChannel(reportsChannel);
     };
-  }, [fetchAllReports, selectedReport]);
+  }, [fetchAllReports, fetchAdminNotifications]); // Dependencies are the stable fetch functions
+
+  // Effect to get barangay from coordinates
+  useEffect(() => {
+    if (selectedReport?.latitude && selectedReport?.longitude) {
+      setBarangay('Fetching...');
+      fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${selectedReport.latitude}&lon=${selectedReport.longitude}`)
+        .then(response => response.json())
+        .then(data => {
+          console.log('Reverse Geocoding API Response:', data); // Log for debugging
+          const address = data.address;
+          const barangayName = address?.village || address?.suburb || address?.neighbourhood || address?.quarter || address?.city_district || 'N/A';
+          setBarangay(barangayName);
+        })
+        .catch(error => {
+          console.error('Error fetching barangay:', error);
+          setBarangay('Unavailable');
+        });
+    }
+  }, [selectedReport]);
+
 
 const markAllNotificationsAsRead = useCallback(async () => {
   if (unreadCount === 0) return;
@@ -297,7 +245,6 @@ const markAllNotificationsAsRead = useCallback(async () => {
 
 const handleReportClick = (report: Report) => {
   setSelectedReport(report);
-  setAdminNotes(report.admin_response || '');
 };
 
 const handleNotificationClick = useCallback(async (notification: Notification) => {
@@ -324,7 +271,8 @@ const handleRespondToIncident = useCallback(async () => {
   setIsLoadingAction(true);
   setError(null);
   try {
-    const { data: updatedReport, error: updateError } = await supabase.from('emergency_reports').update({ status: 'in-progress', admin_response: selectedTeam, responded_at: new Date().toISOString() }).eq('id', selectedReport.id).select().single();
+    const responseMessage = `Team ${selectedTeam} is responding.`;
+    const { data: updatedReport, error: updateError } = await supabase.from('emergency_reports').update({ status: 'responded', admin_response: responseMessage, responded_at: new Date().toISOString() }).eq('id', selectedReport.id).select().single();
     if (updateError) throw updateError;
 
     const { error: notificationError } = await supabase.from('user_notifications').insert({ user_id: selectedReport.user_id, emergency_report_id: selectedReport.id, message: `Your emergency report for ${selectedReport.emergency_type} is OTW. Team ${selectedTeam} is responding.` });
@@ -339,19 +287,34 @@ const handleRespondToIncident = useCallback(async () => {
   }
 }, [selectedReport, selectedTeam, fetchAllReports]);
 
-const handleSaveNotes = useCallback(async () => {
+const handleRescueDone = useCallback(async () => {
   if (!selectedReport) return;
   setIsLoadingAction(true);
+  setError(null);
   try {
-    const { error } = await supabase.from('emergency_reports').update({ admin_response: adminNotes }).eq('id', selectedReport.id);
-    if (error) throw error;
-    setAllReports(prev => prev.map(r => r.id === selectedReport.id ? { ...r, admin_response: adminNotes } : r));
+    const { data: updatedReport, error: updateError } = await supabase
+      .from('emergency_reports')
+      .update({ status: 'resolved', resolved_at: new Date().toISOString() })
+      .eq('id', selectedReport.id)
+      .select()
+      .single();
+    if (updateError) throw updateError;
+
+    const { error: notificationError } = await supabase.from('user_notifications').insert({
+      user_id: selectedReport.user_id,
+      emergency_report_id: selectedReport.id,
+      message: 'The Rescue Operation is successful. Thank you for reporting an incident! Take care always!',
+    });
+    if (notificationError) console.error('Error sending user notification:', notificationError);
+
+    // The real-time listener will handle the UI update
+    setSelectedReport(updatedReport as Report);
   } catch (err: any) {
-    setError(`Failed to save notes: ${err.message}.`);
+    setError(`Failed to mark as resolved: ${err.message}. Check RLS policies.`);
   } finally {
     setIsLoadingAction(false);
   }
-}, [selectedReport, adminNotes]);
+}, [selectedReport]);
 
 if (error) {
   return <div className="flex justify-center items-center h-screen text-red-500">Error: {error}</div>;
@@ -420,26 +383,25 @@ return (
                       </Button>
                     </div>
                   </div>
+                  <div><p className="text-sm text-gray-500">Barangay</p><p className="font-semibold">{barangay}</p></div>
                   <div><p className="text-sm text-gray-500">Contact</p><p className="font-semibold">{selectedReport.mobileNumber}</p></div>
                   <div><p className="text-sm text-gray-500">Reported At</p><p className="font-semibold">{new Date(selectedReport.created_at).toLocaleString()}</p></div>
-                  <div><p className="text-sm text-gray-500">Status</p><p className={`font-bold ${selectedReport.status === 'pending' ? 'text-red-600' : selectedReport.status === 'in-progress' ? 'text-yellow-600' : 'text-green-600'}`}>{selectedReport.status}</p></div>
+                  <div><p className="text-sm text-gray-500">Status</p><p className={`font-bold ${selectedReport.status.trim().toLowerCase() === 'pending' ? 'text-red-600' : selectedReport.status.trim().toLowerCase() === 'in-progress' ? 'text-yellow-600' : 'text-green-600'}`}>{selectedReport.status}</p></div>
                 </div>
-                {selectedReport.status === 'pending' && (
-                  <div className="p-4 border rounded-lg bg-gray-50 mb-6">
-                    <h4 className="font-semibold mb-3">Respond to Incident</h4>
+                <div className="p-4 border rounded-lg bg-gray-50 mb-6">
+                  <h4 className="font-semibold mb-3">Incident Actions</h4>
+                  {(selectedReport.status.trim().toLowerCase() === 'pending' || selectedReport.status.trim().toLowerCase() === 'active') && (
                     <div className="space-y-4">
                       <div>
                         <label htmlFor="team-select" className="block text-sm font-medium mb-1">Select response team:</label>
                         <select id="team-select" value={selectedTeam} onChange={(e) => setSelectedTeam(e.target.value)} className="w-full p-2 border rounded-md shadow-sm"><option>TEAM 1</option><option>TEAM 2</option><option>TEAM 3</option></select>
                       </div>
-                      <Button onClick={handleRespondToIncident} disabled={isLoadingAction} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><Send size={18} className="mr-2" />{isLoadingAction ? 'Responding...' : 'Send Response'}</Button>
+                      <Button onClick={handleRespondToIncident} disabled={isLoadingAction} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><Send size={18} className="mr-2" />{isLoadingAction ? 'Responding...' : 'Respond'}</Button>
                     </div>
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <label htmlFor="admin-notes" className="font-semibold">Admin Notes:</label>
-                  <textarea id="admin-notes" value={adminNotes} onChange={(e) => setAdminNotes(e.target.value)} placeholder="Add notes..." className="w-full p-2 border rounded-md" rows={3}></textarea>
-                  <Button onClick={handleSaveNotes} disabled={isLoadingAction} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">{isLoadingAction ? 'Saving...' : 'Save Notes'}</Button>
+                  )}
+                  {selectedReport.status.trim().toLowerCase() === 'responded' && (
+                     <Button onClick={handleRescueDone} disabled={isLoadingAction} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><CheckCircle size={18} className="mr-2" />{isLoadingAction ? 'Resolving...' : 'Rescue Done'}</Button>
+                  )}
                 </div>
               </div>
             ) : (
@@ -453,19 +415,13 @@ return (
         <Card className="shadow-lg h-full">
           <CardHeader className="bg-gray-800 text-white"><CardTitle>All Reports</CardTitle></CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-y-auto h-[600px]">
+            <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-100 sticky top-0">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase">Details</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium uppercase">Status</th>
-                  </tr>
-                </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {allReports.map((report) => (
                     <tr key={report.id} onClick={() => handleReportClick(report)} className={`hover:bg-gray-100 cursor-pointer ${selectedReport?.id === report.id ? 'bg-blue-100' : ''}`}>
                       <td className="px-4 py-3 whitespace-nowrap"><div className="text-sm font-medium">{report.firstName} {report.lastName}</div><div className="text-xs text-gray-500">{report.emergency_type}</div></td>
-                      <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${report.status === 'pending' ? 'bg-red-100 text-red-800' : report.status === 'in-progress' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>{report.status}</span></td>
+                      <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${(report.status.trim().toLowerCase() === 'pending' || report.status.trim().toLowerCase() === 'active') ? 'bg-red-100 text-red-800' : report.status.trim().toLowerCase() === 'responded' ? 'bg-yellow-100 text-yellow-800' : report.status.trim().toLowerCase() === 'resolved' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{report.status}</span></td>
                     </tr>
                   ))}
                 </tbody>
