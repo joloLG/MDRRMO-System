@@ -6,11 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
 import { Bell, LogOut, CheckCircle, MapPin, Send, Map, Menu, FileText, Calendar as CalendarIcon } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog" // Added Dialog imports
-import { Calendar } from "@/components/ui/calendar" // Added Calendar import
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover" // Added Popover imports
-import { format, isSameDay } from "date-fns" // Added date-fns functions
-import { cn } from "@/lib/utils" // Added cn utility for conditional classnames
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { format, isSameDay } from "date-fns"
+import { cn } from "@/lib/utils"
 import React from "react"
 
 // Define Notification interface
@@ -65,6 +65,12 @@ interface InternalReport {
   created_at: string; // TIMESTAMPTZ
 }
 
+// Define BaseEntry for reference tables (used for ER Teams)
+interface BaseEntry {
+  id: number;
+  name: string;
+}
+
 // Props for the AdminDashboard component
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -76,13 +82,14 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [allReports, setAllReports] = useState<Report[]>([]);
-  const [internalReports, setInternalReports] = useState<InternalReport[]>([]); // New state for internal reports
+  const [internalReports, setInternalReports] = useState<InternalReport[]>([]);
+  const [erTeams, setErTeams] = useState<BaseEntry[]>([]); // New state for ER Teams
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [isLoadingAction, setIsLoadingAction] = useState(false);
-  const [selectedTeam, setSelectedTeam] = useState<string>('TEAM 1');
+  const [selectedTeam, setSelectedTeam] = useState<string>(''); // Initialize with empty string
   const [barangay, setBarangay] = useState<string>('');
 
   // New states for filtering and modals
@@ -113,7 +120,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     }
   }, [userData]);
 
-  // Function to fetch notifications (used for initial load and real-time updates)
+  // Function to fetch notifications
   const fetchAdminNotifications = useCallback(async () => {
     const { data, error } = await supabase
       .from('admin_notifications')
@@ -165,7 +172,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     return fetchedNotifications;
   }, []);
 
-  // Function to fetch all reports (used for initial load and real-time updates)
+  // Function to fetch all emergency reports
   const fetchAllReports = useCallback(async () => {
     const { data, error } = await supabase
       .from('emergency_reports')
@@ -195,18 +202,39 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     return data || [];
   }, []);
 
-  // Consolidated Real-time Listener for Reports and Notifications
+  // Function to fetch ER Teams
+  const fetchErTeams = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('er_teams')
+      .select('id, name')
+      .order('name', { ascending: true });
+    if (error) {
+      console.error("Error fetching ER Teams:", error);
+      setError(`Failed to load ER Teams: ${error.message}`);
+      return [];
+    }
+    return data as BaseEntry[] || [];
+  }, []);
+
+  // Consolidated Real-time Listener for Reports, Notifications, and ER Teams
   useEffect(() => {
     const fetchAllDashboardData = async () => {
       try {
-        const [reportsData, notificationsData, internalReportsData] = await Promise.all([
+        const [reportsData, notificationsData, internalReportsData, erTeamsData] = await Promise.all([
           fetchAllReports(),
           fetchAdminNotifications(),
-          fetchInternalReports(), // Fetch internal reports
+          fetchInternalReports(),
+          fetchErTeams(), // Fetch ER Teams
         ]);
 
         setAllReports(reportsData.map((item: any) => ({ ...item })));
-        setInternalReports(internalReportsData.map((item: any) => ({ ...item }))); // Set internal reports
+        setInternalReports(internalReportsData.map((item: any) => ({ ...item })));
+        setErTeams(erTeamsData); // Set ER Teams
+
+        // Set initial selectedTeam if teams are available
+        if (erTeamsData.length > 0) {
+          setSelectedTeam(erTeamsData[0].name); // Select the first team by default
+        }
 
         setNotifications(notificationsData);
         setUnreadCount(notificationsData.filter(n => !n.is_read).length);
@@ -219,7 +247,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
     fetchAllDashboardData();
 
-    // Set up real-time channel for emergency_reports
+    // Set up real-time channels for all relevant tables
     const reportsChannel = supabase
       .channel('emergency-reports-channel')
       .on(
@@ -232,7 +260,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       )
       .subscribe();
 
-    // Set up real-time channel for admin_notifications
     const adminNotificationsChannel = supabase
       .channel('admin-notifications-channel')
       .on(
@@ -245,7 +272,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       )
       .subscribe();
 
-    // Set up real-time channel for internal_reports
     const internalReportsChannel = supabase
       .channel('dashboard-internal-reports-channel')
       .on(
@@ -258,13 +284,26 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       )
       .subscribe();
 
+    const erTeamsChannel = supabase
+      .channel('dashboard-er-teams-channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'er_teams' },
+        (payload) => {
+          console.log('Change received on er_teams, refetching ER teams:', payload);
+          fetchErTeams().then(setErTeams);
+        }
+      )
+      .subscribe();
+
     // Cleanup subscriptions on component unmount
     return () => {
       supabase.removeChannel(reportsChannel);
       supabase.removeChannel(adminNotificationsChannel);
       supabase.removeChannel(internalReportsChannel);
+      supabase.removeChannel(erTeamsChannel);
     };
-  }, [fetchAllReports, fetchAdminNotifications, fetchInternalReports]);
+  }, [fetchAllReports, fetchAdminNotifications, fetchInternalReports, fetchErTeams]); // Added fetchErTeams to dependencies
 
   // Effect to get barangay from coordinates
   useEffect(() => {
@@ -544,7 +583,21 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                           <div className="space-y-4">
                             <div>
                               <label htmlFor="team-select" className="block text-sm font-medium mb-1">Select response team:</label>
-                              <select id="team-select" value={selectedTeam} onChange={(e) => setSelectedTeam(e.target.value)} className="w-full p-2 border rounded-md shadow-sm"><option>TEAM 1</option><option>TEAM 2</option><option>TEAM 3</option></select>
+                              {/* Modified Select component */}
+                              <select
+                                id="team-select"
+                                value={selectedTeam}
+                                onChange={(e) => setSelectedTeam(e.target.value)}
+                                className="w-full p-2 border border-gray-300 rounded-md shadow-sm"
+                              >
+                                {erTeams.length > 0 ? (
+                                  erTeams.map(team => (
+                                    <option key={team.id} value={team.name}>{team.name}</option>
+                                  ))
+                                ) : (
+                                  <option value="">No teams available</option>
+                                )}
+                              </select>
                             </div>
                             <Button onClick={handleRespondToIncident} disabled={isLoadingAction} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><Send size={18} className="mr-2" />{isLoadingAction ? 'Responding...' : 'Respond'}</Button>
                           </div>
@@ -580,7 +633,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
               <Card className="shadow-lg h-full">
                 <CardHeader className="bg-gray-800 text-white"><CardTitle>All Reports</CardTitle></CardHeader>
                 <CardContent className="p-0">
-                  <div className="overflow-x-auto max-h-[400px]"> {/* Fixed height and scrollbar */}
+                  <div className="overflow-y-auto max-h-[400px] custom-scrollbar"> {/* Added custom-scrollbar class */}
                     <table className="min-w-full divide-y divide-gray-200">
                       <tbody className="bg-white divide-y divide-gray-200">
                         {allReports.map((report) => (
