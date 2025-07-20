@@ -279,6 +279,9 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         { event: '*', schema: 'public', table: 'internal_reports' },
         (payload) => {
           console.log('Change received on internal_reports, refetching internal reports:', payload);
+          // Debugging: Log selectedReport.id and relevant internal reports
+          console.log('Selected Report ID:', selectedReport?.id);
+          console.log('Internal Reports (original_report_id):', internalReports.map(ir => ir.original_report_id));
           fetchInternalReports().then(setInternalReports);
         }
       )
@@ -303,7 +306,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       supabase.removeChannel(internalReportsChannel);
       supabase.removeChannel(erTeamsChannel);
     };
-  }, [fetchAllReports, fetchAdminNotifications, fetchInternalReports, fetchErTeams]); // Added fetchErTeams to dependencies
+  }, [fetchAllReports, fetchAdminNotifications, fetchInternalReports, fetchErTeams, selectedReport, internalReports]); // Added selectedReport and internalReports to dependencies for logging
 
   // Effect to get barangay from coordinates
   useEffect(() => {
@@ -420,7 +423,10 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   // Check if an internal report already exists for the selected emergency report
   const hasInternalReportBeenMade = React.useMemo(() => {
     if (!selectedReport) return false;
-    return internalReports.some(ir => ir.original_report_id === selectedReport.id);
+    const isMade = internalReports.some(ir => ir.original_report_id === selectedReport.id);
+    // Debugging: Log the result of the check
+    console.log(`hasInternalReportBeenMade for ${selectedReport.id}: ${isMade}`);
+    return isMade;
   }, [selectedReport, internalReports]);
 
   // This handleMakeReport is for the context-specific button (resolved incidents)

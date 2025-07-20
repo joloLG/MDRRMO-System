@@ -305,9 +305,9 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
   // --- Render ---
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 gap-6"> {/* Removed lg:col-span-2 xl:col-span-3 from parent grid */}
       {/* Pie Chart: Incidents per Barangay */}
-      <Card id="barangay-incident-chart" className="shadow-lg lg:col-span-1 xl:col-span-1">
+      <Card id="barangay-incident-chart" className="shadow-lg col-span-full"> {/* Changed to col-span-full */}
         <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4 flex flex-row items-center justify-between">
           <CardTitle className="text-xl font-bold">Incidents by Barangay</CardTitle>
           <Button
@@ -344,8 +344,10 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
                       !pieChartDate && "text-muted-foreground"
                     )}
                   >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {pieChartDate ? format(pieChartDate, "PPP") : <span>Select Day</span>}
+                    <span> {/* Added span to wrap children */}
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {pieChartDate ? format(pieChartDate, "PPP") : <span>Select Day</span>}
+                    </span>
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -370,8 +372,10 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
                         !pieStartDateRange && "text-muted-foreground"
                       )}
                     >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {pieStartDateRange ? format(pieStartDateRange, "PPP") : <span>Start Date</span>}
+                      <span> {/* Added span to wrap children */}
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {pieStartDateRange ? format(pieStartDateRange, "PPP") : <span>Start Date</span>}
+                      </span>
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
@@ -392,8 +396,10 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
                         !pieEndDateRange && "text-muted-foreground"
                       )}
                     >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {pieEndDateRange ? format(pieEndDateRange, "PPP") : <span>End Date</span>}
+                      <span> {/* Added span to wrap children */}
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {pieEndDateRange ? format(pieEndDateRange, "PPP") : <span>End Date</span>}
+                      </span>
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
@@ -451,14 +457,15 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
             </div>
           </div>
           {pieChartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
+            // Re-typed ResponsiveContainer and its child PieChart
+            <ResponsiveContainer width="100%" height={350}>
               <PieChart>
                 <Pie
                   data={pieChartData}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  outerRadius={100}
+                  outerRadius={80}
                   fill="#8884d8"
                   dataKey="value"
                   nameKey="name"
@@ -469,11 +476,11 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
                   ))}
                 </Pie>
                 <Tooltip content={<CustomPieTooltip />} />
-                <Legend />
+                <Legend layout="vertical" align="right" verticalAlign="middle" wrapperStyle={{ paddingLeft: '20px' }} />
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <div className="text-center text-gray-500 h-[300px] flex items-center justify-center">
+            <div className="text-center text-gray-500 h-[350px] flex items-center justify-center">
               No incident data for the selected filters.
             </div>
           )}
@@ -481,7 +488,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
       </Card>
 
       {/* Bar Chart: Incident Types (Monthly/Yearly) */}
-      <Card id="incident-type-chart" className="shadow-lg lg:col-span-1 xl:col-span-1">
+      <Card id="incident-type-chart" className="shadow-lg col-span-full"> {/* Changed to col-span-full */}
         <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4 flex flex-row items-center justify-between">
           <CardTitle className="text-xl font-bold">Incident Types by Period</CardTitle>
           <Button
@@ -551,7 +558,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
       </Card>
 
       {/* Bar Chart: All Reports, Active, Resolved (Daily/Weekly/Monthly/Yearly) */}
-      <Card id="report-status-chart" className="shadow-lg lg:col-span-2 xl:col-span-1">
+      <Card id="report-status-chart" className="shadow-lg col-span-full"> {/* Changed to col-span-full */}
         <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4 flex flex-row items-center justify-between">
           <CardTitle className="text-xl font-bold">Emergency Report Status Overview</CardTitle>
           <Button
@@ -588,8 +595,10 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
                       !barStatusDate && "text-muted-foreground"
                     )}
                   >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {barStatusDate ? format(barStatusDate, "PPP") : <span>Select Day</span>}
+                    <span> {/* Added span to wrap children */}
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {barStatusDate ? format(barStatusDate, "PPP") : <span>Select Day</span>}
+                    </span>
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -614,8 +623,10 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
                         !barStatusStartDateRange && "text-muted-foreground"
                       )}
                     >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {barStatusStartDateRange ? format(barStatusStartDateRange, "PPP") : <span>Start Date</span>}
+                      <span> {/* Added span to wrap children */}
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {barStatusStartDateRange ? format(barStatusStartDateRange, "PPP") : <span>Start Date</span>}
+                      </span>
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
@@ -636,8 +647,10 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
                         !barStatusEndDateRange && "text-muted-foreground"
                       )}
                     >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {barStatusEndDateRange ? format(barStatusEndDateRange, "PPP") : <span>End Date</span>}
+                      <span> {/* Added span to wrap children */}
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {barStatusEndDateRange ? format(barStatusEndDateRange, "PPP") : <span>End Date</span>}
+                      </span>
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
