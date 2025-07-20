@@ -4,12 +4,16 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
-import { Bell, LogOut, CheckCircle, MapPin, Send, Map, Menu, FileText } from "lucide-react"
+import { Bell, LogOut, CheckCircle, MapPin, Send, Map, Menu, FileText, Calendar as CalendarIcon } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog" // Added Dialog imports
+import { Calendar } from "@/components/ui/calendar" // Added Calendar import
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover" // Added Popover imports
+import { format, isSameDay } from "date-fns" // Added date-fns functions
+import { cn } from "@/lib/utils" // Added cn utility for conditional classnames
+import React from "react"
 
-// Removed imports for DataManagement, ChartsDashboard, MakeReportForm as they are now separate pages
-
-// Define interfaces for data structures
+// Define Notification interface
 interface Notification {
   id: string;
   emergency_report_id: string;
@@ -25,6 +29,7 @@ interface Notification {
   reportLocationAddress?: string;
 }
 
+// Define Report interface
 interface Report {
   id: string;
   user_id: string;
@@ -45,6 +50,21 @@ interface Report {
   reporterMobile?: string;
 }
 
+// Define InternalReport interface (matching report-history-table.tsx)
+interface InternalReport {
+  id: number;
+  original_report_id: string | null;
+  incident_type_id: number;
+  incident_date: string; // TIMESTAMPTZ
+  time_responded: string | null; // TIMESTAMPTZ
+  barangay_id: number;
+  er_team_id: number;
+  persons_involved: number | null;
+  number_of_responders: number | null;
+  prepared_by: string;
+  created_at: string; // TIMESTAMPTZ
+}
+
 // Props for the AdminDashboard component
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -56,17 +76,19 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [allReports, setAllReports] = useState<Report[]>([]);
+  const [internalReports, setInternalReports] = useState<InternalReport[]>([]); // New state for internal reports
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
-  const [activeEmergenciesCount, setActiveEmergenciesCount] = useState(0);
-  const [respondedCount, setRespondedCount] = useState(0);
-  const [resolvedCount, setResolvedCount] = useState(0);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [isLoadingAction, setIsLoadingAction] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState<string>('TEAM 1');
   const [barangay, setBarangay] = useState<string>('');
-  // Removed activeMenu state as it's no longer needed for main content switching
+
+  // New states for filtering and modals
+  const [resolvedFilterDate, setResolvedFilterDate] = useState<Date | undefined>(new Date());
+  const [showActiveModal, setShowActiveModal] = useState(false);
+  const [showRespondedModal, setShowRespondedModal] = useState(false);
 
   // Set admin user data from props
   useEffect(() => {
@@ -158,19 +180,33 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     return data || [];
   }, []);
 
+  // Function to fetch internal reports
+  const fetchInternalReports = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('internal_reports')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error("Error fetching internal reports:", error);
+      setError(`Failed to load internal reports: ${error.message || 'Unknown error'}. Please check your Supabase RLS policies.`);
+      return [];
+    }
+    return data || [];
+  }, []);
+
   // Consolidated Real-time Listener for Reports and Notifications
   useEffect(() => {
     const fetchAllDashboardData = async () => {
       try {
-        const [reportsData, notificationsData] = await Promise.all([
+        const [reportsData, notificationsData, internalReportsData] = await Promise.all([
           fetchAllReports(),
           fetchAdminNotifications(),
+          fetchInternalReports(), // Fetch internal reports
         ]);
 
         setAllReports(reportsData.map((item: any) => ({ ...item })));
-        setActiveEmergenciesCount(reportsData.filter(r => r.status.trim().toLowerCase() === 'pending' || r.status.trim().toLowerCase() === 'active').length);
-        setRespondedCount(reportsData.filter(r => r.status.trim().toLowerCase() === 'responded').length);
-        setResolvedCount(reportsData.filter(r => r.status.trim().toLowerCase() === 'resolved').length);
+        setInternalReports(internalReportsData.map((item: any) => ({ ...item }))); // Set internal reports
 
         setNotifications(notificationsData);
         setUnreadCount(notificationsData.filter(n => !n.is_read).length);
@@ -209,12 +245,26 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       )
       .subscribe();
 
+    // Set up real-time channel for internal_reports
+    const internalReportsChannel = supabase
+      .channel('dashboard-internal-reports-channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'internal_reports' },
+        (payload) => {
+          console.log('Change received on internal_reports, refetching internal reports:', payload);
+          fetchInternalReports().then(setInternalReports);
+        }
+      )
+      .subscribe();
+
     // Cleanup subscriptions on component unmount
     return () => {
       supabase.removeChannel(reportsChannel);
       supabase.removeChannel(adminNotificationsChannel);
+      supabase.removeChannel(internalReportsChannel);
     };
-  }, [fetchAllReports, fetchAdminNotifications]);
+  }, [fetchAllReports, fetchAdminNotifications, fetchInternalReports]);
 
   // Effect to get barangay from coordinates
   useEffect(() => {
@@ -235,31 +285,29 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     }
   }, [selectedReport]);
 
+  const markAllNotificationsAsRead = useCallback(async () => {
+    if (unreadCount === 0) return;
+    const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id);
+    if (unreadIds.length === 0) return;
 
-const markAllNotificationsAsRead = useCallback(async () => {
-  if (unreadCount === 0) return;
-  const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id);
-  if (unreadIds.length === 0) return;
+    setIsLoadingAction(true);
+    const { error } = await supabase
+      .from('admin_notifications')
+      .update({ is_read: true })
+      .in('id', unreadIds);
 
-  setIsLoadingAction(true);
-  const { error } = await supabase
-    .from('admin_notifications')
-    .update({ is_read: true })
-    .in('id', unreadIds);
-
-  if (error) {
-    console.error("Error marking all as read:", error);
-    setError("Failed to mark all notifications as read.");
-  } else {
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-    setUnreadCount(0);
-  }
-  setIsLoadingAction(false);
-}, [notifications, unreadCount]);
+    if (error) {
+      console.error("Error marking all as read:", error);
+      setError("Failed to mark all notifications as read.");
+    } else {
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      setUnreadCount(0);
+    }
+    setIsLoadingAction(false);
+  }, [notifications, unreadCount]);
 
   const handleReportClick = (report: Report) => {
     setSelectedReport(report);
-    // No need to set activeMenu here, as main dashboard is the only view
   };
 
   const handleNotificationClick = useCallback(async (notification: Notification) => {
@@ -330,17 +378,39 @@ const markAllNotificationsAsRead = useCallback(async () => {
     }
   }, [selectedReport]);
 
+  // Check if an internal report already exists for the selected emergency report
+  const hasInternalReportBeenMade = React.useMemo(() => {
+    if (!selectedReport) return false;
+    return internalReports.some(ir => ir.original_report_id === selectedReport.id);
+  }, [selectedReport, internalReports]);
+
   // This handleMakeReport is for the context-specific button (resolved incidents)
   const handleMakeReport = () => {
     if (selectedReport?.id) {
-      // Open the Make Report page in a new tab, passing the incident ID as a query parameter
       window.open(`/admin/report?incidentId=${selectedReport.id}`, '_blank');
     } else {
       console.warn("No selected report to make a specific report for.");
     }
   };
 
-  // Removed handleSidebarMenuItemClick as it's no longer needed for internal menu switching
+  // Filtered counts for dashboard cards
+  const totalReportsCount = allReports.length;
+  const activeEmergenciesCount = allReports.filter(r => r.status.trim().toLowerCase() === 'active' || r.status.trim().toLowerCase() === 'pending').length;
+  const respondedCount = allReports.filter(r => r.status.trim().toLowerCase() === 'responded').length;
+
+  const filteredResolvedCount = React.useMemo(() => {
+    if (!resolvedFilterDate) return 0;
+    return allReports.filter(r =>
+      r.status.trim().toLowerCase() === 'resolved' &&
+      isSameDay(new Date(r.resolved_at || r.created_at), resolvedFilterDate) // Use resolved_at if available, otherwise created_at
+    ).length;
+  }, [allReports, resolvedFilterDate]);
+
+
+  // Filtered lists for modals
+  const activeReportsList = allReports.filter(r => r.status.trim().toLowerCase() === 'active' || r.status.trim().toLowerCase() === 'pending');
+  const respondedReportsList = allReports.filter(r => r.status.trim().toLowerCase() === 'responded');
+
 
   if (error) {
     return (
@@ -354,7 +424,6 @@ const markAllNotificationsAsRead = useCallback(async () => {
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
       <header className="flex justify-between items-center mb-8">
         <div className="flex items-center">
-          {/* Removed onMenuItemClick prop */}
           <Sidebar />
           <h1 className="text-3xl font-bold text-gray-800 ml-4">Admin Dashboard</h1>
         </div>
@@ -396,9 +465,47 @@ const markAllNotificationsAsRead = useCallback(async () => {
 
       <main className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="shadow"><CardHeader><CardTitle>Active Emergencies</CardTitle></CardHeader><CardContent><p className="text-4xl font-bold text-red-600">{activeEmergenciesCount}</p></CardContent></Card>
-            <Card className="shadow"><CardHeader><CardTitle>In-Progress</CardTitle></CardHeader><CardContent><p className="text-4xl font-bold text-yellow-600">{respondedCount}</p></CardContent></Card>
-            <Card className="shadow"><CardHeader><CardTitle>Resolved Today</CardTitle></CardHeader><CardContent><p className="text-4xl font-bold text-green-600">{resolvedCount}</p></CardContent></Card>
+            <Card className="shadow cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setShowActiveModal(true)}>
+              <CardHeader><CardTitle>Active Emergencies</CardTitle></CardHeader>
+              <CardContent><p className="text-4xl font-bold text-red-600">{activeEmergenciesCount}</p></CardContent>
+            </Card>
+            <Card className="shadow cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setShowRespondedModal(true)}>
+              <CardHeader><CardTitle>In-Progress</CardTitle></CardHeader>
+              <CardContent><p className="text-4xl font-bold text-yellow-600">{respondedCount}</p></CardContent>
+            </Card>
+            <Card className="shadow">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Resolved</CardTitle>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant={"outline"}
+                      className={cn(
+                        "w-[120px] justify-start text-left font-normal",
+                        !resolvedFilterDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {resolvedFilterDate ? format(resolvedFilterDate, "MM/dd") : <span>Date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="end">
+                    <Calendar
+                      mode="single"
+                      selected={resolvedFilterDate}
+                      onSelect={setResolvedFilterDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </CardHeader>
+              <CardContent>
+                <p className="text-4xl font-bold text-green-600">{filteredResolvedCount}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {resolvedFilterDate ? `for ${format(resolvedFilterDate, "PPP")}` : "Select a date"}
+                </p>
+              </CardContent>
+            </Card>
         </div>
 
         {/* The main dashboard content remains here, as it's the default view */}
@@ -445,15 +552,20 @@ const markAllNotificationsAsRead = useCallback(async () => {
                         {selectedReport.status.trim().toLowerCase() === 'responded' && (
                             <Button onClick={handleRescueDone} disabled={isLoadingAction} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><CheckCircle size={18} className="mr-2" />{isLoadingAction ? 'Resolving...' : 'Rescue Done'}</Button>
                         )}
-                        {/* Make a Report Button - Only for resolved incidents */}
-                        {selectedReport.status.trim().toLowerCase() === 'resolved' && (
+                        {/* Make a Report Button - Only for resolved incidents and if no internal report exists */}
+                        {selectedReport.status.trim().toLowerCase() === 'resolved' && !hasInternalReportBeenMade && (
                           <Button
-                            onClick={handleMakeReport} // This will now open the Make Report page in a new tab
+                            onClick={handleMakeReport}
                             disabled={isLoadingAction}
                             className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center mt-4"
                           >
                             <FileText size={18} className="mr-2" /> Make a Report
                           </Button>
+                        )}
+                        {selectedReport.status.trim().toLowerCase() === 'resolved' && hasInternalReportBeenMade && (
+                          <p className="text-sm text-gray-500 text-center mt-4">
+                            <CheckCircle className="inline-block h-4 w-4 mr-1 text-green-500" /> Internal report already created for this incident.
+                          </p>
                         )}
                       </div>
                     </div>
@@ -468,7 +580,7 @@ const markAllNotificationsAsRead = useCallback(async () => {
               <Card className="shadow-lg h-full">
                 <CardHeader className="bg-gray-800 text-white"><CardTitle>All Reports</CardTitle></CardHeader>
                 <CardContent className="p-0">
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto max-h-[400px]"> {/* Fixed height and scrollbar */}
                     <table className="min-w-full divide-y divide-gray-200">
                       <tbody className="bg-white divide-y divide-gray-200">
                         {allReports.map((report) => (
@@ -485,6 +597,98 @@ const markAllNotificationsAsRead = useCallback(async () => {
             </div>
           </>
       </main>
+
+      {/* Active Reports Modal */}
+      <Dialog open={showActiveModal} onOpenChange={setShowActiveModal}>
+        <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Active / Pending Emergencies</DialogTitle>
+            <DialogDescription>
+              List of all emergency reports currently in 'active' or 'pending' status.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4">
+            {activeReportsList.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reporter</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reported At</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {activeReportsList.map(report => (
+                      <tr key={report.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => { handleReportClick(report); setShowActiveModal(false); }}>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{report.firstName} {report.lastName}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{report.emergency_type}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{report.location_address}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${report.status.trim().toLowerCase() === 'pending' || report.status.trim().toLowerCase() === 'active' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'}`}>
+                            {report.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{format(new Date(report.created_at), 'PPP HH:mm')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-center text-gray-500 py-4">No active or pending reports.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Responded Reports Modal */}
+      <Dialog open={showRespondedModal} onOpenChange={setShowRespondedModal}>
+        <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>In-Progress (Responded) Emergencies</DialogTitle>
+            <DialogDescription>
+              List of all emergency reports currently in 'responded' status.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4">
+            {respondedReportsList.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reporter</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Responded At</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {respondedReportsList.map(report => (
+                      <tr key={report.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => { handleReportClick(report); setShowRespondedModal(false); }}>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{report.firstName} {report.lastName}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{report.emergency_type}</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{report.location_address}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800`}>
+                            {report.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">{report.responded_at ? format(new Date(report.responded_at), 'PPP HH:mm') : 'N/A'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-center text-gray-500 py-4">No in-progress reports.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

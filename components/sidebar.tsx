@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
-import { Menu, BarChart, Settings, FileText } from "lucide-react"
+import { Menu, BarChart, Settings, FileText, History } from "lucide-react" // Added History icon
 
 interface SidebarProps {
   // onMenuItemClick prop is no longer directly used for internal rendering but can remain if other logic needs it
@@ -39,8 +39,11 @@ export function Sidebar({}: SidebarProps) { // Removed onMenuItemClick from prop
           <Button variant="ghost" className="justify-start" onClick={() => handleLinkClick("/admin/data")}>
             <Settings className="mr-2 h-4 w-4" /> Edit Data
           </Button>
-          <Button variant="ghost" className="justify-start" onClick={() => handleLinkClick("/admin/report")}> {/* New button for general report */}
+          <Button variant="ghost" className="justify-start" onClick={() => handleLinkClick("/admin/report")}>
             <FileText className="mr-2 h-4 w-4" /> Make a Report
+          </Button>
+          <Button variant="ghost" className="justify-start" onClick={() => handleLinkClick("/admin/report-history")}> {/* NEW BUTTON */}
+            <History className="mr-2 h-4 w-4" /> View History of Report
           </Button>
         </nav>
       </SheetContent>

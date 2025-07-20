@@ -307,7 +307,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Menu className="w-6 h-6" />
-            <span className="font-medium">Menu</span>
+            <span className="font-medium">SORSU-Students</span>
           </div>
 
           <div className="text-center flex-1">
@@ -480,7 +480,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         <div className="flex justify-center items-center">
           <Button variant="ghost" className="text-white hover:bg-orange-600 flex flex-col items-center px-8">
             <span className="text-2xl mb-1">🖥️</span>
-            <span className="text-sm font-medium">MADE BY: JOHN LLOYD L. GRACILLA</span>
+            <span className="text-sm font-medium">Copyright © 2025 MDRRMO-Bulan Sorsogon</span>
           </Button>
         </div>
       </div>
