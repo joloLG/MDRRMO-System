@@ -23,6 +23,6 @@
       "@/*": ["./*"]
     }
   },
-  "include": ["next-env.d.ts", "app/**/*.ts", "app/**/*.tsx", "components/**/*.ts", "components/**/*.tsx", "lib/**/*.ts", "pages/**/*.ts", "pages/**/*.tsx", "*.tsx", "*.ts", ".next/types/**/*.ts"],
+  "include": ["next-env.d.ts", "app/**/*.ts", "app/**/*.tsx", "components/**/*.ts", "components/**/*.tsx", "lib/**/*.ts", "pages/**/*.ts", "pages/**/*.tsx", "*.tsx", "*.ts", ".next/types/**/*.ts", "components/admin-dashboard.tsx", "components/admin-dashboard.tsx.bak"],
   "exclude": ["node_modules"]
 }

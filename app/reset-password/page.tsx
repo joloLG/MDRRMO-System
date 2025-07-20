@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
-import { Eye, EyeOff } from "lucide-react"
+import { Eye, EyeOff, LogOut } from "lucide-react"
 
 export default function ResetPasswordPage() {
   const router = useRouter()

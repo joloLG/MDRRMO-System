@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { RegisterPage } from "./components/register-page"
 import { LoginPage } from "./components/login-page"
 import { Dashboard } from "./components/dashboard" // Named import
-import { AdminDashboard } from "./components/admin-dashboard" // Named import
+import {AdminDashboard} from './components/admin-dashboard'; // Default import
 import { supabase } from "@/lib/supabase" // Import supabase for logout
 
 export default function MobileApp() {

@@ -479,8 +479,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       <div className="fixed bottom-0 left-0 right-0 bg-orange-500/95 backdrop-blur-sm text-white p-4 z-10">
         <div className="flex justify-center items-center">
           <Button variant="ghost" className="text-white hover:bg-orange-600 flex flex-col items-center px-8">
-            <span className="text-2xl mb-1">📋</span>
-            <span className="text-sm font-medium">Reports</span>
+            <span className="text-2xl mb-1">🖥️</span>
+            <span className="text-sm font-medium">MADE BY: JOHN LLOYD L. GRACILLA</span>
           </Button>
         </div>
       </div>
