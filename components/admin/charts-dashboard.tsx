@@ -6,7 +6,7 @@ import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid
 } from 'recharts';
-import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, parseISO, getWeek, getDate, getMonth, getYear } from 'date-fns';
+import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, parseISO, getWeek, getDate, getMonth, getYear, eachDayOfInterval, eachMonthOfInterval } from 'date-fns';
 import { Calendar as CalendarIcon, Download } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -119,6 +119,14 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
     { value: '10', label: 'October' }, { value: '11', label: 'November' }, { value: '12', label: 'December' },
   ];
 
+  // Colors for Incident Types Bar Chart
+  const INCIDENT_TYPE_COLORS = [
+    '#4CAF50', '#2196F3', '#FFC107', '#FF5722', '#9C27B0', '#00BCD4', '#FFEB3B', '#8BC34A', '#E91E63', '#607D8B'
+  ];
+
+  // Helper function to get color for an incident type
+  const getIncidentTypeColor = (index: number) => INCIDENT_TYPE_COLORS[index % INCIDENT_TYPE_COLORS.length];
+
   // --- Data Processing for Charts ---
 
   // Helper to get date range based on period and selected date/month/year
@@ -197,28 +205,72 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
 
   // Bar Chart Data: Incident Types (Monthly/Yearly)
   const getIncidentTypeBarData = React.useCallback(() => {
-    const { start: periodStart, end: periodEnd } = getPeriodDateRange(
-      barIncidentPeriod,
-      undefined, // Not used for incident type, always monthly/yearly
-      barIncidentMonth,
-      barIncidentYear
-    );
+    const currentYear = parseInt(barIncidentYear || format(new Date(), 'yyyy'));
+    const currentMonth = parseInt(barIncidentMonth || format(new Date(), 'MM'));
 
-    const filteredReports = allInternalReports.filter(report => {
-      const incidentDate = parseISO(report.incident_date);
-      return incidentDate >= periodStart && incidentDate <= periodEnd;
-    });
+    if (barIncidentPeriod === 'yearly') {
+      // Data for yearly view (months on X-axis, incident types as bars)
+      const data: { [key: string]: any }[] = eachMonthOfInterval({
+        start: new Date(currentYear, 0, 1),
+        end: new Date(currentYear, 11, 31)
+      }).map(date => {
+        const monthLabel = format(date, 'MMM');
+        const monthData: { [key: string]: any } = { month: monthLabel };
+        incidentTypes.forEach(type => {
+          monthData[type.name] = 0; // Initialize counts for all incident types to 0
+        });
+        return monthData;
+      });
 
-    const incidentTypeCounts: { [key: string]: number } = {};
-    filteredReports.forEach(report => {
-      const incidentTypeName = incidentTypes.find(it => it.id === report.incident_type_id)?.name || 'Unknown Type';
-      incidentTypeCounts[incidentTypeName] = (incidentTypeCounts[incidentTypeName] || 0) + 1;
-    });
+      allInternalReports.forEach(report => {
+        const incidentDate = parseISO(report.incident_date);
+        if (incidentDate.getFullYear() === currentYear) {
+          const monthIndex = incidentDate.getMonth(); // 0-11
+          const incidentTypeName = incidentTypes.find(it => it.id === report.incident_type_id)?.name;
+          if (incidentTypeName) {
+            data[monthIndex][incidentTypeName]++;
+          }
+        }
+      });
+      return data;
 
-    return Object.keys(incidentTypeCounts).map(name => ({
-      name,
-      count: incidentTypeCounts[name],
-    })).sort((a,b) => b.count - a.count);
+    } else { // barIncidentPeriod === 'monthly'
+      // Data for monthly view (days on X-axis, incident types as bars)
+      const { start: periodStart, end: periodEnd } = getPeriodDateRange(
+        barIncidentPeriod,
+        undefined,
+        barIncidentMonth,
+        barIncidentYear
+      );
+
+      const data: { [key: string]: any }[] = eachDayOfInterval({
+        start: periodStart,
+        end: periodEnd
+      }).map(date => {
+        const dayLabel = format(date, 'd'); // Day of month
+        const dayData: { [key: string]: any } = { day: dayLabel };
+        incidentTypes.forEach(type => {
+          dayData[type.name] = 0; // Initialize counts for all incident types to 0
+        });
+        return dayData;
+      });
+
+      allInternalReports.forEach(report => {
+        const incidentDate = parseISO(report.incident_date);
+        if (incidentDate >= periodStart && incidentDate <= periodEnd) {
+          const dayOfMonth = incidentDate.getDate(); // 1-31
+          const incidentTypeName = incidentTypes.find(it => it.id === report.incident_type_id)?.name;
+          if (incidentTypeName) {
+            // Find the correct day object in the data array
+            const targetDayData = data.find(item => parseInt(item.day) === dayOfMonth);
+            if (targetDayData) {
+              targetDayData[incidentTypeName]++;
+            }
+          }
+        }
+      });
+      return data;
+    }
   }, [allInternalReports, incidentTypes, barIncidentPeriod, barIncidentMonth, barIncidentYear]);
 
   const incidentTypeBarData = getIncidentTypeBarData();
@@ -536,21 +588,32 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
             </Select>
           </div>
           {incidentTypeBarData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={350}>                  
               <BarChart
                 data={incidentTypeBarData}
                 margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
               >
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} interval={0} tick={{ fontSize: 10 }} />
+                {barIncidentPeriod === 'yearly' ? (
+                  <XAxis dataKey="month" />
+                ) : (
+                  <XAxis dataKey="day" />
+                )}
                 <YAxis allowDecimals={false} />
                 <Tooltip content={<CustomBarTooltip />} />
                 <Legend />
-                <Bar dataKey="count" fill="#8884d8" name="Number of Incidents" />
+                {incidentTypes.map((type, index) => (
+                  <Bar
+                    key={type.id}
+                    dataKey={type.name}
+                    fill={getIncidentTypeColor(index)}
+                    name={type.name}
+                  />
+                ))}
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="text-center text-gray-500 h-[300px] flex items-center justify-center">
+            <div className="text-center text-gray-500 h-[350px] flex items-center justify-center"> {/* Adjusted height */}
               No incident type data for the selected period.
             </div>
           )}
