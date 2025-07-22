@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation" // Assuming Next.js App Router for useSearchParams
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
 import { Eye, EyeOff, LogOut } from "lucide-react"
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const router = useRouter()
   const searchParams = useSearchParams() // Hook to get URL search parameters
 
@@ -207,4 +207,12 @@ export default function ResetPasswordPage() {
       </Card>
     </div>
   )
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<div>Loading password reset form...</div>}>
+      <ResetPasswordContent />
+    </Suspense>
+  );
 }

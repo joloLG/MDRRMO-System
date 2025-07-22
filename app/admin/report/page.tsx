@@ -2,7 +2,7 @@
 
 import { MakeReportForm } from "@/components/admin/make-report-form";
 import { supabase } from "@/lib/supabase";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from 'next/navigation'; // For reading query parameters
 
 // Interfaces for data types (needs to be consistent with admin-dashboard.tsx)
@@ -32,7 +32,7 @@ interface IncidentType {
   name: string;
 }
 
-export default function MakeReportPage() {
+function MakeReportContent() {
   const searchParams = useSearchParams();
   const incidentId = searchParams.get('incidentId'); // Get incidentId from URL query param
 
@@ -166,5 +166,13 @@ export default function MakeReportPage() {
         }}
       />
     </div>
+  );
+}
+
+export default function MakeReportPage() {
+  return (
+    <Suspense fallback={<div>Loading report form...</div>}>
+      <MakeReportContent />
+    </Suspense>
   );
 }
