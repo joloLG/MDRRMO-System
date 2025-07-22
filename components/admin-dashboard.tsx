@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
-import { Bell, LogOut, CheckCircle, MapPin, Send, Map, Menu, FileText, Calendar as CalendarIcon } from "lucide-react"
+import { Bell, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Calendar } from "@/components/ui/calendar"
@@ -469,7 +469,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
       <header className="flex justify-between items-center mb-8">
         <div className="flex items-center">
-          <Sidebar />
+          <Sidebar/>
           <h1 className="text-3xl font-bold text-gray-800 ml-4">Admin Dashboard</h1>
         </div>
         <div className="flex items-center space-x-4">
