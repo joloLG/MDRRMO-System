@@ -4,6 +4,9 @@ import * as React from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { format } from "date-fns"
+import { Button } from "@/components/ui/button" // Import Button
+import { ArrowLeft } from "lucide-react" // Import ArrowLeft icon
+import { useRouter } from "next/navigation"; // Import useRouter
 
 // Define InternalReport interface (must match your database schema)
 interface InternalReport {
@@ -34,15 +37,23 @@ interface ReportHistoryTableProps {
 }
 
 export function ReportHistoryTable({ internalReports, barangays, incidentTypes, erTeams }: ReportHistoryTableProps) {
+  const router = useRouter(); // Initialize useRouter
 
   const getBarangayName = (id: number) => barangays.find(b => b.id === id)?.name || 'N/A';
   const getIncidentTypeName = (id: number) => incidentTypes.find(it => it.id === id)?.name || 'N/A';
-  const getErTeamName = (id: number) => erTeams.find(et => et.id === id)?.name || 'N/A';
+  const getErTeamName = (id: number) => erTeams.find(et => et.id === et.id)?.name || 'N/A';
 
   return (
     <Card className="shadow-lg h-full rounded-lg">
-      <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4">
+      <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4 flex justify-between items-center"> {/* Added flex and items-center */}
         <CardTitle className="text-2xl font-bold">History of Admin Reports</CardTitle>
+        <Button
+          variant="outline"
+          className="bg-gray-200 hover:bg-gray-300 text-gray-800"
+          onClick={() => router.push('/')} 
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back 
+        </Button>
       </CardHeader>
       <CardContent className="p-6 bg-white rounded-b-lg">
         <div className="overflow-x-auto">

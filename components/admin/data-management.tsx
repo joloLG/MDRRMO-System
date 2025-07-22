@@ -4,10 +4,10 @@ import * as React from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabase"
-import { PlusCircle, Edit, Trash2, Save, X, CheckCircle2, XCircle } from "lucide-react" // Added icons
+import { PlusCircle, Edit, Trash2, Save, X, CheckCircle2, XCircle, ArrowLeft } from "lucide-react" // Added icons, ArrowLeft
+import { useRouter } from "next/navigation"; // Import useRouter
 
 // Interfaces for data types
 interface BaseEntry {
@@ -25,6 +25,8 @@ interface DataManagementProps {
 }
 
 export function DataManagement({ erTeams, barangays, incidentTypes, fetchErTeams, fetchBarangays, fetchIncidentTypes }: DataManagementProps) {
+  const router = useRouter(); // Initialize useRouter
+
   const [newEntryName, setNewEntryName] = React.useState('');
   const [editingEntryId, setEditingEntryId] = React.useState<number | null>(null);
   const [editingEntryName, setEditingEntryName] = React.useState('');
@@ -224,8 +226,15 @@ export function DataManagement({ erTeams, barangays, incidentTypes, fetchErTeams
 
   return (
     <Card className="shadow-lg h-full lg:col-span-3 rounded-lg">
-      <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4">
+      <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4 flex justify-between items-center">
         <CardTitle className="text-2xl font-bold">Data Management</CardTitle>
+        <Button
+          variant="outline"
+          className="bg-gray-200 hover:bg-gray-300 text-gray-800"
+          onClick={() => router.push('/')} 
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back
+        </Button>
       </CardHeader>
       <CardContent className="p-6 bg-white rounded-b-lg">
         {formMessage && (

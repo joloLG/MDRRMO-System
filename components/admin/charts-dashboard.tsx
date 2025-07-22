@@ -7,7 +7,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid
 } from 'recharts';
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, parseISO, getWeek, getDate, getMonth, getYear, eachDayOfInterval, eachMonthOfInterval } from 'date-fns';
-import { Calendar as CalendarIcon, Download } from "lucide-react"
+import { Calendar as CalendarIcon, Download, ArrowLeft } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { useRouter } from "next/navigation";
 
 // Define Report interface (from emergency_reports)
 interface EmergencyReport {
@@ -77,28 +78,30 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
 };
 
 export function ChartsDashboard({ allEmergencyReports, allInternalReports, barangays, incidentTypes }: ChartsDashboardProps) {
+  const router = useRouter();
+
   // State for Pie Chart (Barangay Incidents)
-  const [pieChartPeriod, setPieChartPeriod] = React.useState<string>('daily'); // 'daily', 'weekly', 'monthly', 'yearly'
-  const [pieChartDate, setPieChartDate] = React.useState<Date | undefined>(new Date()); // For daily/weekly
-  const [pieChartMonth, setPieChartMonth] = React.useState<string>(format(new Date(), 'MM')); // For monthly
-  const [pieChartYear, setPieChartYear] = React.useState<string>(format(new Date(), 'yyyy')); // For monthly/yearly
-  const [pieStartDateRange, setPieStartDateRange] = React.useState<Date | undefined>(new Date()); // For weekly range
-  const [pieEndDateRange, setPieEndDateRange] = React.useState<Date | undefined>(new Date()); // For weekly range
-  const [pieStartTime, setPieStartTime] = React.useState<string>('00:00'); // HH:MM
-  const [pieEndTime, setPieEndTime] = React.useState<string>('23:59'); // HH:MM
+  const [pieChartPeriod, setPieChartPeriod] = React.useState<string>('daily');
+  const [pieChartDate, setPieChartDate] = React.useState<Date | undefined>(new Date());
+  const [pieChartMonth, setPieChartMonth] = React.useState<string>(format(new Date(), 'MM'));
+  const [pieChartYear, setPieChartYear] = React.useState<string>(format(new Date(), 'yyyy'));
+  const [pieStartDateRange, setPieStartDateRange] = React.useState<Date | undefined>(new Date());
+  const [pieEndDateRange, setPieEndDateRange] = React.useState<Date | undefined>(new Date());
+  const [pieStartTime, setPieStartTime] = React.useState<string>('00:00');
+  const [pieEndTime, setPieEndTime] = React.useState<string>('23:59');
 
   // State for Bar Chart (Incident Types)
-  const [barIncidentPeriod, setBarIncidentPeriod] = React.useState<string>('monthly'); // 'monthly', 'yearly'
-  const [barIncidentMonth, setBarIncidentMonth] = React.useState<string>(format(new Date(), 'MM')); // For monthly
-  const [barIncidentYear, setBarIncidentYear] = React.useState<string>(format(new Date(), 'yyyy')); // For monthly/yearly
+  const [barIncidentPeriod, setBarIncidentPeriod] = React.useState<string>('monthly');
+  const [barIncidentMonth, setBarIncidentMonth] = React.useState<string>(format(new Date(), 'MM'));
+  const [barIncidentYear, setBarIncidentYear] = React.useState<string>(format(new Date(), 'yyyy'));
 
   // State for Bar Chart (Report Status Counts)
-  const [barStatusPeriod, setBarStatusPeriod] = React.useState<string>('daily'); // 'daily', 'weekly', 'monthly', 'yearly'
-  const [barStatusDate, setBarStatusDate] = React.useState<Date | undefined>(new Date()); // For daily/weekly
-  const [barStatusMonth, setBarStatusMonth] = React.useState<string>(format(new Date(), 'MM')); // For monthly
-  const [barStatusYear, setBarStatusYear] = React.useState<string>(format(new Date(), 'yyyy')); // For monthly/yearly
-  const [barStatusStartDateRange, setBarStatusStartDateRange] = React.useState<Date | undefined>(new Date()); // For weekly range
-  const [barStatusEndDateRange, setBarStatusEndDateRange] = React.useState<Date | undefined>(new Date()); // For weekly range
+  const [barStatusPeriod, setBarStatusPeriod] = React.useState<string>('daily');
+  const [barStatusDate, setBarStatusDate] = React.useState<Date | undefined>(new Date());
+  const [barStatusMonth, setBarStatusMonth] = React.useState<string>(format(new Date(), 'MM'));
+  const [barStatusYear, setBarStatusYear] = React.useState<string>(format(new Date(), 'yyyy'));
+  const [barStatusStartDateRange, setBarStatusStartDateRange] = React.useState<Date | undefined>(new Date());
+  const [barStatusEndDateRange, setBarStatusEndDateRange] = React.useState<Date | undefined>(new Date());
 
 
   // Generate years for dropdowns (e.g., current year - 5 to current year + 1)
@@ -357,9 +360,20 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
   // --- Render ---
 
   return (
-    <div className="grid grid-cols-1 gap-6"> {/* Removed lg:col-span-2 xl:col-span-3 from parent grid */}
+    <div className="grid grid-cols-1 gap-6">
+      {/* Back Button for Admin Dashboard */}
+      <div className="flex justify-start mb-4">
+        <Button
+          variant="outline"
+          className="bg-gray-200 hover:bg-gray-300 text-gray-800"
+          onClick={() => router.push('/')} 
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back
+        </Button>
+      </div>
+
       {/* Pie Chart: Incidents per Barangay */}
-      <Card id="barangay-incident-chart" className="shadow-lg col-span-full"> {/* Changed to col-span-full */}
+      <Card id="barangay-incident-chart" className="shadow-lg col-span-full">
         <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4 flex flex-row items-center justify-between">
           <CardTitle className="text-xl font-bold">Incidents by Barangay</CardTitle>
           <Button
@@ -498,18 +512,17 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
                 type="time"
                 value={pieStartTime}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPieStartTime(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md shadow-sm"
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm"
               />
               <Input
                 type="time"
                 value={pieEndTime}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPieEndTime(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md shadow-sm"
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm"
               />
             </div>
           </div>
           {pieChartData.length > 0 ? (
-            // Re-typed ResponsiveContainer and its child PieChart
             <ResponsiveContainer width="100%" height={350}>
               <PieChart>
                 <Pie
@@ -540,7 +553,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
       </Card>
 
       {/* Bar Chart: Incident Types (Monthly/Yearly) */}
-      <Card id="incident-type-chart" className="shadow-lg col-span-full"> {/* Changed to col-span-full */}
+      <Card id="incident-type-chart" className="shadow-lg col-span-full">
         <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4 flex flex-row items-center justify-between">
           <CardTitle className="text-xl font-bold">Incident Types by Period</CardTitle>
           <Button
@@ -588,7 +601,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
             </Select>
           </div>
           {incidentTypeBarData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={350}>                  
+            <ResponsiveContainer width="100%" height={350}>
               <BarChart
                 data={incidentTypeBarData}
                 margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
@@ -613,7 +626,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="text-center text-gray-500 h-[350px] flex items-center justify-center"> {/* Adjusted height */}
+            <div className="text-center text-gray-500 h-[350px] flex items-center justify-center">
               No incident type data for the selected period.
             </div>
           )}
@@ -621,7 +634,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
       </Card>
 
       {/* Bar Chart: All Reports, Active, Resolved (Daily/Weekly/Monthly/Yearly) */}
-      <Card id="report-status-chart" className="shadow-lg col-span-full"> {/* Changed to col-span-full */}
+      <Card id="report-status-chart" className="shadow-lg col-span-full">
         <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4 flex flex-row items-center justify-between">
           <CardTitle className="text-xl font-bold">Emergency Report Status Overview</CardTitle>
           <Button
