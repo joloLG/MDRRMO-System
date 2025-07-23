@@ -115,14 +115,14 @@ export default function HotlinesPage() {
                     <div key={hotline.id} className="p-4 border border-orange-100 rounded-lg hover:bg-orange-50 transition-colors">
                       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start">
                         <div className="mb-2 sm:mb-0">
-                          <h3 className="font-medium text-orange-900">{hotline.name}</h3>
+                          <h3 className="font-medium text-black-900">{hotline.name}</h3>
                           {hotline.description && (
-                            <p className="text-sm text-orange-700 mt-1">{hotline.description}</p>
+                            <p className="text-sm text-black-700 mt-1">{hotline.description}</p>
                           )}
                         </div>
                         <a 
                           href={`tel:${hotline.number.replace(/\D/g, '')}`}
-                          className="flex items-center text-orange-600 hover:text-orange-800 whitespace-nowrap sm:ml-4 mt-2 sm:mt-0"
+                          className="flex items-center text-red-600 hover:text-red-800 whitespace-nowrap sm:ml-4 mt-2 sm:mt-0"
                         >
                           <Phone className="h-4 w-4 mr-1" />
                           <span className="font-medium">{hotline.number}</span>
