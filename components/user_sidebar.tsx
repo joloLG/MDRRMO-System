@@ -11,12 +11,12 @@ interface UserSidebarProps {
 }
 
 const menuItems = [
-  { id: 'main', icon: AlertTriangle, label: 'Main Dashboard' },
-  { id: 'reportHistory', icon: History, label: 'Report History' },
-  { id: 'mdrrmoInfo', icon: Info, label: 'MDRRMO-Bulan Info' },
-  { id: 'hotlines', icon: Phone, label: 'Bulan Hotlines' },
-  { id: 'userProfile', icon: User, label: 'User Profile' },
-  { id: 'sendFeedback', icon: Mail, label: 'Send Feedback' },
+  { id: 'main', icon: AlertTriangle, label: 'Main Dashboard', type: 'internal' },
+  { id: 'reportHistory', icon: History, label: 'Report History', type: 'internal' },
+  { id: 'mdrrmoInfo', icon: Info, label: 'MDRRMO-Bulan Info', type: 'internal', path: '/mdrrmo-info' },
+  { id: 'hotlines', icon: Phone, label: 'Bulan Hotlines', type: 'internal', path: '/hotlines' },
+  { id: 'userProfile', icon: User, label: 'User Profile', type: 'internal' },
+  { id: 'sendFeedback', icon: Mail, label: 'Send Feedback', type: 'internal' },
 ];
 
 export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps) {
@@ -39,9 +39,22 @@ export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps)
     return () => document.removeEventListener('keydown', handleEscape);
   }, [onClose]);
 
-  const handleMenuItemClick = (view: string) => {
-    onChangeView(view);
-    onClose();
+  const handleMenuItemClick = (item: { id: string; type: string; path?: string }) => {
+    if (item.type === 'internal' && item.path) {
+      // For internal navigation, let Next.js handle the routing
+      // We'll use a full page refresh to ensure chunks are loaded properly
+      const fullPath = window.location.origin + item.path;
+      window.location.href = fullPath;
+      onClose();
+    } else if (item.type === 'internal') {
+      // For dashboard views
+      onChangeView(item.id);
+      onClose();
+    } else if (item.type === 'external' && item.path) {
+      // Fallback for external links (shouldn't be used for mobile-first)
+      window.location.href = item.path;
+      onClose();
+    }
   };
 
   return (
@@ -85,10 +98,13 @@ export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps)
                   key={item.id}
                   variant="ghost"
                   className="w-full justify-start text-white hover:bg-gray-700 hover:text-white"
-                  onClick={() => handleMenuItemClick(item.id)}
+                  onClick={() => handleMenuItemClick(item as any)}
                 >
                   <Icon className="mr-3 h-5 w-5 flex-shrink-0" />
                   <span className="truncate">{item.label}</span>
+                  {item.type === 'external' && (
+                    <span className="ml-auto text-xs text-gray-400">↗</span>
+                  )}
                 </Button>
               );
             })}

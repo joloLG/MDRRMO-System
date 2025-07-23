@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
-import { Bell, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon } from "lucide-react"
+import { Bell, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon, FireExtinguisher, HeartPulse, Car, CloudRain, Swords, HelpCircle } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Calendar } from "@/components/ui/calendar"
@@ -312,8 +312,13 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   useEffect(() => {
     if (selectedReport?.latitude && selectedReport?.longitude) {
       setBarangay('Fetching...');
-      fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${selectedReport.latitude}&lon=${selectedReport.longitude}`)
-        .then(response => response.json())
+      fetch(`/api/geocode?lat=${selectedReport.latitude}&lon=${selectedReport.longitude}`)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Failed to fetch location data');
+          }
+          return response.json();
+        })
         .then(data => {
           console.log('Reverse Geocoding API Response:', data);
           const address = data.address;
@@ -422,12 +427,16 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
   // Check if an internal report already exists for the selected emergency report
   const hasInternalReportBeenMade = React.useMemo(() => {
-    if (!selectedReport) return false;
-    const isMade = internalReports.some(ir => ir.original_report_id === selectedReport.id);
-    // Debugging: Log the result of the check
-    console.log(`hasInternalReportBeenMade for ${selectedReport.id}: ${isMade}`);
-    return isMade;
-  }, [selectedReport, internalReports]);
+    if (!selectedReport?.id) return false;
+    return internalReports.some(ir => ir.original_report_id === selectedReport.id);
+  }, [selectedReport?.id, internalReports]);
+  
+  // Debug log - only when the value changes
+  React.useEffect(() => {
+    if (selectedReport?.id) {
+      console.log(`hasInternalReportBeenMade for ${selectedReport.id}:`, hasInternalReportBeenMade);
+    }
+  }, [selectedReport?.id, hasInternalReportBeenMade]);
 
   // This handleMakeReport is for the context-specific button (resolved incidents)
   const handleMakeReport = () => {
@@ -561,7 +570,18 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                 <CardContent className="p-6">
                   {selectedReport ? (
                     <div>
-                      <h3 className="text-2xl font-bold mb-2">{selectedReport.emergency_type}</h3>
+                      <div className="flex items-center mb-4">
+                        {selectedReport.emergency_type === 'Fire Incident' && <FireExtinguisher className="h-8 w-8 text-red-500 mr-3" />}
+                        {selectedReport.emergency_type === 'Medical Emergency' && <HeartPulse className="h-8 w-8 text-red-500 mr-3" />}
+                        {selectedReport.emergency_type === 'Vehicular Incident' && <Car className="h-8 w-8 text-blue-500 mr-3" />}
+                        {selectedReport.emergency_type === 'Weather Disturbance' && <CloudRain className="h-8 w-8 text-blue-300 mr-3" />}
+                        {selectedReport.emergency_type === 'Armed Conflict' && <Swords className="h-8 w-8 text-orange-500 mr-3" />}
+                        {selectedReport.emergency_type === 'Others' && <HelpCircle className="h-8 w-8 text-gray-500 mr-3" />}
+                        <div>
+                          <h3 className="text-2xl font-bold">{selectedReport.emergency_type}</h3>
+                          <span className="text-sm text-gray-500">Reported Emergency Type</span>
+                        </div>
+                      </div>
                       <p className="text-gray-600 mb-4">Reported by: <span className="font-medium">{selectedReport.firstName} {selectedReport.lastName}</span></p>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div>
