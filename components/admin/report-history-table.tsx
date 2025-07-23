@@ -45,7 +45,7 @@ export function ReportHistoryTable({ internalReports, barangays, incidentTypes, 
 
   return (
     <Card className="shadow-lg h-full rounded-lg">
-      <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4 flex justify-between items-center"> {/* Added flex and items-center */}
+      <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex justify-between items-center"> {/* Added flex and items-center */}
         <CardTitle className="text-2xl font-bold">History of Admin Reports</CardTitle>
         <Button
           variant="outline"

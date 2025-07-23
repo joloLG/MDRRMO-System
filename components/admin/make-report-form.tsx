@@ -149,7 +149,7 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
 
   return (
     <Card className="shadow-lg h-full lg:col-span-3 rounded-lg">
-      <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4 flex justify-between items-center">
+      <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex justify-between items-center">
         <CardTitle className="text-2xl font-bold">
           {selectedReport ? `Create Report for Incident ID: ${selectedReport.id.substring(0, 8)}...` : 'Create New Incident Report (Manual)'}
         </CardTitle>

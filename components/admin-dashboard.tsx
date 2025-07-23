@@ -566,7 +566,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         <>
             <div className="lg:col-span-2">
               <Card className="shadow-lg h-full">
-                <CardHeader className="bg-gray-800 text-white"><CardTitle className="flex items-center"><MapPin className="mr-3" />Incident Details & Actions</CardTitle></CardHeader>
+                <CardHeader className="bg-orange-600 text-white"><CardTitle className="flex items-center"><MapPin className="mr-3" />Incident Details & Actions</CardTitle></CardHeader>
                 <CardContent className="p-6">
                   {selectedReport ? (
                     <div>
@@ -657,7 +657,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
             <div className="lg:col-span-1">
               <Card className="shadow-lg h-full">
-                <CardHeader className="bg-gray-800 text-white"><CardTitle>All Reports</CardTitle></CardHeader>
+                <CardHeader className="bg-orange-600 text-white"><CardTitle>All Reports</CardTitle></CardHeader>
                 <CardContent className="p-0">
                   <div className="overflow-y-auto max-h-[400px] custom-scrollbar"> {/* Added custom-scrollbar class */}
                     <table className="min-w-full divide-y divide-gray-200">

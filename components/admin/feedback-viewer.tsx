@@ -96,7 +96,7 @@ export function FeedbackViewer() {
   if (loading) {
     return (
       <Card className="shadow-lg h-full lg:col-span-3">
-        <CardHeader className="bg-gray-800 text-white">
+        <CardHeader className="bg-orange-600 text-white">
           <CardTitle className="flex items-center"><Mail className="mr-3" /> User Feedback</CardTitle>
         </CardHeader>
         <CardContent className="p-6 text-center">
@@ -108,7 +108,7 @@ export function FeedbackViewer() {
 
   return (
     <Card className="shadow-lg h-full lg:col-span-3">
-      <CardHeader className="bg-gray-800 text-white">
+      <CardHeader className="bg-orange-600 text-white">
         <CardTitle className="flex items-center"><Mail className="mr-3" /> User Feedback</CardTitle>
       </CardHeader>
       <CardContent className="p-6">

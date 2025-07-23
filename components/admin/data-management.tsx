@@ -226,7 +226,7 @@ export function DataManagement({ erTeams, barangays, incidentTypes, fetchErTeams
 
   return (
     <Card className="shadow-lg h-full lg:col-span-3 rounded-lg">
-      <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4 flex justify-between items-center">
+      <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex justify-between items-center">
         <CardTitle className="text-2xl font-bold">Data Management</CardTitle>
         <Button
           variant="outline"

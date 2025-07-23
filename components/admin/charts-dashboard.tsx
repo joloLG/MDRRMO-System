@@ -374,7 +374,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
 
       {/* Pie Chart: Incidents per Barangay */}
       <Card id="barangay-incident-chart" className="shadow-lg col-span-full">
-        <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4 flex flex-row items-center justify-between">
+        <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex flex-row items-center justify-between">
           <CardTitle className="text-xl font-bold">Incidents by Barangay</CardTitle>
           <Button
             variant="ghost"
@@ -554,7 +554,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
 
       {/* Bar Chart: Incident Types (Monthly/Yearly) */}
       <Card id="incident-type-chart" className="shadow-lg col-span-full">
-        <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4 flex flex-row items-center justify-between">
+        <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex flex-row items-center justify-between">
           <CardTitle className="text-xl font-bold">Incident Types by Period</CardTitle>
           <Button
             variant="ghost"
@@ -635,7 +635,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
 
       {/* Bar Chart: All Reports, Active, Resolved (Daily/Weekly/Monthly/Yearly) */}
       <Card id="report-status-chart" className="shadow-lg col-span-full">
-        <CardHeader className="bg-gray-800 text-white rounded-t-lg p-4 flex flex-row items-center justify-between">
+        <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex flex-row items-center justify-between">
           <CardTitle className="text-xl font-bold">Emergency Report Status Overview</CardTitle>
           <Button
             variant="ghost"
