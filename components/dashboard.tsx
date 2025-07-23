@@ -102,9 +102,18 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [reportCredits, setReportCredits] = useState<number>(() => {
     if (typeof window !== 'undefined') {
       const storedCredits = localStorage.getItem('mdrrmo_reportCredits');
-      return storedCredits ? parseInt(storedCredits, 10) : 2; // Default to 2 credits
+      return storedCredits ? Math.min(3, parseInt(storedCredits, 10)) : 3; // Max 3 credits
     }
-    return 2;
+    return 3; // Default to max 3 credits
+  });
+  
+  // Track when credits were consumed for replenishment
+  const [creditConsumptionTimes, setCreditConsumptionTimes] = useState<number[]>(() => {
+    if (typeof window !== 'undefined') {
+      const storedTimes = localStorage.getItem('mdrrmo_creditConsumptionTimes');
+      return storedTimes ? JSON.parse(storedTimes) : [];
+    }
+    return [];
   });
 
   // Function to load notifications for the current user
@@ -171,65 +180,87 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   }, []);
 
-  // Effect to load initial cooldown state and credits from localStorage
+  // Effect to load initial credits and consumption times from localStorage
   useEffect(() => {
-    const storedCooldownEnd = localStorage.getItem('cooldownEndTime');
     const storedCredits = localStorage.getItem('mdrrmo_reportCredits');
-
-    if (storedCredits) {
-      setReportCredits(parseInt(storedCredits, 10));
+    const storedConsumptionTimes = localStorage.getItem('mdrrmo_creditConsumptionTimes');
+    
+    // Clean up old cooldown data if it exists
+    if (localStorage.getItem('cooldownEndTime')) {
+      localStorage.removeItem('cooldownEndTime');
     }
-
-    if (storedCooldownEnd) {
-      const endTime = parseISO(storedCooldownEnd);
-      const now = new Date();
-      if (endTime > now) {
-        setCooldownActive(true);
-        setCooldownRemaining(Math.max(0, Math.ceil((endTime.getTime() - now.getTime()) / 1000)));
-      } else {
-        // Cooldown expired on load, clear from storage and replenish credit
-        localStorage.removeItem('cooldownEndTime');
-        setCooldownActive(false);
-        setCooldownRemaining(0);
-        // Only replenish if it was active and expired, and credits are not already max
-        if (storedCredits && parseInt(storedCredits, 10) < 2) {
-            setReportCredits(prev => Math.min(2, prev + 1));
+    
+    // Initialize credits (max 3)
+    if (storedCredits) {
+      setReportCredits(Math.min(3, parseInt(storedCredits, 10)));
+    }
+    
+    // Initialize consumption times
+    if (storedConsumptionTimes) {
+      try {
+        const times = JSON.parse(storedConsumptionTimes);
+        if (Array.isArray(times)) {
+          setCreditConsumptionTimes(times);
         }
+      } catch (e) {
+        console.error('Error parsing stored credit consumption times:', e);
       }
     }
   }, []); // Run once on mount for initial setup
 
-  // Effect to manage cooldown timer
+  // Effect to manage credit replenishment
   useEffect(() => {
-    if (cooldownActive && cooldownRemaining > 0) {
-      cooldownTimerRef.current = setInterval(() => {
-        setCooldownRemaining(prev => {
-          if (prev <= 1) {
-            clearInterval(cooldownTimerRef.current!);
-            setCooldownActive(false);
-            localStorage.removeItem('cooldownEndTime');
-            setReportCredits(prevCredits => Math.min(2, prevCredits + 1)); // Replenish one credit
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else if (!cooldownActive && cooldownTimerRef.current) {
-      clearInterval(cooldownTimerRef.current);
-      cooldownTimerRef.current = null;
-    }
-
-    return () => {
-      if (cooldownTimerRef.current) {
-        clearInterval(cooldownTimerRef.current);
+    const checkAndReplenishCredits = () => {
+      const now = Date.now();
+      const tenMinutes = 10 * 60 * 1000; // 10 minutes in milliseconds
+      
+      // Filter out timestamps older than 10 minutes
+      const validTimestamps = creditConsumptionTimes.filter(
+        timestamp => (now - timestamp) < tenMinutes
+      );
+      
+      // Calculate available credits (3 max minus consumed credits)
+      const availableCredits = 3 - validTimestamps.length;
+      
+      // Update credits if changed
+      if (availableCredits !== reportCredits) {
+        setReportCredits(availableCredits);
       }
+      
+      // Update the consumption times if needed
+      if (validTimestamps.length !== creditConsumptionTimes.length) {
+        setCreditConsumptionTimes(validTimestamps);
+      }
+      
+      // If we have consumed credits, schedule next check for when the oldest one replenishes
+      if (validTimestamps.length > 0) {
+        const timeUntilReplenish = (validTimestamps[0] + tenMinutes) - now;
+        return Math.max(1000, timeUntilReplenish); // Check again when next credit is due or in 1s
+      }
+      
+      return null; // No active timers
     };
-  }, [cooldownActive, cooldownRemaining]); // Depend on these to manage the timer
+    
+    // Initial check
+    const timeout = checkAndReplenishCredits();
+    
+    // Set up timer for next check if needed
+    let timer: NodeJS.Timeout;
+    if (timeout !== null) {
+      timer = setTimeout(checkAndReplenishCredits, timeout);
+    }
+    
+    // Cleanup function
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [creditConsumptionTimes, reportCredits]);
 
-  // Effect to persist report credits to localStorage whenever it changes
+  // Effect to persist report credits and consumption times to localStorage
   useEffect(() => {
     localStorage.setItem('mdrrmo_reportCredits', reportCredits.toString());
-  }, [reportCredits]);
+    localStorage.setItem('mdrrmo_creditConsumptionTimes', JSON.stringify(creditConsumptionTimes));
+  }, [reportCredits, creditConsumptionTimes]);
 
 
   // Main useEffect for session, user data, and initial data loading
@@ -385,7 +416,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
 
     // Check credits BEFORE sending
-    if (reportCredits === 0) {
+    if (reportCredits <= 0) {
       console.log("No credits remaining. Cannot send alert.");
       setShowSOSConfirm(false); // Close modal
       return;
@@ -455,18 +486,12 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         created_at: new Date().toISOString(),
       });
 
-      // Decrement credits
-      setReportCredits(prev => prev - 1);
-      const newCredits = reportCredits - 1; // Use this for immediate check
-
-      // Start cooldown if credits drop to 1 or 0
-      if (newCredits <= 1) { // Cooldown starts if credits are 1 or 0
-        const cooldownDuration = 10 * 60; // 10 minutes in seconds
-        const cooldownEnd = new Date(new Date().getTime() + cooldownDuration * 1000);
-        localStorage.setItem('cooldownEndTime', cooldownEnd.toISOString());
-        setCooldownActive(true);
-        setCooldownRemaining(cooldownDuration);
-      }
+      // Record the time when credit was consumed
+      const consumptionTime = Date.now();
+      setCreditConsumptionTimes(prev => [...prev, consumptionTime]);
+      
+      // Update credits (will be validated by the effect)
+      setReportCredits(prev => Math.max(0, prev - 1));
 
       setTimeout(() => {
         setIsEmergencyActive(false)
