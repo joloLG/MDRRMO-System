@@ -230,6 +230,9 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       if (creditsToReplenish > 0) {
         setReportCredits(prev => {
           const newCredits = Math.min(3, prev + creditsToReplenish);
+          if (newCredits > 0) {
+            setShowSOSConfirm(false); // Close any open SOS confirm modal if credits are available
+          }
           return newCredits;
         });
       }
@@ -252,7 +255,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     const timeout = processCooldowns();
     
     // Set up timer for next check if needed
-    let timer: NodeJS.Timeout;
+    let timer: NodeJS.Timeout | null = null;
     if (timeout !== null) {
       timer = setTimeout(processCooldowns, timeout);
     }
@@ -438,29 +441,52 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       return;
     }
 
-    // Check credits BEFORE sending
-    if (reportCredits <= 0) {
+    // Double-check credits before proceeding (in case of race conditions)
+    const currentCredits = reportCredits;
+    if (currentCredits <= 0) {
       console.log("No credits remaining. Cannot send alert.");
-      setShowSOSConfirm(false); // Close modal
+      setShowSOSConfirm(false);
       return;
     }
 
-    setIsEmergencyActive(true)
-    setSelectedIncidentTypeForConfirmation(null); // Reset confirmation state
-    setShowSOSConfirm(false) // Close the confirmation modal
+    // Immediately update UI to prevent double-clicks
+    setIsEmergencyActive(true);
+    setSelectedIncidentTypeForConfirmation(null);
+    setShowSOSConfirm(false);
+    
+    // Record the time when credit was consumed (before the async operation)
+    const consumptionTime = Date.now();
+    
+    // Immediately update the credit state to prevent double submissions
+    setReportCredits(prev => {
+      const newCredits = Math.max(0, prev - 1);
+      return newCredits;
+    });
+    
+    // Add a new cooldown timer for this consumption
+    setActiveCooldowns(prev => [...prev, consumptionTime + (10 * 60 * 1000)]);
+    
+    // Save the consumption time for persistence
+    setCreditConsumptionTimes(prev => [...prev, consumptionTime]);
 
     try {
-      let locationAddress = "Location unavailable"
+      let locationAddress = "Location unavailable";
       try {
+        // Use our local API endpoint to avoid CORS issues
         const response = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.lat}&lon=${location.lng}&zoom=18&addressdetails=1`,
-          { headers: { 'User-Agent': 'MDRRMO-App/1.0' } }
-        )
-        const data = await response.json()
-        locationAddress = data.display_name || `${location.lat}, ${location.lng}`
+          `/api/geocode?lat=${location.lat}&lon=${location.lng}`
+        );
+        
+        if (!response.ok) {
+          throw new Error(`Geocoding API error: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        locationAddress = data.display_name || `${location.lat}, ${location.lng}`;
       } catch (err) {
-        console.error("Geocoding error:", err)
-        locationAddress = `${location.lat}, ${location.lng}`
+        console.error("Geocoding error:", err);
+        // Fallback to coordinates if geocoding fails
+        locationAddress = `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`;
       }
 
       const { data: reportData, error: reportError } = await supabase
@@ -509,19 +535,10 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         created_at: new Date().toISOString(),
       });
 
-      // Record the time when credit was consumed
-      const consumptionTime = Date.now();
-      setCreditConsumptionTimes(prev => [...prev, consumptionTime]);
-      
-      // Add a new cooldown timer for this consumption
-      setActiveCooldowns(prev => [...prev, consumptionTime + (10 * 60 * 1000)]);
-      
-      // Immediately deduct the credit
-      setReportCredits(prev => Math.max(0, prev - 1));
-
+      // Visual active state for 5 seconds
       setTimeout(() => {
-        setIsEmergencyActive(false)
-      }, 5000) // Visual active state for 5 seconds
+        setIsEmergencyActive(false);
+      }, 5000);
     } catch (error: any) {
       console.error("SOS Error:", error)
       console.error("Failed to send emergency alert: " + error.message);
