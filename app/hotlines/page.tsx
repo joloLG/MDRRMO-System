@@ -97,8 +97,8 @@ export default function HotlinesPage() {
           
           {/* Page header */}
           <div className="text-center mb-6">
-            <h1 className="text-2xl sm:text-3xl font-bold text-orange-800 mb-2">Emergency Hotlines</h1>
-            <p className="text-orange-700 font-medium">Important contact numbers for emergencies in Bulan, Sorsogon</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-black-800 mb-2">Emergency Hotlines</h1>
+            <p className="text-black-700 font-medium">Important contact numbers for emergencies in Bulan, Sorsogon</p>
           </div>
 
           {/* Hotlines list */}
@@ -133,8 +133,8 @@ export default function HotlinesPage() {
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <p className="text-orange-600">No hotlines available at this time.</p>
-                  <p className="text-sm text-orange-500 mt-2">Please check back later or contact the MDRRMO office directly.</p>
+                  <p className="text-black-600">No hotlines available at this time.</p>
+                  <p className="text-sm text-black-500 mt-2">Please check back later or contact the MDRRMO office directly.</p>
                 </div>
               )}
             </CardContent>
@@ -142,15 +142,15 @@ export default function HotlinesPage() {
 
           {/* Important reminder */}
           <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
-            <h3 className="font-medium text-orange-800 mb-2">Important Reminder</h3>
-            <p className="text-sm text-orange-700">
+            <h3 className="font-medium text-black-800 mb-2">Important Reminder</h3>
+            <p className="text-sm text-black-700">
               In case of an emergency, please call the appropriate hotline number immediately displayed or use this application to report an incident directly to mdrrmo. 
-              For life-threatening situations, call the emergency hotline at <strong className="text-orange-900">911</strong> or visit the nearest hospital.
+              For life-threatening situations, call the emergency hotline at <strong className="text-red-900">911</strong> or visit the nearest hospital.
             </p>
           </div>
 
           {/* Footer */}
-          <div className="mt-8 text-center text-sm text-orange-800">
+          <div className="mt-8 text-center text-sm text-black-800">
             <p>&copy; {new Date().getFullYear()} MDRRMO Bulan, Sorsogon. All rights reserved.</p>
           </div>
         </div>
