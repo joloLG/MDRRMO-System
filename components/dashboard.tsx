@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords } from "lucide-react" // Added Swords for Armed Conflict
+import { UserSidebar } from "./user_sidebar"
 import { supabase } from "@/lib/supabase"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -633,13 +634,20 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       {/* Header */}
       <div className="relative z-20 bg-orange-500/95 backdrop-blur-sm text-white p-4 shadow-lg">
         <div className="flex items-center justify-between">
-          {/* Hamburger Menu Icon - Visible on small screens, hidden on large */}
-          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 -ml-2 rounded-md focus:outline-none focus:ring-2 focus:ring-white lg:hidden">
-            <Menu className="w-6 h-6" />
-          </button>
-          {/* Desktop/Larger Screen Title - Hidden on small screens, visible on large */}
-          <div className="hidden lg:flex items-center space-x-3">
-            <span className="font-medium text-lg">SORSU-Students</span>
+          <div className="flex items-center">
+            {/* Hamburger Menu Button - Always visible */}
+            <button 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
+              className="p-2 -ml-2 rounded-md hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-white transition-colors"
+              aria-label="Toggle menu"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+            
+            {/* Desktop Title - Hidden on small screens */}
+            <div className="hidden md:flex items-center space-x-3 ml-2">
+              <span className="font-medium text-lg">SORSU-Students</span>
+            </div>
           </div>
 
           <div className="text-center flex-1">
@@ -676,41 +684,12 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         </div>
       </div>
 
-      {/* Sidebar Overlay for Mobile - Covers content when sidebar is open */}
-      {isSidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>
-      )}
-
-      {/* Sidebar - Fixed on mobile, static on desktop */}
-      <div className={`fixed top-0 left-0 h-full w-64 bg-gray-800 text-white shadow-lg z-40 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:h-auto lg:w-auto lg:flex-shrink-0`}>
-        <div className="p-4 flex items-center justify-between border-b border-gray-700">
-          <h2 className="text-xl font-bold">Menu</h2>
-          {/* Close button for mobile sidebar */}
-          <button onClick={() => setIsSidebarOpen(false)} className="p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-white lg:hidden">
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-        <nav className="flex flex-col p-4 space-y-2">
-          <Button variant="ghost" className="justify-start text-white hover:bg-gray-700" onClick={() => { setCurrentView('main'); setIsSidebarOpen(false); }}>
-            <AlertTriangle className="mr-2 h-5 w-5" /> Main Dashboard
-          </Button>
-          <Button variant="ghost" className="justify-start text-white hover:bg-gray-700" onClick={() => { setCurrentView('reportHistory'); setIsSidebarOpen(false); }}>
-            <History className="mr-2 h-5 w-5" /> Report History
-          </Button>
-          <Button variant="ghost" className="justify-start text-white hover:bg-gray-700" onClick={() => { setCurrentView('mdrrmoInfo'); setIsSidebarOpen(false); }}>
-            <Info className="mr-2 h-5 w-5" /> MDRRMO-Bulan Info
-          </Button>
-          <Button variant="ghost" className="justify-start text-white hover:bg-gray-700" onClick={() => { setCurrentView('hotlines'); setIsSidebarOpen(false); }}>
-            <Phone className="mr-2 h-5 w-5" /> Bulan Hotlines
-          </Button>
-          <Button variant="ghost" className="justify-start text-white hover:bg-gray-700" onClick={() => { setCurrentView('userProfile'); setIsSidebarOpen(false); }}>
-            <User className="mr-2 h-5 w-5" /> User Profile
-          </Button>
-          <Button variant="ghost" className="justify-start text-white hover:bg-gray-700" onClick={() => { setCurrentView('sendFeedback'); setIsSidebarOpen(false); }}>
-            <Mail className="mr-2 h-5 w-5" /> Send Feedback
-          </Button>
-        </nav>
-      </div>
+      {/* User Sidebar Component */}
+      <UserSidebar 
+        isOpen={isSidebarOpen} 
+        onClose={() => setIsSidebarOpen(false)}
+        onChangeView={(view: string) => setCurrentView(view as "main" | "reportHistory" | "mdrrmoInfo" | "hotlines" | "userProfile" | "sendFeedback")}
+      />
 
       {/* Notifications Dropdown - Positioned relative to header */}
       {showNotifications && (
