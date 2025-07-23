@@ -19,10 +19,10 @@ interface SidebarProps {
 export function Sidebar({ onAdminViewChange, currentAdminView, unreadFeedbackCount }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
 
-  // Handles navigation for admin views
+  // Handles navigation for admin views - opens in new tab for admin
   const handleNavigation = (path: string) => {
-    // Use the browser's history API for in-app navigation
-    window.location.href = path;
+    // Open in new tab for admin
+    window.open(path, '_blank', 'noopener,noreferrer');
     setIsOpen(false);
   };
   
