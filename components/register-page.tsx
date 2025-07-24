@@ -7,8 +7,9 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
 import { Eye, EyeOff, AlertCircle, Check, X } from "lucide-react"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
+import Link from "next/link"
 
 interface RegisterPageProps {
   onRegistrationSuccess: () => void
@@ -33,6 +34,7 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [showTerms, setShowTerms] = useState(false)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [ageVerified, setAgeVerified] = useState(false)
 
@@ -143,10 +145,8 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
           return
         }
 
-        setSuccess("Registration successful! Please check your email to verify your account.")
-        setTimeout(() => {
-          onRegistrationSuccess()
-        }, 3000)
+        setShowSuccessModal(true)
+        setSuccess("Successfully sent to your email, check your email to verify the account")
       }
     } catch (err) {
       console.error("Registration error:", err)
@@ -359,29 +359,34 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
 
           {/* Terms and Conditions */}
           <div className="flex items-start space-x-2 mt-2">
-            <Checkbox
-              id="terms"
-              checked={acceptedTerms}
-              onCheckedChange={(checked: boolean) => setAcceptedTerms(checked)}
-              className="mt-1"
-            />
+            <div className="mt-1">
+              <Checkbox
+                id="terms"
+                checked={acceptedTerms}
+                onCheckedChange={(checked) => setAcceptedTerms(checked === true)}
+                className="border-orange-500 data-[state=checked]:bg-orange-500 data-[state=checked]:text-white"
+              />
+            </div>
             <div className="grid gap-1.5 leading-none">
               <label
                 htmlFor="terms"
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
               >
-                I agree to the{" "}
+                I accept the{' '}
                 <button
                   type="button"
                   onClick={(e) => {
-                    e.preventDefault();
-                    setShowTerms(true);
+                    e.preventDefault()
+                    setShowTerms(true)
                   }}
-                  className="text-orange-600 hover:underline"
+                  className="text-orange-500 hover:underline font-medium"
                 >
                   Terms and Conditions
                 </button>
               </label>
+              <p className="text-xs text-gray-500">
+                You must be at least 12 years old to register. By creating an account, you agree to our terms and conditions.
+              </p>
             </div>
           </div>
 
@@ -403,6 +408,81 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
           </p>
         </CardContent>
       </Card>
+
+      {/* Success Modal */}
+      <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
+        <DialogContent className="sm:max-w-[425px] bg-white">
+          <div className="flex flex-col items-center text-center p-6">
+            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
+              <Check className="h-8 w-8 text-green-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Registration Successful!</h3>
+            <p className="text-gray-600 mb-6">{success}</p>
+            <Button 
+              asChild 
+              className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+              onClick={() => {
+                window.location.href = '/';
+              }}
+            >
+              <button>Okay</button>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Terms and Conditions Dialog */}
+      <Dialog open={showTerms} onOpenChange={setShowTerms}>
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-gray-800">Terms and Conditions</DialogTitle>
+            <DialogDescription className="text-gray-600">
+              Please read these terms and conditions carefully before using our service.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4 text-gray-700">
+            <div className="space-y-2">
+              <h3 className="font-semibold text-gray-800">1. Account Registration</h3>
+              <p>You must provide accurate and complete information when creating an account. You are responsible for maintaining the confidentiality of your account credentials.</p>
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="font-semibold text-gray-800">2. User Responsibilities</h3>
+              <p>You agree to use this service only for legitimate emergency reporting purposes. You must not use false information or impersonate others.</p>
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="font-semibold text-gray-800">3. Prohibited Activities</h3>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Creating fake or misleading emergency reports</li>
+                <li>Using the service for non-emergency purposes</li>
+                <li>Harassing or abusing other users or emergency responders</li>
+                <li>Violating any laws or regulations</li>
+              </ul>
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="font-semibold text-gray-800">4. Consequences of Misuse</h3>
+              <p>Any violation of these terms may result in immediate account suspension or termination, and may be reported to the appropriate authorities.</p>
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="font-semibold text-gray-800">5. Privacy</h3>
+              <p>Your personal information will be handled in accordance with our Privacy Policy. Emergency reports may be shared with appropriate authorities as needed.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => setShowTerms(false)}
+              className="border-orange-500 text-orange-500 hover:bg-orange-50"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
