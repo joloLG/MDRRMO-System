@@ -60,17 +60,30 @@ export default function MobileApp() {
   // Handle logout
   const handleLogout = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error("Error signing out from Supabase:", error);
+      // Clear local state first
+      setUserData(null);
+      setIsLoggedIn(false);
+      setCurrentScreen("login");
+      localStorage.removeItem("mdrrmo_user");
+      
+      // Then attempt to sign out from Supabase
+      try {
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+          console.warn("Supabase sign-out warning:", error.message);
+          // Continue with logout flow even if Supabase sign-out fails
+        }
+      } catch (err) {
+        console.warn("Error during Supabase sign-out (non-critical):", err);
+        // Continue with logout flow even if Supabase sign-out fails
       }
     } catch (err) {
-      console.error("Unexpected error during Supabase signOut:", err);
-    } finally {
-      setUserData(null)
-      setIsLoggedIn(false)
-      setCurrentScreen("login")
-      localStorage.removeItem("mdrrmo_user")
+      console.error("Error during logout:", err);
+      // Ensure we still reset the UI state even if there's an error
+      setUserData(null);
+      setIsLoggedIn(false);
+      setCurrentScreen("login");
+      localStorage.removeItem("mdrrmo_user");
     }
   }
 

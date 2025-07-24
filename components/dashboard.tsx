@@ -98,23 +98,50 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [cooldownRemaining, setCooldownRemaining] = useState<number>(0); // in seconds
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // New state for report credits, initialized from localStorage
-  const [reportCredits, setReportCredits] = useState<number>(() => {
-    if (typeof window !== 'undefined') {
-      const storedCredits = localStorage.getItem('mdrrmo_reportCredits');
-      return storedCredits ? Math.min(3, parseInt(storedCredits, 10)) : 3; // Max 3 credits
-    }
-    return 3; // Default to max 3 credits
-  });
+  // New state for report credits, initialized from localStorage with user-specific keys
+  const [reportCredits, setReportCredits] = useState<number>(3); // Default to max 3 credits
   
   // Track when credits were consumed for replenishment
-  const [creditConsumptionTimes, setCreditConsumptionTimes] = useState<number[]>(() => {
-    if (typeof window !== 'undefined') {
-      const storedTimes = localStorage.getItem('mdrrmo_creditConsumptionTimes');
-      return storedTimes ? JSON.parse(storedTimes) : [];
+  const [creditConsumptionTimes, setCreditConsumptionTimes] = useState<number[]>([]);
+  
+  // Get user-specific storage key
+  const getCreditStorageKey = useCallback((suffix: string) => {
+    return currentUser ? `mdrrmo_${currentUser.id}_${suffix}` : null;
+  }, [currentUser?.id]);
+  
+  // Load user's credits when user changes
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    
+    const creditsKey = getCreditStorageKey('reportCredits');
+    const timesKey = getCreditStorageKey('creditConsumptionTimes');
+    
+    if (creditsKey && timesKey) {
+      // Load credits
+      const storedCredits = localStorage.getItem(creditsKey);
+      if (storedCredits) {
+        setReportCredits(Math.min(3, parseInt(storedCredits, 10)));
+      } else {
+        setReportCredits(3); // Default to max 3 credits
+      }
+      
+      // Load consumption times
+      const storedTimes = localStorage.getItem(timesKey);
+      if (storedTimes) {
+        try {
+          const parsedTimes = JSON.parse(storedTimes);
+          if (Array.isArray(parsedTimes)) {
+            setCreditConsumptionTimes(parsedTimes);
+          }
+        } catch (e) {
+          console.error('Error parsing stored credit times:', e);
+          setCreditConsumptionTimes([]);
+        }
+      } else {
+        setCreditConsumptionTimes([]);
+      }
     }
-    return [];
-  });
+  }, [currentUser?.id, getCreditStorageKey]);
   
   // Track active cooldown timers
   const [activeCooldowns, setActiveCooldowns] = useState<number[]>([]);
@@ -278,15 +305,23 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         .map(timestamp => timestamp + tenMinutes);
       
       setActiveCooldowns(newCooldowns);
+    } else {
+      setActiveCooldowns([]);
     }
   }, [creditConsumptionTimes]);
 
-  // Effect to persist report credits, consumption times, and cooldowns to localStorage
+  // Effect to persist report credits, consumption times to user-specific localStorage
   useEffect(() => {
-    localStorage.setItem('mdrrmo_reportCredits', reportCredits.toString());
-    localStorage.setItem('mdrrmo_creditConsumptionTimes', JSON.stringify(creditConsumptionTimes));
-    // Note: We don't persist activeCooldowns as they're recalculated on load
-  }, [reportCredits, creditConsumptionTimes]);
+    if (!currentUser?.id) return;
+    
+    const creditsKey = getCreditStorageKey('reportCredits');
+    const timesKey = getCreditStorageKey('creditConsumptionTimes');
+    
+    if (creditsKey && timesKey) {
+      localStorage.setItem(creditsKey, reportCredits.toString());
+      localStorage.setItem(timesKey, JSON.stringify(creditConsumptionTimes));
+    }
+  }, [reportCredits, creditConsumptionTimes, currentUser?.id, getCreditStorageKey]);
 
 
   // Main useEffect for session, user data, and initial data loading
@@ -558,16 +593,16 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const handleLogout = async () => {
     console.log("LOGOUT FUNCTION CALLED!")
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error("Error signing out from Supabase:", error);
-      }
+      // Clear local session first
+      localStorage.removeItem("mdrrmo_user");
+      setShowUserMenu(false);
+      
+      // Then call the parent's logout handler which will handle the Supabase sign out
+      onLogout();
     } catch (err) {
-      console.error("Unexpected error during Supabase signOut:", err);
-    } finally {
-      localStorage.removeItem("mdrrmo_user")
-      setShowUserMenu(false)
-      onLogout()
+      console.error("Error during logout:", err);
+      // Even if there's an error, we should still proceed with the logout
+      onLogout();
     }
   }
 

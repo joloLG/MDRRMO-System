@@ -4,9 +4,11 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
-import { Eye, EyeOff } from "lucide-react" // Import icons from lucide-react
+import { Eye, EyeOff, AlertCircle, Check, X } from "lucide-react"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Checkbox } from "@/components/ui/checkbox"
 
 interface RegisterPageProps {
   onRegistrationSuccess: () => void
@@ -28,14 +30,29 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
-  const [showPassword, setShowPassword] = useState(false) // State for main password visibility
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false) // State for confirm password visibility
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [showTerms, setShowTerms] = useState(false)
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [ageVerified, setAgeVerified] = useState(false)
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
     setError("") // Clear error on input change
     setSuccess("") // Clear success on input change
   }
+
+  const calculateAge = (birthDate: string) => {
+    const today = new Date();
+    const birthDateObj = new Date(birthDate);
+    let age = today.getFullYear() - birthDateObj.getFullYear();
+    const monthDiff = today.getMonth() - birthDateObj.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDateObj.getDate())) {
+      age--;
+    }
+    return age;
+  };
 
   const handleRegister = async () => {
     // Basic validation for required fields
@@ -45,10 +62,24 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
       !formData.email ||
       !formData.username ||
       !formData.password ||
-      !formData.confirmPassword || // Ensure confirm password is filled
-      !formData.mobileNumber
+      !formData.confirmPassword ||
+      !formData.mobileNumber ||
+      !formData.birthday
     ) {
       setError("Please fill in all required fields")
+      return
+    }
+
+    // Age verification (12+ years old)
+    const age = calculateAge(formData.birthday);
+    if (age < 12) {
+      setError("You must be at least 12 years old to register.")
+      return
+    }
+    
+    // Terms and conditions check
+    if (!acceptedTerms) {
+      setError("You must accept the terms and conditions to register.")
       return
     }
 
@@ -223,16 +254,38 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
 
           <div>
             <Label htmlFor="birthday" className="text-gray-700 font-medium">
-              Birthday
+              Birthday *
             </Label>
-            <Input
-              id="birthday"
-              type="date"
-              value={formData.birthday}
-              onChange={(e) => handleInputChange("birthday", e.target.value)}
-              className="border-orange-200 focus:border-orange-500"
-              disabled={isLoading}
-            />
+            <div className="relative">
+              <Input
+                id="birthday"
+                type="date"
+                value={formData.birthday}
+                onChange={(e) => {
+                  handleInputChange("birthday", e.target.value);
+                  if (e.target.value) {
+                    const age = calculateAge(e.target.value);
+                    setAgeVerified(age >= 12);
+                  }
+                }}
+                className={`border-orange-200 focus:border-orange-500 ${formData.birthday && !ageVerified ? 'border-red-500' : ''}`}
+                required
+                disabled={isLoading}
+                max={new Date().toISOString().split('T')[0]} // Prevent future dates
+              />
+              {formData.birthday && (
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                  {ageVerified ? (
+                    <Check className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <X className="h-4 w-4 text-red-500" />
+                  )}
+                </div>
+              )}
+            </div>
+            {formData.birthday && !ageVerified && (
+              <p className="text-sm text-red-500 mt-1">You must be at least 12 years old to register.</p>
+            )}
           </div>
 
           <div>
@@ -304,12 +357,42 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
             </div>
           </div>
 
+          {/* Terms and Conditions */}
+          <div className="flex items-start space-x-2 mt-2">
+            <Checkbox
+              id="terms"
+              checked={acceptedTerms}
+              onCheckedChange={(checked: boolean) => setAcceptedTerms(checked)}
+              className="mt-1"
+            />
+            <div className="grid gap-1.5 leading-none">
+              <label
+                htmlFor="terms"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                I agree to the{" "}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setShowTerms(true);
+                  }}
+                  className="text-orange-600 hover:underline"
+                >
+                  Terms and Conditions
+                </button>
+              </label>
+            </div>
+          </div>
+
           <Button
             onClick={handleRegister}
-            className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 text-lg"
-            disabled={isLoading}
+            disabled={isLoading || !ageVerified || !acceptedTerms}
+            className={`w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded transition-colors ${
+              !ageVerified || !acceptedTerms ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
           >
-            {isLoading ? "Registering..." : "REGISTER"}
+            {isLoading ? "Registering..." : "Register"}
           </Button>
 
           <p className="text-center text-sm text-gray-600 mt-4">
