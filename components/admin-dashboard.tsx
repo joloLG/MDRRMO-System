@@ -334,23 +334,72 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
   const markAllNotificationsAsRead = useCallback(async () => {
     if (unreadCount === 0) return;
-    const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id);
+    
+    // Get all unread notification IDs
+    const unreadNotifications = notifications.filter(n => !n.is_read);
+    const unreadIds = unreadNotifications.map(n => n.id);
+    
     if (unreadIds.length === 0) return;
 
+    console.log(`Attempting to mark ${unreadIds.length} notifications as read`);
     setIsLoadingAction(true);
-    const { error } = await supabase
-      .from('admin_notifications')
-      .update({ is_read: true })
-      .in('id', unreadIds);
-
-    if (error) {
-      console.error("Error marking all as read:", error);
-      setError("Failed to mark all notifications as read.");
-    } else {
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    setError(null);
+    
+    try {
+      // First, update the UI optimistically
+      setNotifications(prev => 
+        prev.map(n => ({
+          ...n,
+          is_read: true
+        }))
+      );
       setUnreadCount(0);
+      
+      // Then update the database
+      console.log('Updating notifications in database...');
+      
+      // Try updating all at once first
+      const { data, error } = await supabase
+        .from('admin_notifications')
+        .update({ is_read: true })
+        .in('id', unreadIds)
+        .select(); // Add select to see what was updated
+        
+      if (error) {
+        console.error('Batch update failed, trying one by one:', error);
+        
+        // If batch update fails, try updating one by one
+        for (const id of unreadIds) {
+          const { error: singleError } = await supabase
+            .from('admin_notifications')
+            .update({ is_read: true })
+            .eq('id', id);
+            
+          if (singleError) {
+            console.error(`Failed to update notification ${id}:`, singleError);
+            // Continue with next notification even if one fails
+          }
+        }
+      } else {
+        console.log('Successfully updated notifications:', data);
+      }
+      
+      // Force a refresh of notifications to ensure sync
+      const refreshedNotifications = await fetchAdminNotifications();
+      setNotifications(refreshedNotifications);
+      setUnreadCount(refreshedNotifications.filter(n => !n.is_read).length);
+      
+    } catch (error) {
+      console.error("Error in markAllNotificationsAsRead:", error);
+      setError("Failed to mark all notifications as read. Please try again.");
+      
+      // Revert optimistic update on error
+      const refreshedNotifications = await fetchAdminNotifications();
+      setNotifications(refreshedNotifications);
+      setUnreadCount(refreshedNotifications.filter(n => !n.is_read).length);
+    } finally {
+      setIsLoadingAction(false);
     }
-    setIsLoadingAction(false);
   }, [notifications, unreadCount]);
 
   const handleReportClick = (report: Report) => {

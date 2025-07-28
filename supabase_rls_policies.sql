@@ -51,11 +51,23 @@ ON public.admin_notifications
 FOR SELECT 
 USING (is_admin());
 
--- 3. Allow admins to UPDATE all admin notifications (This is the FIX)
-CREATE POLICY "Allow admins to update all notifications" 
+-- 3. Allow admins to UPDATE notification read status
+CREATE POLICY "Allow admins to update notification read status" 
 ON public.admin_notifications 
 FOR UPDATE 
-USING (is_admin());
+USING (is_admin())
+WITH CHECK (is_admin() AND (
+  -- Only allow updating the is_read field
+  (SELECT array_agg(key) FROM jsonb_each_text(to_jsonb(NEW)) WHERE key = 'is_read' AND value = 'true') IS NOT NULL
+  AND
+  -- Ensure no other fields are being modified
+  (SELECT count(*) FROM (
+    SELECT key FROM jsonb_each_text(to_jsonb(OLD))
+    EXCEPT
+    SELECT key FROM jsonb_each_text(to_jsonb(NEW))
+    WHERE key != 'is_read' OR value != to_jsonb(OLD)->>key
+  ) as changed_fields) = 0
+));
 
 -- 4. Allow new admin notifications to be INSERTed (e.g., when a new report is filed)
 -- This is permissive, assuming inserts are trusted.
