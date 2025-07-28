@@ -92,9 +92,15 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
           return
         }
 
-        // Store user data in localStorage
-        localStorage.setItem("mdrrmo_user", JSON.stringify(profile))
-        onLoginSuccess(profile)
+        // Include the user_type in the profile data
+        const userWithType = {
+          ...profile,
+          user_type: profile.user_type || 'user' // Default to 'user' if not specified
+        };
+
+        // Store user data in localStorage and notify parent component
+        localStorage.setItem("mdrrmo_user", JSON.stringify(userWithType));
+        onLoginSuccess(userWithType);
       }
     } catch (err) {
       console.error("Login error:", err)

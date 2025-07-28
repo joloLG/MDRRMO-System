@@ -394,7 +394,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="daily">Day</SelectItem>
-                <SelectItem value="weekly">Week</SelectItem>
+                <SelectItem value="weekly">Range</SelectItem>
                 <SelectItem value="monthly">Month</SelectItem>
                 <SelectItem value="yearly">Year</SelectItem>
               </SelectContent>
@@ -655,7 +655,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="daily">Day</SelectItem>
-                <SelectItem value="weekly">Week</SelectItem>
+                <SelectItem value="weekly">Range</SelectItem>
                 <SelectItem value="monthly">Month</SelectItem>
                 <SelectItem value="yearly">Year</SelectItem>
               </SelectContent>

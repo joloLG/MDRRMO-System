@@ -3,12 +3,13 @@
 import { useState, useEffect } from "react"
 import { RegisterPage } from "./components/register-page"
 import { LoginPage } from "./components/login-page"
-import {Dashboard} from "./components/dashboard" // Default import
-import {AdminDashboard} from './components/admin-dashboard'; // Default import
-import { supabase } from "@/lib/supabase" // Import supabase for logout
+import { Dashboard } from "./components/dashboard"
+import { AdminDashboard } from './components/admin-dashboard'
+import { SuperadminDashboard } from "./components/superadmin-dashboard"
+import { supabase } from "@/lib/supabase"
 
 export default function MobileApp() {
-  const [currentScreen, setCurrentScreen] = useState<"login" | "register" | "dashboard" | "admin">("login")
+  const [currentScreen, setCurrentScreen] = useState<"login" | "register" | "dashboard" | "admin" | "superadmin">("login")
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [userData, setUserData] = useState<any>(null)
 
@@ -21,7 +22,13 @@ export default function MobileApp() {
         setUserData(user)
         setIsLoggedIn(true)
         // Automatically set screen based on user type if logged in
-        setCurrentScreen(user.user_type === "admin" ? "admin" : "dashboard")
+        if (user.user_type === "superadmin") {
+          setCurrentScreen("superadmin")
+        } else if (user.user_type === "admin") {
+          setCurrentScreen("admin")
+        } else {
+          setCurrentScreen("dashboard")
+        }
       } catch (parseError) {
         console.error("Error parsing stored user data in MobileApp:", parseError);
         // If data is corrupted, clear it and force login
@@ -44,7 +51,13 @@ export default function MobileApp() {
   const handleLoginSuccess = (user: any) => {
     setUserData(user)
     setIsLoggedIn(true)
-    setCurrentScreen(user.user_type === "admin" ? "admin" : "dashboard")
+    if (user.user_type === "superadmin") {
+      setCurrentScreen("superadmin")
+    } else if (user.user_type === "admin") {
+      setCurrentScreen("admin")
+    } else {
+      setCurrentScreen("dashboard")
+    }
   }
 
   // Handle navigation to register
@@ -89,7 +102,9 @@ export default function MobileApp() {
 
   // If user is logged in, show appropriate dashboard
   if (isLoggedIn) {
-    if (userData?.user_type === "admin") {
+    if (userData?.user_type === "superadmin") {
+      return <SuperadminDashboard onLogout={handleLogout} />
+    } else if (userData?.user_type === "admin") {
       return <AdminDashboard onLogout={handleLogout} userData={userData} />
     } else {
       return <Dashboard onLogout={handleLogout} userData={userData} />
