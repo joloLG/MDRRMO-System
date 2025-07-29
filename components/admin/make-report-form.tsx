@@ -75,15 +75,16 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
       // Clear fields for a general report
       setIncidentDate('');
       setIncidentTime('');
+      // Only reset these fields when there's no selected report
+      setIncidentTypeId(undefined);
+      setBarangayId(undefined);
+      setErTeamId(undefined);
+      setPersonsInvolved('');
+      setNumberOfResponders('');
+      setPreparedBy('');
+      setSearchTerm('');
     }
-    setIncidentTypeId(undefined);
-    setBarangayId(undefined);
-    setErTeamId(undefined);
-    setPersonsInvolved('');
-    setNumberOfResponders('');
-    setPreparedBy('');
     setFormMessage(null); // Clear messages on report change
-    setSearchTerm(''); // Clear search term
   }, [selectedReport]);
 
   const filteredBarangays = barangays.filter(b =>

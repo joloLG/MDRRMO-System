@@ -8,6 +8,7 @@ import { Bell, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as Cal
 import { Sidebar } from "@/components/sidebar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Calendar } from "@/components/ui/calendar"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format, isSameDay } from "date-fns"
 import { cn } from "@/lib/utils"
@@ -89,7 +90,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [isLoadingAction, setIsLoadingAction] = useState(false);
-  const [selectedTeam, setSelectedTeam] = useState<string>(''); // Initialize with empty string
+  const [selectedTeamId, setSelectedTeamId] = useState<string>(''); // Store team ID instead of name
   const [barangay, setBarangay] = useState<string>('');
 
   // New states for filtering and modals
@@ -231,9 +232,9 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         setInternalReports(internalReportsData.map((item: any) => ({ ...item })));
         setErTeams(erTeamsData); // Set ER Teams
 
-        // Set initial selectedTeam if teams are available
-        if (erTeamsData.length > 0) {
-          setSelectedTeam(erTeamsData[0].name); // Select the first team by default
+        // Set initial selectedTeamId if teams are available and not already set
+        if (erTeamsData.length > 0 && !selectedTeamId) {
+          setSelectedTeamId(String(erTeamsData[0].id)); // Select the first team by default
         }
 
         setNotifications(notificationsData);
@@ -402,9 +403,18 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     }
   }, [notifications, unreadCount]);
 
-  const handleReportClick = (report: Report) => {
+  const handleReportClick = useCallback((report: Report) => {
     setSelectedReport(report);
-  };
+    // Only reset the selected team if we're clicking on a different report
+    if (!selectedReport || selectedReport.id !== report.id) {
+      if (erTeams.length > 0) {
+        // Set to the first team's ID
+        setSelectedTeamId(String(erTeams[0].id));
+      } else {
+        setSelectedTeamId('');
+      }
+    }
+  }, [erTeams, selectedReport]);
 
   const handleNotificationClick = useCallback(async (notification: Notification) => {
     if (!notification.is_read) {
@@ -426,25 +436,65 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   }, [allReports]);
 
   const handleRespondToIncident = useCallback(async () => {
-    if (!selectedReport) return;
+    if (!selectedReport || !selectedTeamId) {
+      setError('Please select a team before responding.');
+      return;
+    }
+    
     setIsLoadingAction(true);
     setError(null);
+    
     try {
-      const responseMessage = `Team ${selectedTeam} is responding.`;
-      const { data: updatedReport, error: updateError } = await supabase.from('emergency_reports').update({ status: 'responded', admin_response: responseMessage, responded_at: new Date().toISOString() }).eq('id', selectedReport.id).select().single();
+      // Find the selected team
+      const selectedTeamObj = erTeams.find(team => team.id === parseInt(selectedTeamId));
+      if (!selectedTeamObj) {
+        throw new Error('Selected team not found');
+      }
+      
+      const responseMessage = `Team ${selectedTeamObj.name} is responding.`;
+      const updateData = { 
+        status: 'responded', 
+        admin_response: responseMessage, 
+        responded_at: new Date().toISOString(),
+        er_team_id: selectedTeamObj.id // Store the team ID in the report
+      };
+      
+      const { data: updatedReport, error: updateError } = await supabase
+        .from('emergency_reports')
+        .update(updateData)
+        .eq('id', selectedReport.id)
+        .select()
+        .single();
+        
       if (updateError) throw updateError;
 
-      const { error: notificationError } = await supabase.from('user_notifications').insert({ user_id: selectedReport.user_id, emergency_report_id: selectedReport.id, message: `Your emergency report for ${selectedReport.emergency_type} is OTW. Team ${selectedTeam} is responding.` });
-      if (notificationError) console.error('Error sending user notification:', notificationError);
+      // Send notification to user
+      const selectedTeam = erTeams.find(team => team.id === parseInt(selectedTeamId));
+      const teamName = selectedTeam ? selectedTeam.name : 'a response team';
+      
+      const { error: notificationError } = await supabase
+        .from('user_notifications')
+        .insert({ 
+          user_id: selectedReport.user_id, 
+          emergency_report_id: selectedReport.id, 
+          message: `Your emergency report for ${selectedReport.emergency_type} is OTW. Team ${teamName} is responding.` 
+        });
+        
+      if (notificationError) {
+        console.error('Error sending user notification:', notificationError);
+      }
 
+      // Refresh data
       await fetchAllReports();
       setSelectedReport(updatedReport as Report);
+      
     } catch (err: any) {
       setError(`Failed to respond: ${err.message}. Check RLS policies.`);
+      console.error('Error in handleRespondToIncident:', err);
     } finally {
       setIsLoadingAction(false);
     }
-  }, [selectedReport, selectedTeam, fetchAllReports]);
+  }, [selectedReport, selectedTeamId, erTeams, fetchAllReports]);
 
   const handleRescueDone = useCallback(async () => {
     if (!selectedReport) return;
@@ -659,20 +709,29 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                             <div>
                               <label htmlFor="team-select" className="block text-sm font-medium mb-1">Select response team:</label>
                               {/* Modified Select component */}
-                              <select
-                                id="team-select"
-                                value={selectedTeam}
-                                onChange={(e) => setSelectedTeam(e.target.value)}
-                                className="w-full p-2 border border-gray-300 rounded-md shadow-sm"
+                              <Select 
+                                value={selectedTeamId} 
+                                onValueChange={setSelectedTeamId}
                               >
-                                {erTeams.length > 0 ? (
-                                  erTeams.map(team => (
-                                    <option key={team.id} value={team.name}>{team.name}</option>
-                                  ))
-                                ) : (
-                                  <option value="">No teams available</option>
-                                )}
-                              </select>
+                                <SelectTrigger className="w-full p-2 border border-gray-300 rounded-md shadow-sm">
+                                  <SelectValue placeholder="Select ER team" />
+                                </SelectTrigger>
+                                <SelectContent className="bg-white rounded-md shadow-lg max-h-60 overflow-y-auto z-50">
+                                  {erTeams.length > 0 ? (
+                                    erTeams.map(team => (
+                                      <SelectItem 
+                                        key={team.id} 
+                                        value={String(team.id)} 
+                                        className="p-2 hover:bg-gray-100 cursor-pointer"
+                                      >
+                                        {team.name}
+                                      </SelectItem>
+                                    ))
+                                  ) : (
+                                    <div className="p-2 text-center text-gray-500">No ER teams available.</div>
+                                  )}
+                                </SelectContent>
+                              </Select>
                             </div>
                             <Button onClick={handleRespondToIncident} disabled={isLoadingAction} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><Send size={18} className="mr-2" />{isLoadingAction ? 'Responding...' : 'Respond'}</Button>
                           </div>
