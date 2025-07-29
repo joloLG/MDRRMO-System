@@ -7,7 +7,7 @@ const supabaseKey =
 export const supabase = createClient(supabaseUrl, supabaseKey)
 
 // User type
-export type UserRole = 'superadmin' | 'admin' | 'user' | 'responder';
+export type UserRole = 'superadmin' | 'admin' | 'user';
 
 export interface User {
   id: string
@@ -55,7 +55,7 @@ export const userQueries = {
   },
 
   // Update user role (only for superadmin)
-  updateUserRole: async (userId: string, role: 'admin' | 'user' | 'superadmin' | 'responder') => {
+  updateUserRole: async (userId: string, role: 'admin' | 'user' | 'superadmin') => {
     const { data, error } = await supabase
       .from('users')
       .update({ user_type: role })

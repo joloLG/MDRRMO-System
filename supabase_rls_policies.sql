@@ -36,10 +36,14 @@ WITH CHECK (true);
 -- Note: This policy identifies an admin by the specific email 'admin@mdrrmo.com'.
 -- This is based on the project's specific setup.
 
--- Helper function to check if a user is an admin by email
+-- Helper function to check if a user is an admin by user_type
 CREATE OR REPLACE FUNCTION is_admin()
 RETURNS boolean AS $$
-  SELECT auth.email() = 'admin@mdrrmo.com';
+  SELECT EXISTS (
+    SELECT 1 FROM public.users 
+    WHERE id = auth.uid() 
+    AND user_type IN ('admin', 'superadmin')
+  );
 $$ LANGUAGE sql SECURITY DEFINER;
 
 -- 1. Enable RLS on the table if not already enabled
