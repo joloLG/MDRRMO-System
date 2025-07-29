@@ -5,16 +5,13 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar } from "@/components/ui/calendar"
-import { format } from "date-fns"
-import { Calendar as CalendarIcon, Ban, CheckCircle, Loader2, LogOut } from "lucide-react"
-import { userQueries, type User } from "@/lib/supabase"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Loader2, LogOut, Info } from "lucide-react" // Removed Ban, CheckCircle, CalendarIcon
+import { userQueries, type User, supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 
-type UserWithBanInfo = Omit<User, 'user_type'> & {
+// Removed isBanning, tempBanUntil, tempBanReason as they are no longer used for UI interaction
+type UserWithDisplayInfo = Omit<User, 'user_type'> & {
   firstName: string;
   middleName?: string;
   lastName: string;
@@ -22,17 +19,42 @@ type UserWithBanInfo = Omit<User, 'user_type'> & {
   mobileNumber?: string;
   user_type: User['user_type'];
   created_at: string;
-  isBanning?: boolean;
-  isUpdating?: boolean;
-  tempBanUntil?: Date | null;
-  tempBanReason?: string;
+  isUpdating?: boolean; // Kept for role updates
 }
 
-export function SuperadminDashboard({ onLogout }: { onLogout: () => Promise<void> }) {
-  const [users, setUsers] = useState<UserWithBanInfo[]>([])
+export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => Promise<void> }) {
+  const handleLogout = async () => {
+    try {
+      // Clear any existing sessions
+      await supabase.auth.signOut({ scope: 'local' })
+      
+      // Call the passed logout action if it exists
+      if (typeof onLogoutAction === 'function') {
+        try {
+          await onLogoutAction()
+        } catch (error) {
+          console.error('Error in onLogoutAction:', error)
+        }
+      }
+      
+      // Clear local storage and session storage
+      localStorage.clear()
+      sessionStorage.clear()
+      
+      // Force a full page reload to clear all state
+      window.location.href = "/"
+    } catch (error) {
+      console.error('Error during logout:', error)
+      // Still redirect even if there was an error
+      localStorage.clear()
+      sessionStorage.clear()
+      window.location.href = "/"
+    }
+  }
+
+  const [users, setUsers] = useState<UserWithDisplayInfo[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [banDate, setBanDate] = useState<Date | undefined>(new Date())
 
   // Fetch all users
   const fetchUsers = async () => {
@@ -41,10 +63,7 @@ export function SuperadminDashboard({ onLogout }: { onLogout: () => Promise<void
       const data = await userQueries.getAllUsers()
       setUsers(data.map(user => ({
         ...user,
-        isBanning: false,
         isUpdating: false,
-        tempBanUntil: user.banned_until ? new Date(user.banned_until) : null,
-        tempBanReason: user.ban_reason || ''
       })))
     } catch (err) {
       console.error("Error fetching users:", err)
@@ -54,8 +73,39 @@ export function SuperadminDashboard({ onLogout }: { onLogout: () => Promise<void
     }
   }
 
+  // Set up real-time subscription for user updates
   useEffect(() => {
-    fetchUsers()
+    fetchUsers();
+    
+    // Subscribe to user updates (still useful for role changes or external ban updates)
+    const userSubscription = supabase
+      .channel('user_changes')
+      .on('postgres_changes', 
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'users' 
+        }, 
+        (payload: { new: User & { banned_until?: string | null; ban_reason?: string | null } }) => {
+          // Update the user in the local state if they exist
+          setUsers(currentUsers => 
+            currentUsers.map(user => 
+              user.id === payload.new.id 
+                ? { 
+                    ...user, 
+                    ...payload.new,
+                  } 
+                : user
+            )
+          );
+        }
+      )
+      .subscribe()
+
+    // Cleanup subscription on component unmount
+    return () => {
+      supabase.removeChannel(userSubscription);
+    };
   }, [])
 
   // Update user role
@@ -78,74 +128,7 @@ export function SuperadminDashboard({ onLogout }: { onLogout: () => Promise<void
     }
   }
 
-  // Toggle user ban status
-  const toggleBanUser = async (userId: string, isCurrentlyBanned: boolean) => {
-    try {
-      setUsers(users.map(user => 
-        user.id === userId ? { ...user, isBanning: true } : user
-      ))
-
-      if (isCurrentlyBanned) {
-        // Unban user
-        await userQueries.updateUserBanStatus(userId, false)
-        setUsers(users.map(user => 
-          user.id === userId 
-            ? { 
-                ...user, 
-                is_banned: false, 
-                banned_until: null, 
-                ban_reason: null,
-                isBanning: false 
-              } 
-            : user
-        ))
-      } else {
-        // Ban user - use temp ban values from state
-        const user = users.find(u => u.id === userId)
-        if (user) {
-          await userQueries.updateUserBanStatus(
-            userId, 
-            true, 
-            user.tempBanReason || 'Violation of terms of service',
-            user.tempBanUntil?.toISOString()
-          )
-          
-          setUsers(users.map(u => 
-            u.id === userId 
-              ? { 
-                  ...u, 
-                  is_banned: true, 
-                  banned_until: user.tempBanUntil?.toISOString() || null,
-                  ban_reason: user.tempBanReason || null,
-                  isBanning: false 
-                } 
-              : u
-          ))
-        }
-      }
-    } catch (err) {
-      console.error("Error updating ban status:", err)
-      setError("Failed to update user status. Please try again.")
-    }
-  }
-
-  // Update temp ban date
-  const handleBanDateChange = (userId: string, date: Date | undefined) => {
-    setUsers(users.map(user => 
-      user.id === userId 
-        ? { ...user, tempBanUntil: date || null } 
-        : user
-    ))
-  }
-
-  // Update temp ban reason
-  const handleBanReasonChange = (userId: string, reason: string) => {
-    setUsers(users.map(user => 
-      user.id === userId 
-        ? { ...user, tempBanReason: reason } 
-        : user
-    ))
-  }
+  // Removed toggleBanUser, handleBanDateChange, handleBanReasonChange as they are no longer needed.
 
   if (isLoading) {
     return (
@@ -154,14 +137,34 @@ export function SuperadminDashboard({ onLogout }: { onLogout: () => Promise<void
       </div>
     )
   }
+  
+  // Sort users with admins first, then by name
+  const sortedUsers = [...users].sort((a, b) => {
+    // First sort by role (superadmin > admin > responder > user)
+    const roleOrder: Record<string, number> = { superadmin: 0, admin: 1, responder: 2, user: 3 };
+    const roleA = roleOrder[a.user_type] || 3;
+    const roleB = roleOrder[b.user_type] || 3;
+    
+    if (roleA !== roleB) return roleA - roleB;
+    
+    // If same role, sort by name
+    const nameA = `${a.firstName} ${a.lastName}`.toLowerCase();
+    const nameB = `${b.firstName} ${b.lastName}`.toLowerCase();
+    return nameA.localeCompare(nameB);
+  });
 
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
           <h1 className="text-2xl font-bold text-gray-900">Superadmin Dashboard</h1>
-          <Button variant="outline" onClick={onLogout}>
-            <LogOut className="mr-2 h-4 w-4" /> Logout
+          <Button 
+            variant="outline" 
+            onClick={handleLogout}
+            className="flex items-center gap-2"
+          >
+            <LogOut className="h-4 w-4" />
+            <span>Logout</span>
           </Button>
         </div>
       </header>
@@ -187,11 +190,10 @@ export function SuperadminDashboard({ onLogout }: { onLogout: () => Promise<void
                   <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Date Created</TableHead>
-                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((user) => (
+                {sortedUsers.map((user) => (
                   <TableRow key={user.id}>
                     <TableCell className="font-medium">
                       {user.firstName} {user.middleName ? `${user.middleName} ` : ''}{user.lastName}
@@ -202,10 +204,11 @@ export function SuperadminDashboard({ onLogout }: { onLogout: () => Promise<void
                       <Select
                         value={user.user_type}
                         onValueChange={(value) => {
-                          // Type assertion is safe here because we control the values in the SelectItems
+                          // Prevent changing the role of superadmin users
+                          if (user.user_type === 'superadmin') return;
                           handleRoleChange(user.id, value as User['user_type']);
                         }}
-                        disabled={user.isUpdating}
+                        disabled={user.isUpdating || user.user_type === 'superadmin'}
                       >
                         <SelectTrigger className="w-[180px]">
                           <SelectValue placeholder="Select role" />
@@ -213,103 +216,53 @@ export function SuperadminDashboard({ onLogout }: { onLogout: () => Promise<void
                         <SelectContent>
                           <SelectItem value="superadmin">Superadmin</SelectItem>
                           <SelectItem value="admin">Admin</SelectItem>
-                          <SelectItem value="responder">Responder</SelectItem>
                           <SelectItem value="user">User</SelectItem>
                         </SelectContent>
                       </Select>
                     </TableCell>
                     <TableCell>
-                      {user.is_banned ? (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          Banned
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          Active
-                        </span>
-                      )}
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className={cn(
+                              "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+                              user.user_type === 'superadmin' 
+                                ? 'bg-blue-100 text-blue-800' 
+                                : user.is_banned 
+                                  ? 'bg-red-100 text-red-800' 
+                                  : 'bg-green-100 text-green-800'
+                            )}>
+                              {user.user_type === 'superadmin' ? 'Superadmin' : user.is_banned ? 'Banned' : 'Active'}
+                              {(user.user_type === 'superadmin' || user.is_banned) && (
+                                <Info className="ml-1 h-3 w-3" />
+                              )}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs">
+                            {user.user_type === 'superadmin' ? (
+                              <p>Superadmin accounts cannot be modified</p>
+                            ) : user.is_banned ? (
+                              <div className="space-y-1">
+                                <p><strong>Reason:</strong> {user.ban_reason || 'No reason provided'}</p>
+                                {user.banned_until && (
+                                  <p><strong>Until:</strong> {new Date(user.banned_until).toLocaleString()}</p>
+                                )}
+                              </div>
+                            ) : (
+                              <p>User is active</p>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </TableCell>
                     <TableCell>
                       {new Date(user.created_at).toLocaleDateString()}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button 
-                              variant={user.is_banned ? "default" : "destructive"}
-                              size="sm"
-                              disabled={user.isBanning}
-                            >
-                              {user.isBanning ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : user.is_banned ? (
-                                <CheckCircle className="h-4 w-4 mr-2" />
-                              ) : (
-                                <Ban className="h-4 w-4 mr-2" />
-                              )}
-                              {user.is_banned ? 'Unban' : 'Ban'}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-80 p-4 space-y-4">
-                            <div className="space-y-2">
-                              <h4 className="font-medium leading-none">
-                                {user.is_banned ? 'Unban User' : 'Ban User'}
-                              </h4>
-                              {!user.is_banned && (
-                                <>
-                                  <div className="space-y-2">
-                                    <Label>Ban Until</Label>
-                                    <Popover>
-                                      <PopoverTrigger asChild>
-                                        <Button
-                                          variant="outline"
-                                          className={cn(
-                                            "w-full justify-start text-left font-normal",
-                                            !user.tempBanUntil && "text-muted-foreground"
-                                          )}
-                                        >
-                                          <CalendarIcon className="mr-2 h-4 w-4" />
-                                          {user.tempBanUntil ? (
-                                            format(user.tempBanUntil, "PPP")
-                                          ) : (
-                                            <span>Select a date</span>
-                                          )}
-                                        </Button>
-                                      </PopoverTrigger>
-                                      <PopoverContent className="w-auto p-0">
-                                        <Calendar
-                                          mode="single"
-                                          selected={user.tempBanUntil || undefined}
-                                          onSelect={(date) => handleBanDateChange(user.id, date)}
-                                          initialFocus
-                                        />
-                                      </PopoverContent>
-                                    </Popover>
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label htmlFor="banReason">Reason</Label>
-                                    <Input
-                                      id="banReason"
-                                      placeholder="Reason for ban"
-                                      value={user.tempBanReason || ''}
-                                      onChange={(e) => handleBanReasonChange(user.id, e.target.value)}
-                                    />
-                                  </div>
-                                </>
-                              )}
-                              <div className="pt-2">
-                                <Button
-                                  className="w-full"
-                                  onClick={() => toggleBanUser(user.id, !!user.is_banned)}
-                                >
-                                  {user.is_banned ? 'Unban User' : 'Confirm Ban'}
-                                </Button>
-                              </div>
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                      </div>
+                          {/* No ban/unban button here anymore */}
+                        {/* You can add other actions here if needed, like a 'View Details' button */}
+                      </div> 
                     </TableCell>
                   </TableRow>
                 ))}
