@@ -62,7 +62,7 @@ const INCIDENT_TYPES = [
   { type: 'Vehicular Incident', icon: Car }, // Changed name
   { type: 'Weather Disturbance', icon: CloudRain }, // Changed name
   { type: 'Armed Conflict', icon: Swords }, // Changed name, new icon
-  { type: 'Others', icon: HelpCircle },
+  { type: 'Others', icon: (props: any) => <HelpCircle className="text-orange-500" {...props} /> },
 ];
 
 export function Dashboard({ onLogout, userData }: DashboardProps) {
@@ -76,11 +76,33 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [showNotifications, setShowNotifications] = useState(false)
   const [currentView, setCurrentView] = useState<'main' | 'reportHistory' | 'mdrrmoInfo' | 'hotlines' | 'userProfile' | 'sendFeedback'>('main');
 
+  // Refs for click outside detection
+  const notificationsRef = useRef<HTMLDivElement>(null);
+  const notificationsButtonRef = useRef<HTMLButtonElement>(null);
+
   // States for User Profile editing
   const [editingMobileNumber, setEditingMobileNumber] = useState<string>('');
   const [editingUsername, setEditingUsername] = useState<string>('');
   const [profileEditSuccess, setProfileEditSuccess] = useState<string | null>(null);
   const [profileEditError, setProfileEditError] = useState<string | null>(null);
+
+  // Close notifications when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showNotifications && 
+          notificationsRef.current && 
+          !notificationsRef.current.contains(event.target as Node) &&
+          notificationsButtonRef.current &&
+          !notificationsButtonRef.current.contains(event.target as Node)) {
+        setShowNotifications(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showNotifications]);
 
   // State for Send Feedback
   const [feedbackText, setFeedbackText] = useState<string>('');
@@ -94,6 +116,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
   // New states for incident type buttons and cooldown
   const [selectedIncidentTypeForConfirmation, setSelectedIncidentTypeForConfirmation] = useState<string | null>(null);
+  const [customEmergencyType, setCustomEmergencyType] = useState<string>('');
+  const [showCustomEmergencyInput, setShowCustomEmergencyInput] = useState<boolean>(false);
   const [cooldownActive, setCooldownActive] = useState<boolean>(false);
   const [cooldownRemaining, setCooldownRemaining] = useState<number>(0); // in seconds
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -486,7 +510,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
     // Immediately update UI to prevent double-clicks
     setIsEmergencyActive(true);
-    setSelectedIncidentTypeForConfirmation(null);
     setShowSOSConfirm(false);
     
     // Record the time when credit was consumed (before the async operation)
@@ -524,6 +547,11 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         locationAddress = `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`;
       }
 
+      // Determine the emergency type to store
+      const reportEmergencyType = selectedIncidentTypeForConfirmation === 'Others' 
+        ? `Other: ${customEmergencyType}` 
+        : emergencyType;
+
       const { data: reportData, error: reportError } = await supabase
         .from("emergency_reports")
         .insert({
@@ -535,7 +563,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
           latitude: location.lat,
           longitude: location.lng,
           location_address: locationAddress,
-          emergency_type: emergencyType, // Use the passed emergencyType
+          emergency_type: reportEmergencyType,
           status: "active",
           created_at: new Date().toISOString(),
           reportedAt: new Date().toISOString(),
@@ -545,48 +573,55 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         .single()
 
       if (reportError) {
-        console.error("Error creating report:", reportError)
+        console.error("Error creating report:", reportError);
         console.error("Supabase Report Insert Error Details:", reportError);
         console.error("Failed to send emergency alert: Please check Supabase RLS policies for 'emergency_reports' INSERT operation, or schema constraints.");
         setIsEmergencyActive(false); // Deactivate if report fails
-        return
+        return;
       }
 
       await supabase.from("admin_notifications").insert({
         emergency_report_id: reportData.id,
-        message: `🚨 NEW EMERGENCY ALERT: ${currentUser.firstName} ${currentUser.lastName} needs help for ${emergencyType} at ${locationAddress}`, // Include type in message
+        message: `🚨 NEW EMERGENCY ALERT: ${currentUser.firstName} ${currentUser.lastName} reported: ${reportEmergencyType} at ${locationAddress}`,
         is_read: false,
         type: 'new_report',
         created_at: new Date().toISOString(),
-      })
+      });
 
-      console.log(`Emergency alert for ${emergencyType} sent successfully!`)
+      console.log(`Emergency alert for ${reportEmergencyType} sent successfully!`);
 
       await supabase.from("user_notifications").insert({
         user_id: currentUser.id,
         emergency_report_id: reportData.id,
-        message: `Your emergency alert for ${emergencyType} has been sent. Help is on the way!`,
+        message: `Your emergency alert for "${reportEmergencyType}" has been sent. Help is on the way!`,
         is_read: false,
         created_at: new Date().toISOString(),
       });
+
+      // Reset the form after successful submission
+      setSelectedIncidentTypeForConfirmation(null);
+      setCustomEmergencyType('');
+      setShowCustomEmergencyInput(false);
 
       // Visual active state for 5 seconds
       setTimeout(() => {
         setIsEmergencyActive(false);
       }, 5000);
     } catch (error: any) {
-      console.error("SOS Error:", error)
+      console.error("SOS Error:", error);
       console.error("Failed to send emergency alert: " + error.message);
-      setIsEmergencyActive(false)
+      setIsEmergencyActive(false);
       // Optionally, if the report fails due to a network error *after* credit deduction,
-      // you might want to refund the credit here. For simplicity, we'll assume success
-      // means credit is used.
+      // you might want to refund the credit here.
     }
   }
 
   const cancelSOS = () => {
-    setShowSOSConfirm(false)
-    setSelectedIncidentTypeForConfirmation(null); // Clear confirmation if modal cancelled
+    setShowSOSConfirm(false);
+    setShowCustomEmergencyInput(false);
+    setSelectedIncidentTypeForConfirmation(null);
+    setCustomEmergencyType('');
+    // Reset any selected incident type to clear the "click again to confirm" text
     // No credit deduction or cooldown initiation here
   }
 
@@ -705,13 +740,19 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
   // Handle click on an incident type button
   const handleIncidentTypeClick = (type: string) => {
-    if (cooldownActive || reportCredits === 0) { // Disable if cooldown active or no credits
+    if (cooldownActive || reportCredits === 0) {
       console.log("Cannot send alert: Cooldown active or no credits remaining.");
       return;
     }
-    // Always show confirmation modal on first click
-    setSelectedIncidentTypeForConfirmation(type);
-    setShowSOSConfirm(true);
+    
+    if (type === 'Others') {
+      setShowCustomEmergencyInput(true);
+      setSelectedIncidentTypeForConfirmation('Others');
+    } else {
+      setShowCustomEmergencyInput(false);
+      setSelectedIncidentTypeForConfirmation(type);
+      setShowSOSConfirm(true);
+    }
   };
 
   // Format cooldown time for display
@@ -762,8 +803,11 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
             {/* Notifications */}
             <div className="relative">
               <button
+                ref={notificationsButtonRef}
                 onClick={() => setShowNotifications(!showNotifications)}
                 className="p-2 hover:bg-orange-600 rounded-full transition-colors relative"
+                aria-label={showNotifications ? 'Hide notifications' : 'Show notifications'}
+                aria-expanded={showNotifications}
               >
                 <Bell className="w-6 h-6" />
                 {notifications.filter((n) => !n.is_read).length > 0 && (
@@ -796,9 +840,19 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
       {/* Notifications Dropdown - Positioned relative to header */}
       {showNotifications && (
-        <div className="fixed top-20 right-4 bg-white rounded-lg shadow-xl border border-gray-200 w-72 sm:w-80 max-h-96 overflow-y-auto z-50">
-          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+        <div 
+          ref={notificationsRef}
+          className="fixed top-20 right-4 bg-white rounded-lg shadow-xl border border-gray-200 w-72 sm:w-80 max-h-96 overflow-y-auto z-50 animate-in fade-in-50 slide-in-from-top-2"
+        >
+          <div className="sticky top-0 bg-white z-10 p-4 border-b border-gray-200 flex items-center justify-between">
             <h3 className="font-semibold text-gray-800">Notifications</h3>
+            <button
+              onClick={() => setShowNotifications(false)}
+              className="text-gray-500 hover:text-gray-700 transition-colors p-1 -mr-2"
+              aria-label="Close notifications"
+            >
+              <X className="w-5 h-5" />
+            </button>
             {notifications.some(n => !n.is_read) && (
               <Button
                 size="sm"
@@ -861,6 +915,53 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         </div>
       )}
 
+      {/* Custom Emergency Type Input Modal */}
+      {showCustomEmergencyInput && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-auto">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <HelpCircle className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Describe Emergency</h3>
+              <p className="text-gray-600 mb-4">
+                Please describe the type of emergency you're reporting.
+              </p>
+              <Textarea
+                value={customEmergencyType}
+                onChange={(e) => setCustomEmergencyType(e.target.value)}
+                placeholder="E.g., Power outage, Gas leak, etc."
+                className="w-full mb-4 min-h-[100px]"
+              />
+              <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
+                <Button 
+                  onClick={() => {
+                    setShowCustomEmergencyInput(false);
+                    setCustomEmergencyType('');
+                  }} 
+                  variant="outline" 
+                  className="flex-1"
+                >
+                  CANCEL
+                </Button>
+                <Button 
+                  onClick={() => {
+                    if (customEmergencyType.trim()) {
+                      setShowCustomEmergencyInput(false);
+                      setShowSOSConfirm(true);
+                    }
+                  }}
+                  disabled={!customEmergencyType.trim()}
+                  className="flex-1 bg-red-500 hover:bg-red-600"
+                >
+                  CONFIRM
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SOS Confirmation Modal */}
       {showSOSConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -871,13 +972,18 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
               </div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Send Emergency Alert?</h3>
               <p className="text-gray-600 mb-6">
-                This will send your location and details for a <span className="font-bold text-red-700">{selectedIncidentTypeForConfirmation}</span> emergency to MDRRMO emergency responders.
+                This will send your location and details for a <span className="font-bold text-red-700">
+                  {selectedIncidentTypeForConfirmation === 'Others' ? customEmergencyType : selectedIncidentTypeForConfirmation}
+                </span> emergency to MDRRMO emergency responders.
               </p>
               <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
                 <Button onClick={cancelSOS} variant="outline" className="flex-1 bg-transparent">
                   NO
                 </Button>
-                <Button onClick={() => confirmSOS(selectedIncidentTypeForConfirmation!)} className="flex-1 bg-red-500 hover:bg-red-600">
+                <Button 
+                  onClick={() => confirmSOS(selectedIncidentTypeForConfirmation === 'Others' ? customEmergencyType : selectedIncidentTypeForConfirmation!)} 
+                  className="flex-1 bg-red-500 hover:bg-red-600"
+                >
                   YES, SEND ALERT
                 </Button>
               </div>
@@ -908,26 +1014,50 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
             </div>
 
             {/* Incident Type Buttons Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-6 max-w-2xl w-full mx-auto">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-6 max-w-3xl w-full mx-auto">
               {INCIDENT_TYPES.map((incident) => {
                 const IconComponent = incident.icon;
                 // Buttons are disabled if cooldown is active OR if credits are 0
                 const isDisabled = cooldownActive || reportCredits === 0;
+                const isSelected = selectedIncidentTypeForConfirmation === incident.type;
 
                 return (
-                  <Button
+                  <div 
                     key={incident.type}
-                    onClick={() => handleIncidentTypeClick(incident.type)}
-                    className={`
-                      flex flex-col items-center justify-center p-4 sm:p-6 rounded-lg shadow-lg text-white font-bold text-base sm:text-lg transition-all duration-200
-                      ${isDisabled ? 'bg-gray-500 opacity-70 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'}
-                      ${selectedIncidentTypeForConfirmation === incident.type && !isDisabled ? 'ring-4 ring-red-300 scale-105' : ''}
-                    `}
-                    disabled={isDisabled}
+                    className={`relative group ${isDisabled ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
+                    onClick={isDisabled ? undefined : () => handleIncidentTypeClick(incident.type)}
                   >
-                    <IconComponent className="w-8 h-8 sm:w-10 sm:h-10 mb-2" />
-                    <span>{incident.type}</span>
-                  </Button>
+                    <div className={`
+                      flex flex-col items-center justify-center p-5 sm:p-6 rounded-lg 
+                      bg-white/75 border-2 border-orange-400 shadow-md hover:shadow-lg 
+                      transition-all duration-200 h-full backdrop-blur-sm
+                      ${isSelected ? 'ring-2 ring-orange-500 scale-[1.02]' : ''}
+                      ${isDisabled ? 'bg-gray-100/75' : 'hover:bg-orange-50/75'}
+                    `}>
+                      <div className={`
+                        w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center 
+                        mb-3 transition-colors duration-200
+                        ${isDisabled ? 'bg-gray-300' : 'bg-orange-100 group-hover:bg-orange-200'}
+                        ${isSelected ? 'bg-orange-200' : ''}
+                      `}>
+                        <IconComponent className={`
+                          w-8 h-8 sm:w-10 sm:h-10 
+                          ${isDisabled ? 'text-gray-600' : incident.type === 'Others' ? 'text-orange-500' : 'text-orange-600'}
+                        `} />
+                      </div>
+                      <span className={`
+                        text-center font-semibold text-sm sm:text-base
+                        ${isDisabled ? 'text-gray-600' : 'text-gray-800'}
+                      `}>
+                        {incident.type}
+                      </span>
+                    </div>
+                    {isSelected && !isDisabled && (
+                      <div className="absolute -top-2 -right-2 bg-orange-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
+                        !
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>

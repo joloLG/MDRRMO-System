@@ -92,7 +92,7 @@ export default function MdrrmoInfoPage() {
             className="flex items-center text-orange-600 hover:text-orange-800 mb-4 transition-colors"
           >
             <ArrowLeft className="h-5 w-5 mr-1" />
-            <span>Back to Dashboard</span>
+            <span>Back</span>
           </button>
           
           <div className="text-center mb-6">

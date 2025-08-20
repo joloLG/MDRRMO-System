@@ -26,9 +26,9 @@ export async function GET(request: Request) {
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
       {
         headers: {
-          'User-Agent': 'MDRRMO-Bulan-App (https://github.com/yourusername/mdrrmo-app)',
+          'User-Agent': 'MDRRMO-Bulan-App (https://github.com/joloLG/MDRRMO-System)',
           'Accept-Language': 'en-US,en;q=0.5',
-          'Referer': 'https://yourdomain.com'
+          'Referer': 'https://mdrrmo-bulan.com'
         },
         // Add a small delay to respect Nominatim's usage policy
         next: { revalidate: 3600 } // Cache for 1 hour
