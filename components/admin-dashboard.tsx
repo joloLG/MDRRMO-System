@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
-import { Bell, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon, FireExtinguisher, HeartPulse, Car, CloudRain, Swords, HelpCircle } from "lucide-react"
+import { Bell, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon, FireExtinguisher, HeartPulse, Car, CloudRain, Swords, HelpCircle, PersonStanding } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Calendar } from "@/components/ui/calendar"
@@ -674,7 +674,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                         {selectedReport.emergency_type === 'Medical Emergency' && <HeartPulse className="h-8 w-8 text-red-500 mr-3" />}
                         {selectedReport.emergency_type === 'Vehicular Incident' && <Car className="h-8 w-8 text-blue-500 mr-3" />}
                         {selectedReport.emergency_type === 'Weather Disturbance' && <CloudRain className="h-8 w-8 text-blue-300 mr-3" />}
-                        {selectedReport.emergency_type === 'Armed Conflict' && <Swords className="h-8 w-8 text-orange-500 mr-3" />}
+                        {selectedReport.emergency_type === 'Public Disturbance' && <PersonStanding className="h-8 w-8 text-orange-500 mr-3" />}
                         {selectedReport.emergency_type === 'Others' && <HelpCircle className="h-8 w-8 text-gray-500 mr-3" />}
                         <div>
                           <h3 className="text-2xl font-bold">{selectedReport.emergency_type}</h3>

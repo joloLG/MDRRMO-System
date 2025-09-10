@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords } from "lucide-react" // Added Swords for Armed Conflict
+import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding } from "lucide-react" // Added Swords for Armed Conflict
 import { UserSidebar } from "./user_sidebar"
 import { supabase } from "@/lib/supabase"
 import { Input } from "@/components/ui/input"
@@ -61,7 +61,7 @@ const INCIDENT_TYPES = [
   { type: 'Medical Emergency', icon: HeartPulse },
   { type: 'Vehicular Incident', icon: Car }, // Changed name
   { type: 'Weather Disturbance', icon: CloudRain }, // Changed name
-  { type: 'Armed Conflict', icon: Swords }, // Changed name, new icon
+  { type: 'Public Disturbance', icon: PersonStanding }, // Changed name, new icon
   { type: 'Others', icon: (props: any) => <HelpCircle className="text-orange-500" {...props} /> },
 ];
 
