@@ -149,18 +149,12 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
   };
 
   return (
+
     <Card className="shadow-lg h-full lg:col-span-3 rounded-lg">
       <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex justify-between items-center">
         <CardTitle className="text-2xl font-bold">
           {selectedReport ? `Create Report for Incident ID: ${selectedReport.id.substring(0, 8)}...` : 'Create New Incident Report (Manual)'}
         </CardTitle>
-        <Button
-          variant="outline"
-          className="bg-gray-200 hover:bg-gray-300 text-gray-800"
-          onClick={() => router.push('/')} // Corrected path to go back to /admin
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" /> Back
-        </Button>
       </CardHeader>
       <CardContent className="p-6 bg-white rounded-b-lg">
         {formMessage && (

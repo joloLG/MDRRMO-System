@@ -103,7 +103,7 @@ export default function MobileApp() {
   // If user is logged in, show appropriate dashboard
   if (isLoggedIn) {
     if (userData?.user_type === "superadmin") {
-      return <SuperadminDashboard onLogout={handleLogout} />
+      return <SuperadminDashboard onLogoutAction={handleLogout} />
     } else if (userData?.user_type === "admin") {
       return <AdminDashboard onLogout={handleLogout} userData={userData} />
     } else {

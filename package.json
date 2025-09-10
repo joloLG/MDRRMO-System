@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/package.json",
   "name": "mdrrmo-mobile-app",
   "version": "0.1.0",
   "private": true,
@@ -39,7 +40,8 @@
     "tailwind-merge": "^2.0.0",
     "tailwindcss-animate": "^1.0.7",
     "tinycolor2": "^1.6.0",
-    "tone": "^15.1.22"
+    "tone": "^15.1.22",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/node": "^20",

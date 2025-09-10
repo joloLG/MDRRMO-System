@@ -3,8 +3,9 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Mail } from "lucide-react";
+import { Mail, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
 
 
 interface UserFeedback {
@@ -18,6 +19,7 @@ interface UserFeedback {
 }
 
 export function FeedbackViewer() {
+  const router = useRouter();
   const [userFeedbacks, setUserFeedbacks] = useState<UserFeedback[]>([]);
   const [unreadFeedbackCount, setUnreadFeedbackCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -30,7 +32,7 @@ export function FeedbackViewer() {
     try {
       const { data, error } = await supabase
         .from('user_feedback')
-        .select(`
+        .select(` 
           *,
           users!user_feedback_user_id_fkey(firstName, lastName, email)
         `)
@@ -96,8 +98,12 @@ export function FeedbackViewer() {
   if (loading) {
     return (
       <Card className="shadow-lg h-full lg:col-span-3">
-        <CardHeader className="bg-orange-600 text-white">
-          <CardTitle className="flex items-center"><Mail className="mr-3" /> User Feedback</CardTitle>
+        <CardHeader className="bg-orange-600 text-white flex flex-row justify-between items-center">
+          <div className="flex items-center">
+            <CardTitle className="flex items-center">
+              <Mail className="mr-3" /> User Feedback
+            </CardTitle>
+          </div>
         </CardHeader>
         <CardContent className="p-6 text-center">
           Loading User Feedback...
@@ -107,9 +113,24 @@ export function FeedbackViewer() {
   }
 
   return (
+    <div className="grid grid-cols-1 gap-6">
+      {/* Back Button for Admin Dashboard */}
+      <div className="flex justify-start mb-4">
+        <Button
+          variant="outline"
+          className="bg-gray-200 hover:bg-gray-300 text-gray-800"
+          onClick={() => router.push('/')} 
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back
+        </Button>
+      </div>
     <Card className="shadow-lg h-full lg:col-span-3">
-      <CardHeader className="bg-orange-600 text-white">
-        <CardTitle className="flex items-center"><Mail className="mr-3" /> User Feedback</CardTitle>
+      <CardHeader className="bg-orange-600 text-white flex flex-row justify-between items-center">
+        <div className="flex items-center">
+          <CardTitle className="flex items-center">
+            <Mail className="mr-3" /> User Feedback
+          </CardTitle>
+        </div>
       </CardHeader>
       <CardContent className="p-6">
         <p className="text-gray-700 mb-4">Review feedback submitted by users. Unread feedback is highlighted.</p>
@@ -138,5 +159,6 @@ export function FeedbackViewer() {
         )}
       </CardContent>
     </Card>
+    </div>
   );
 }

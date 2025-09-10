@@ -44,16 +44,21 @@ export function ReportHistoryTable({ internalReports, barangays, incidentTypes, 
   const getErTeamName = (id: number) => erTeams.find(et => et.id === et.id)?.name || 'N/A';
 
   return (
-    <Card className="shadow-lg h-full rounded-lg">
-      <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex justify-between items-center"> {/* Added flex and items-center */}
-        <CardTitle className="text-2xl font-bold">History of Admin Reports</CardTitle>
+    <div className="grid grid-cols-1 gap-6">
+      {/* Back Button for Admin Dashboard */}
+      <div className="flex justify-start mb-4">
         <Button
           variant="outline"
           className="bg-gray-200 hover:bg-gray-300 text-gray-800"
           onClick={() => router.push('/')} 
         >
-          <ArrowLeft className="h-4 w-4 mr-2" /> Back 
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back
         </Button>
+      </div>
+
+    <Card className="shadow-lg h-full rounded-lg">
+      <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex justify-between items-center"> {/* Added flex and items-center */}
+        <CardTitle className="text-2xl font-bold">History of Admin Reports</CardTitle>
       </CardHeader>
       <CardContent className="p-6 bg-white rounded-b-lg">
         <div className="overflow-x-auto">
@@ -96,5 +101,6 @@ export function ReportHistoryTable({ internalReports, barangays, incidentTypes, 
         </div>
       </CardContent>
     </Card>
+    </div>
   )
 }

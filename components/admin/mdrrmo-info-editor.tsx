@@ -4,8 +4,9 @@ import React, { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Info, Edit } from "lucide-react";
+import { Info, Edit, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
 
 interface MdrrmoInfo {
   id: string;
@@ -14,6 +15,7 @@ interface MdrrmoInfo {
 }
 
 export function MdrrmoInfoEditor() {
+  const router = useRouter();
   const [mdrrmoInfoContent, setMdrrmoInfoContent] = useState<string>('');
   const [mdrrmoInfoId, setMdrrmoInfoId] = useState<string | null>(null);
   const [mdrrmoInfoSaveMessage, setMdrrmoInfoSaveMessage] = useState<string | null>(null);
@@ -103,11 +105,12 @@ export function MdrrmoInfoEditor() {
   if (loading) {
     return (
       <Card className="shadow-lg h-full">
-        <CardHeader className="bg-gray-800 text-white">
-          <CardTitle className="flex items-center">
+        <CardHeader className="bg-orange-800 text-black flex justify-between items-center">
+          <div className="flex items-center">
             <Info className="mr-2 h-5 w-5" />
-            Edit MDRRMO-Bulan Information
-          </CardTitle>
+            <span>Edit MDRRMO-Bulan Information</span>
+          </div>
+          <div className="w-24"></div> {/* Spacer for balance */}
         </CardHeader>
         <CardContent className="p-6 text-center">
           Loading MDRRMO Information...
@@ -117,12 +120,28 @@ export function MdrrmoInfoEditor() {
   }
 
   return (
+    <div className="grid grid-cols-1 gap-6">
+    {/* Back Button for Admin Dashboard */}
+    <div className="flex justify-start mb-4">
+      <Button
+        variant="outline"
+        className="bg-gray-200 hover:bg-gray-300 text-gray-800"
+        onClick={() => router.push('/')} 
+      >
+        <ArrowLeft className="h-4 w-4 mr-2" /> Back
+      </Button>
+    </div>
+
+    {/* Pie Chart: Incidents per Barangay */}
     <Card className="shadow-lg h-full">
-      <CardHeader className="bg-orange-600 text-white">
+      <CardHeader className="bg-orange-600 text-white flex justify-between items-center">
         <CardTitle className="flex items-center">
-          <Info className="mr-2 h-5 w-5" />
-          Edit MDRRMO-Bulan Information
         </CardTitle>
+        <div className="flex items-center">
+          <Info className="mr-2 h-5 w-5" />
+          <span>Edit MDRRMO-Bulan Information</span>
+        </div>
+        <div className="w-24"></div> {/* Spacer for balance */}
       </CardHeader>
       <CardContent className="p-6">
         <div className="space-y-4">
@@ -160,6 +179,7 @@ export function MdrrmoInfoEditor() {
         </div>
       </CardContent>
     </Card>
+    </div>
   );
 }
 

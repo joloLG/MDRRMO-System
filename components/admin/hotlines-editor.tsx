@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Phone, Plus, Trash2 } from "lucide-react";
+import { Phone, Plus, Trash2, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
 
 interface Hotline {
   id: string;
@@ -17,6 +18,7 @@ interface Hotline {
 }
 
 export function HotlinesEditor() {
+  const router = useRouter();
   const [hotlines, setHotlines] = useState<Hotline[]>([]);
   const [newHotlineName, setNewHotlineName] = useState<string>('');
   const [newHotlineNumber, setNewHotlineNumber] = useState<string>('');
@@ -119,10 +121,18 @@ export function HotlinesEditor() {
 
   if (loading) {
     return (
+      
       <Card className="shadow-lg h-full lg:col-span-3">
-        <CardHeader className="bg-orange-600 text-white">
-          <CardTitle className="flex items-center"><Phone className="mr-3" /> Edit Bulan Hotlines</CardTitle>
-        </CardHeader>
+        <CardHeader className="bg-orange-600 text-white flex justify-between items-center">
+        <div className="flex items-center">
+          
+        </div>
+        <div className="flex items-center">
+          <Phone className="mr-3" />
+          <span>Edit Bulan Hotlines</span>
+        </div>
+        <div className="w-24"></div> {/* Spacer for balance */}
+      </CardHeader>
         <CardContent className="p-6 text-center">
           Loading Hotlines...
         </CardContent>
@@ -131,9 +141,29 @@ export function HotlinesEditor() {
   }
 
   return (
+    <div className="grid grid-cols-1 gap-6">
+    {/* Back Button for Admin Dashboard */}
+    <div className="flex justify-start mb-4">
+      <Button
+        variant="outline"
+        className="bg-gray-200 hover:bg-gray-300 text-gray-800"
+        onClick={() => router.push('/')} 
+      >
+        <ArrowLeft className="h-4 w-4 mr-2" /> Back
+      </Button>
+    </div>
+
+    {/* Pie Chart: Incidents per Barangay */}
     <Card className="shadow-lg h-full lg:col-span-3">
-      <CardHeader className="bg-orange-600 text-white">
-        <CardTitle className="flex items-center"><Phone className="mr-3" /> Edit Bulan Hotlines</CardTitle>
+      <CardHeader className="bg-orange-600 text-white flex justify-between items-center">
+        <div className="flex items-center">
+      
+        </div>
+        <div className="flex items-center">
+          <Phone className="mr-3" />
+          <span>Edit Bulan Hotlines</span>
+        </div>
+        <div className="w-24"></div> {/* Spacer for balance */}
       </CardHeader>
       <CardContent className="p-6">
         <div className="space-y-6">
@@ -205,5 +235,6 @@ export function HotlinesEditor() {
         </div>
       </CardContent>
     </Card>
-  );
+    </div>
+  )
 }

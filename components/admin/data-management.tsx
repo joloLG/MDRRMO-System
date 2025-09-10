@@ -225,16 +225,22 @@ export function DataManagement({ erTeams, barangays, incidentTypes, fetchErTeams
   );
 
   return (
+    <div className="grid grid-cols-1 gap-6">
+    {/* Back Button for Admin Dashboard */}
+    <div className="flex justify-start mb-4">
+      <Button
+        variant="outline"
+        className="bg-gray-200 hover:bg-gray-300 text-gray-800"
+        onClick={() => router.push('/')} 
+      >
+        <ArrowLeft className="h-4 w-4 mr-2" /> Back
+      </Button>
+    </div>
+
+    {/* Pie Chart: Incidents per Barangay */}
     <Card className="shadow-lg h-full lg:col-span-3 rounded-lg">
       <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex justify-between items-center">
-        <CardTitle className="text-2xl font-bold">Data Management</CardTitle>
-        <Button
-          variant="outline"
-          className="bg-gray-200 hover:bg-gray-300 text-gray-800"
-          onClick={() => router.push('/')} 
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" /> Back
-        </Button>
+        <CardTitle className="text-2xl font-bold items-center ">Data Management</CardTitle>
       </CardHeader>
       <CardContent className="p-6 bg-white rounded-b-lg">
         {formMessage && (
@@ -279,5 +285,6 @@ export function DataManagement({ erTeams, barangays, incidentTypes, fetchErTeams
         </Tabs>
       </CardContent>
     </Card>
+    </div>
   )
 }

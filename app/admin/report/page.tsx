@@ -2,8 +2,15 @@
 
 import { MakeReportForm } from "@/components/admin/make-report-form";
 import { supabase } from "@/lib/supabase";
+import React from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from 'next/navigation'; // For reading query parameters
+import router from "next/router";
 
 // Interfaces for data types (needs to be consistent with admin-dashboard.tsx)
 interface Report {
@@ -153,6 +160,21 @@ function MakeReportContent() {
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
+      <h1 className="text-3xl font-bold text-gray-800 mb-8">Make Report Form</h1>
+    <div className="grid grid-cols-1 gap-6">
+    {/* Back Button for Admin Dashboard */}
+    <div className="flex justify-start mb-4">
+      <Button
+        variant="outline"
+        className="bg-gray-200 hover:bg-gray-300 text-gray-800"
+        onClick={() => router.push('/')} 
+      >
+        <ArrowLeft className="h-4 w-4 mr-2" /> Back
+      </Button>
+    </div>
+
+    {/* Pie Chart: Incidents per Barangay */}
+    <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
       <MakeReportForm
         selectedReport={selectedReport}
         erTeams={erTeams}
@@ -165,6 +187,8 @@ function MakeReportContent() {
           // Or redirect to the main admin dashboard: window.location.href = '/admin';
         }}
       />
+    </div>
+    </div>
     </div>
   );
 }
