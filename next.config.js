@@ -18,10 +18,10 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob:",
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.tile.openstreetmap.org",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com",
+              "style-src 'self' 'unsafe-inline' https://unpkg.com",
+              `img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com`,
             ].join('; ')
           },
           {

@@ -1,10 +1,11 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
-import { Bell, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon, FireExtinguisher, HeartPulse, Car, CloudRain, Swords, HelpCircle, PersonStanding } from "lucide-react"
+import { Bell, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon, FireExtinguisher, HeartPulse, Car, CloudRain, Swords, HelpCircle, PersonStanding, Navigation } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Calendar } from "@/components/ui/calendar"
@@ -13,6 +14,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { format, isSameDay } from "date-fns"
 import { cn } from "@/lib/utils"
 import React from "react"
+
+// Dynamically import the map component to avoid SSR issues
+const LocationMap = dynamic(
+  () => import('@/components/LocationMap'),
+  { ssr: false }
+);
 
 // Define Notification interface
 interface Notification {
@@ -217,6 +224,34 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     }
     return data as BaseEntry[] || [];
   }, []);
+
+  const handleLogout = async () => {
+    try {
+      // First try to sign out with scope 'local' which works better with SSR
+      const { error } = await supabase.auth.signOut({ scope: 'local' });
+      
+      // Clear local session data
+      await supabase.auth.setSession({ access_token: null, refresh_token: null });
+      
+      // Clear any remaining session data
+      localStorage.removeItem('supabase.auth.token');
+      
+      // Call the parent's logout handler
+      onLogout();
+      
+      // Force a full page reload to ensure all auth state is cleared
+      if (typeof window !== 'undefined') {
+        window.location.href = '/';
+      }
+    } catch (error) {
+      console.warn('Error during sign out, forcing logout:', error);
+      // Ensure we still log the user out even if there's an error
+      onLogout();
+      if (typeof window !== 'undefined') {
+        window.location.href = '/';
+      }
+    }
+  };
 
   // Consolidated Real-time Listener for Reports, Notifications, and ER Teams
   useEffect(() => {
@@ -684,30 +719,45 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                       </div>
                       <p className="text-gray-600 mb-4">Reported by: <span className="font-medium">{selectedReport.firstName} {selectedReport.lastName}</span></p>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                        <div>
-                          <p className="text-sm text-gray-500">Location</p>
-                          <div className="flex items-center">
-                            <p className="font-semibold">{selectedReport.location_address}</p>
-                            <Button
-                              variant="link"
-                              size="icon"
-                              className="ml-2 h-5 w-5"
-                              onClick={() => window.open(`http://maps.google.com/maps?q=${selectedReport.latitude},${selectedReport.longitude}`, '_blank')}
-                            >
-                              <Map className="h-5 w-5 text-blue-600" />
-                            </Button>
+                        <div className="md:col-span-2">
+                          <p className="text-sm text-gray-500 mb-1">Location</p>
+                          <div className="w-full max-w-md mx-auto rounded-lg overflow-hidden border border-gray-200">
+                            <LocationMap 
+                              latitude={selectedReport.latitude} 
+                              longitude={selectedReport.longitude}
+                              zoom={15}
+                              className="w-full"
+                            />
+                            <div className="flex justify-center gap-3 p-2 bg-gray-50">
+                              <a 
+                                href={`https://www.openstreetmap.org/?mlat=${selectedReport.latitude}&mlon=${selectedReport.longitude}&zoom=15`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-blue-600 hover:underline flex items-center"
+                              >
+                                <MapPin className="h-3 w-3 mr-1" />
+                                Open in OSM
+                              </a>
+                              <a 
+                                href={`https://www.google.com/maps?q=${selectedReport.latitude},${selectedReport.longitude}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-blue-600 hover:underline flex items-center"
+                              >
+                                <MapPin className="h-3 w-3 mr-1" />
+                                Open in Google Maps
+                              </a>
+                            </div>
                           </div>
                         </div>
                         <div><p className="text-sm text-gray-500">Barangay</p><p className="font-semibold">{barangay}</p></div>
                         <div><p className="text-sm text-gray-500">Contact</p><p className="font-semibold">{selectedReport.mobileNumber}</p></div>
                         <div><p className="text-sm text-gray-500">Reported At</p><p className="font-semibold">{new Date(selectedReport.created_at).toLocaleString()}</p></div>
                         <div><p className="text-sm text-gray-500">Status</p><p className={`font-bold ${selectedReport.status.trim().toLowerCase() === 'pending' || selectedReport.status.trim().toLowerCase() === 'active' ? 'text-red-600' : selectedReport.status.trim().toLowerCase() === 'responded' ? 'text-yellow-600' : 'text-green-600'}`}>{selectedReport.status}</p></div>
-                        {selectedReport.casualties !== undefined && selectedReport.casualties !== null && (
-                          <div>
-                            <p className="text-sm text-gray-500">Casualties</p>
-                            <p className="font-semibold">{selectedReport.casualties}</p>
-                          </div>
-                        )}
+                        <div>
+                          <p className="text-sm text-gray-500">Casualties</p>
+                          <p className="font-semibold">{selectedReport.casualties ?? 0}</p>
+                        </div>
                       </div>
                       <div className="p-4 border rounded-lg bg-gray-50 mb-6">
                         <h4 className="font-semibold mb-3">Incident Actions</h4>
