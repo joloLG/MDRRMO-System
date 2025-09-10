@@ -231,7 +231,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       const { error } = await supabase.auth.signOut({ scope: 'local' });
       
       // Clear local session data
-      await supabase.auth.setSession({ access_token: null, refresh_token: null });
+      await supabase.auth.setSession({ access_token: "", refresh_token: "" });
       
       // Clear any remaining session data
       localStorage.removeItem('supabase.auth.token');
