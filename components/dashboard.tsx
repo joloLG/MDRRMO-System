@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding } from "lucide-react" // Added Swords for Armed Conflict
+import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding, MapPin } from "lucide-react" // Added Swords for Armed Conflict
 import { UserSidebar } from "./user_sidebar"
+import { LocationPermissionModal } from "./location-permission-modal"
 import { supabase } from "@/lib/supabase"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -36,6 +37,7 @@ interface Report {
   resolved_at?: string;
   reportedAt: string;
   reporterMobile?: string;
+  casualties?: number;
 }
 
 interface Hotline {
@@ -72,6 +74,83 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [showSOSConfirm, setShowSOSConfirm] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [showLocationModal, setShowLocationModal] = useState(false)
+  const [locationError, setLocationError] = useState<string | null>(null)
+
+  // Enhanced location permission handling
+  const checkLocationPermission = useCallback(async () => {
+    if (!navigator.geolocation) {
+      setLocationError('not_supported');
+      setShowLocationModal(true);
+      return;
+    }
+
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          resolve,
+          reject,
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+      });
+
+      setLocation({
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+      });
+      setLocationError(null);
+      setShowLocationModal(false);
+    } catch (error: any) {
+      console.error('Error getting location:', error);
+      
+      if (error.code === error.PERMISSION_DENIED) {
+        setLocationError('location_denied');
+      } else if (error.code === error.POSITION_UNAVAILABLE) {
+        setLocationError('location_unavailable');
+      } else if (error.code === error.TIMEOUT) {
+        setLocationError('location_timeout');
+      } else {
+        setLocationError('location_error');
+      }
+      
+      setShowLocationModal(true);
+    }
+  }, []);
+
+  // Handle location permission request from modal
+  const handleRequestLocation = useCallback(async () => {
+    if (!navigator.permissions) {
+      // Fallback for browsers that don't support the Permissions API
+      await checkLocationPermission();
+      return;
+    }
+
+    try {
+      const permissionStatus = await navigator.permissions.query({ 
+        name: 'geolocation' as PermissionName 
+      });
+      
+      if (permissionStatus.state === 'granted') {
+        await checkLocationPermission();
+      } else if (permissionStatus.state === 'prompt') {
+        setShowLocationModal(true);
+      } else {
+        setLocationError('location_denied');
+        setShowLocationModal(true);
+      }
+      
+      // Listen for permission changes
+      permissionStatus.onchange = () => {
+        if (permissionStatus.state === 'granted') {
+          checkLocationPermission();
+        }
+      };
+    } catch (error) {
+      console.error('Error checking location permission:', error);
+      setShowLocationModal(true);
+    }
+  }, [checkLocationPermission]);
+
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
   const [currentView, setCurrentView] = useState<'main' | 'reportHistory' | 'mdrrmoInfo' | 'hotlines' | 'userProfile' | 'sendFeedback'>('main');
@@ -118,6 +197,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [selectedIncidentTypeForConfirmation, setSelectedIncidentTypeForConfirmation] = useState<string | null>(null);
   const [customEmergencyType, setCustomEmergencyType] = useState<string>('');
   const [showCustomEmergencyInput, setShowCustomEmergencyInput] = useState<boolean>(false);
+  const [casualties, setCasualties] = useState<string>('');
   const [cooldownActive, setCooldownActive] = useState<boolean>(false);
   const [cooldownRemaining, setCooldownRemaining] = useState<number>(0); // in seconds
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -394,19 +474,24 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         setEditingMobileNumber(userProfile.mobileNumber || '');
         setEditingUsername(userProfile.username || '');
 
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              setLocation({
-                lat: position.coords.latitude,
-                lng: position.coords.longitude,
+        // Request location permission after a short delay to let the UI render
+        const locationTimer = setTimeout(() => {
+          if (navigator.geolocation) {
+            navigator.permissions.query({ name: 'geolocation' as PermissionName })
+              .then(permissionStatus => {
+                if (permissionStatus.state === 'prompt') {
+                  // Show our custom modal instead of browser's default prompt
+                  setShowLocationModal(true);
+                } else if (permissionStatus.state === 'denied') {
+                  setLocationError('location_denied');
+                  setShowLocationModal(true);
+                }
               });
-            },
-            (error) => {
-              console.error("Error getting location:", error);
-            },
-          );
-        }
+          }
+        }, 1000);
+        
+        // Cleanup timer on unmount
+        return () => clearTimeout(locationTimer);
 
         loadNotifications(userProfile.id);
         loadUserReports(userProfile.id);
@@ -500,6 +585,26 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       return;
     }
 
+    // Check if casualties are required and valid
+    const requiresCasualties = [
+      'Medical Emergency', 
+      'Vehicular Incident', 
+      'Public Disturbance'
+    ].includes(selectedIncidentTypeForConfirmation || '');
+
+    if (requiresCasualties) {
+      if (!casualties) {
+        alert('Please enter the number of casualties before sending the alert.');
+        return;
+      }
+      
+      const casualtiesNum = parseInt(casualties);
+      if (isNaN(casualtiesNum) || casualtiesNum < 0) {
+        alert('Please enter a valid number of casualties (0 or greater).');
+        return;
+      }
+    }
+
     // Double-check credits before proceeding (in case of race conditions)
     const currentCredits = reportCredits;
     if (currentCredits <= 0) {
@@ -552,23 +657,39 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         ? `Other: ${customEmergencyType}` 
         : emergencyType;
 
+      // Check if casualties are required for this emergency type
+      const requiresCasualties = [
+        'Medical Emergency', 
+        'Vehicular Incident', 
+        'Public Disturbance'
+      ].includes(selectedIncidentTypeForConfirmation || '');
+
+      // Prepare report data with type assertion to include casualties
+      const reportPayload: Omit<Report, 'id'> = {
+        user_id: currentUser.id,
+        firstName: currentUser.firstName,
+        middleName: currentUser.middleName || null,
+        lastName: currentUser.lastName,
+        mobileNumber: currentUser.mobileNumber,
+        latitude: location.lat,
+        longitude: location.lng,
+        location_address: locationAddress,
+        emergency_type: reportEmergencyType,
+        status: "active",
+        created_at: new Date().toISOString(),
+        reportedAt: new Date().toISOString(),
+        reporterMobile: currentUser.mobileNumber,
+      };
+
+      // Add casualties to report if required
+      if (requiresCasualties && casualties) {
+        // Use type assertion to add casualties
+        (reportPayload as any).casualties = parseInt(casualties) || 0;
+      }
+
       const { data: reportData, error: reportError } = await supabase
         .from("emergency_reports")
-        .insert({
-          user_id: currentUser.id,
-          firstName: currentUser.firstName,
-          middleName: currentUser.middleName || null,
-          lastName: currentUser.lastName,
-          mobileNumber: currentUser.mobileNumber,
-          latitude: location.lat,
-          longitude: location.lng,
-          location_address: locationAddress,
-          emergency_type: reportEmergencyType,
-          status: "active",
-          created_at: new Date().toISOString(),
-          reportedAt: new Date().toISOString(),
-          reporterMobile: currentUser.mobileNumber,
-        })
+        .insert(reportPayload)
         .select()
         .single()
 
@@ -621,6 +742,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     setShowCustomEmergencyInput(false);
     setSelectedIncidentTypeForConfirmation(null);
     setCustomEmergencyType('');
+    setCasualties(''); // Reset casualties state
     // Reset any selected incident type to clear the "click again to confirm" text
     // No credit deduction or cooldown initiation here
   }
@@ -745,6 +867,9 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       return;
     }
     
+    // Reset casualties when changing incident type
+    setCasualties('');
+    
     if (type === 'Others') {
       setShowCustomEmergencyInput(true);
       setSelectedIncidentTypeForConfirmation('Others');
@@ -774,6 +899,14 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     >
       {/* Overlay for better readability */}
       <div className="absolute inset-0 bg-black/30 z-0"></div>
+      
+      {/* Location Permission Modal */}
+      <LocationPermissionModal
+        open={showLocationModal}
+        onOpenChange={setShowLocationModal}
+        onRequestPermission={handleRequestLocation}
+        error={locationError}
+      />
 
       {/* Header */}
       <div className="relative z-20 bg-orange-500/95 backdrop-blur-sm text-white p-4 shadow-lg">
@@ -971,18 +1104,48 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                 <AlertTriangle className="w-8 h-8 text-red-600" />
               </div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Send Emergency Alert?</h3>
-              <p className="text-gray-600 mb-6">
+              <p className="text-gray-600 mb-4">
                 This will send your location and details for a <span className="font-bold text-red-700">
                   {selectedIncidentTypeForConfirmation === 'Others' ? customEmergencyType : selectedIncidentTypeForConfirmation}
                 </span> emergency to MDRRMO emergency responders.
               </p>
+              
+              {/* Casualties Input for relevant emergency types */}
+              {['Medical Emergency', 'Vehicular Incident', 'Public Disturbance'].includes(selectedIncidentTypeForConfirmation || '') && (
+                <div className="mb-4">
+                  <label htmlFor="casualties" className="block text-sm font-medium text-gray-700 mb-1">
+                    Number of Casualties *
+                  </label>
+                  <Input
+                    id="casualties"
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="Enter number of casualties"
+                    value={casualties}
+                    onChange={(e) => {
+                      // Only allow numeric input
+                      const value = e.target.value;
+                      if (value === '' || /^\d+$/.test(value)) {
+                        setCasualties(value);
+                      }
+                    }}
+                    className="w-full"
+                  />
+                  {!casualties && (
+                    <p className="mt-1 text-sm text-red-600">Please enter the number of casualties</p>
+                  )}
+                </div>
+              )}
+              
               <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
                 <Button onClick={cancelSOS} variant="outline" className="flex-1 bg-transparent">
                   NO
                 </Button>
                 <Button 
                   onClick={() => confirmSOS(selectedIncidentTypeForConfirmation === 'Others' ? customEmergencyType : selectedIncidentTypeForConfirmation!)} 
-                  className="flex-1 bg-red-500 hover:bg-red-600"
+                  disabled={['Medical Emergency', 'Vehicular Incident', 'Public Disturbance'].includes(selectedIncidentTypeForConfirmation || '') && !casualties}
+                  className={`flex-1 bg-red-500 ${!['Medical Emergency', 'Vehicular Incident', 'Public Disturbance'].includes(selectedIncidentTypeForConfirmation || '') || casualties ? 'hover:bg-red-600' : 'opacity-50 cursor-not-allowed'}`}
                 >
                   YES, SEND ALERT
                 </Button>

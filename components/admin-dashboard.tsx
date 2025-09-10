@@ -49,6 +49,7 @@ interface Report {
   resolved_at?: string;
   reportedAt: string;
   reporterMobile?: string;
+  casualties?: number;
 }
 
 // Define InternalReport interface (matching report-history-table.tsx)
@@ -701,6 +702,12 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                         <div><p className="text-sm text-gray-500">Contact</p><p className="font-semibold">{selectedReport.mobileNumber}</p></div>
                         <div><p className="text-sm text-gray-500">Reported At</p><p className="font-semibold">{new Date(selectedReport.created_at).toLocaleString()}</p></div>
                         <div><p className="text-sm text-gray-500">Status</p><p className={`font-bold ${selectedReport.status.trim().toLowerCase() === 'pending' || selectedReport.status.trim().toLowerCase() === 'active' ? 'text-red-600' : selectedReport.status.trim().toLowerCase() === 'responded' ? 'text-yellow-600' : 'text-green-600'}`}>{selectedReport.status}</p></div>
+                        {selectedReport.casualties !== undefined && selectedReport.casualties !== null && (
+                          <div>
+                            <p className="text-sm text-gray-500">Casualties</p>
+                            <p className="font-semibold">{selectedReport.casualties}</p>
+                          </div>
+                        )}
                       </div>
                       <div className="p-4 border rounded-lg bg-gray-50 mb-6">
                         <h4 className="font-semibold mb-3">Incident Actions</h4>
