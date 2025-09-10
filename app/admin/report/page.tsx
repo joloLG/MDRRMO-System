@@ -7,10 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from 'next/navigation'; // For reading query parameters
-import router from "next/router";
+import { useRouter } from "next/navigation"; // Correct import for App Router
 
 // Interfaces for data types (needs to be consistent with admin-dashboard.tsx)
 interface Report {
@@ -40,6 +39,7 @@ interface IncidentType {
 }
 
 function MakeReportContent() {
+  const router = useRouter(); // Initialize the router hook
   const searchParams = useSearchParams();
   const incidentId = searchParams.get('incidentId'); // Get incidentId from URL query param
 
