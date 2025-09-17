@@ -19,6 +19,7 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
     email: "",
     password: "",
   })
+  
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [showPassword, setShowPassword] = useState(false) // New state for password visibility

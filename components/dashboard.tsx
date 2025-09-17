@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatDistanceToNowStrict, parseISO } from 'date-fns';
+import { FeedbackHistory } from "@/components/feedback-history"
 
 interface Notification {
   id: string;
@@ -1159,6 +1160,24 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       <div className="relative z-10 flex-1 flex flex-col items-center justify-center p-4 sm:p-8 lg:ml-64">
         {currentView === 'main' && (
           <>
+            {/* Welcome Card with Logo */}
+            <Card className="w-full max-w-2xl mx-auto mb-6 bg-white/90 backdrop-blur-sm shadow-lg rounded-lg border border-orange-300">
+              <CardHeader className="pb-2 flex flex-col items-center justify-center">
+                <img
+                  src="/images/logo.png"
+                  alt="MDRRMO Logo"
+                  className="w-20 h-20 object-contain mb-2 mx-auto"
+                  style={{ maxWidth: '80px', maxHeight: '80px' }}
+                />
+                <CardTitle className="text-lg sm:text-xl font-bold text-orange-700 text-center mt-2">WELCOME TO MDRRMO INCIDENT REPORTING SYSTEM APP</CardTitle>
+              </CardHeader>
+              <CardContent className="text-center text-gray-700 text-sm sm:text-base">
+                SCROLL DOWN AND CLICK ANY INCIDENT TYPE TO SEND AN EMERGENCY ALERT TO MDRRMO RESPONDERS.
+              
+                <CardContent className="text-center text-red-700 text-sm sm:text-base"></CardContent>
+                Available max credit is 3, Every Credits will be refreshed in 10 minutes
+              </CardContent>
+            </Card>
             <div className="text-center mb-8">
               {cooldownActive ? (
                 <div className="bg-yellow-500 text-white px-6 py-3 rounded-full shadow-lg text-lg sm:text-xl font-bold">
@@ -1168,9 +1187,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                 <p className="text-white text-lg sm:text-xl font-semibold mb-4 bg-black/50 p-3 rounded-lg shadow-md">
                   {reportCredits === 0 ? (
                     "No credits. Cooldown active."
-                  ) : selectedIncidentTypeForConfirmation ?
-                    `Click ${selectedIncidentTypeForConfirmation} again to confirm!` :
-                    `Credits: ${reportCredits}. Select an emergency type below to send an alert.`
+                  ) :
+                    `You still have ${reportCredits} Credits left!`
                   }
                 </p>
               )}
@@ -1387,6 +1405,10 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
               </Button>
               {feedbackSentMessage && <p className="text-green-600 text-sm mt-2 text-center">{feedbackSentMessage}</p>}
               {feedbackErrorMessage && <p className="text-red-600 text-sm mt-2 text-center">{feedbackErrorMessage}</p>}
+              {/* Feedback History section below the send form */}
+              <div className="mt-8">
+                <FeedbackHistory userId={currentUser.id} />
+              </div>
             </CardContent>
           </Card>
         )}

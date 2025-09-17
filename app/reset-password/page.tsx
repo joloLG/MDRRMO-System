@@ -127,7 +127,7 @@ function ResetPasswordContent() {
               <p className="text-red-600 font-medium">{error || "Loading..."}</p>
               {error && (
                 <Button
-                  onClick={() => router.push("/login")}
+                  onClick={() => router.push("/")}
                   className="mt-4 bg-orange-500 hover:bg-orange-600 text-white"
                 >
                   Go to Login

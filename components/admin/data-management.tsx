@@ -27,6 +27,33 @@ interface DataManagementProps {
 export function DataManagement({ erTeams, barangays, incidentTypes, fetchErTeams, fetchBarangays, fetchIncidentTypes }: DataManagementProps) {
   const router = useRouter(); // Initialize useRouter
 
+  // Real-time subscriptions for er_teams, barangays, and incident_types
+  React.useEffect(() => {
+    const erTeamsChannel = supabase.channel('realtime-er_teams')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'er_teams' }, () => {
+        fetchErTeams();
+      })
+      .subscribe();
+
+    const barangaysChannel = supabase.channel('realtime-barangays')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'barangays' }, () => {
+        fetchBarangays();
+      })
+      .subscribe();
+
+    const incidentTypesChannel = supabase.channel('realtime-incident_types')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'incident_types' }, () => {
+        fetchIncidentTypes();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(erTeamsChannel);
+      supabase.removeChannel(barangaysChannel);
+      supabase.removeChannel(incidentTypesChannel);
+    };
+  }, [fetchErTeams, fetchBarangays, fetchIncidentTypes]);
+
   const [newEntryName, setNewEntryName] = React.useState('');
   const [editingEntryId, setEditingEntryId] = React.useState<number | null>(null);
   const [editingEntryName, setEditingEntryName] = React.useState('');

@@ -1,6 +1,13 @@
 "use client"
 
 import React, { useState, useEffect, useCallback } from "react";
+interface FeedbackReply {
+  id: string;
+  feedback_id: string;
+  reply_text: string;
+  created_at: string;
+  admin_id: string;
+}
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Mail, ArrowLeft } from "lucide-react";
@@ -24,6 +31,13 @@ export function FeedbackViewer() {
   const [unreadFeedbackCount, setUnreadFeedbackCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Reply state
+  const [replies, setReplies] = useState<FeedbackReply[]>([]);
+  const [replyInput, setReplyInput] = useState<{ [feedbackId: string]: string }>({});
+  const [replyingId, setReplyingId] = useState<string | null>(null);
+  const [sendingReply, setSendingReply] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
 
   // Function to fetch User Feedback
   const fetchUserFeedbacks = useCallback(async () => {
@@ -62,22 +76,81 @@ export function FeedbackViewer() {
     }
   }, []);
 
+  // Fetch replies for all feedback
+  const fetchReplies = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('feedback_replies')
+        .select('*')
+        .order('created_at', { ascending: true });
+      if (!error && data) {
+        setReplies(data);
+      }
+    } catch (err: any) {
+      // Ignore for now
+    }
+  }, []);
+
   useEffect(() => {
     fetchUserFeedbacks();
+    fetchReplies();
 
-    // Set up real-time channel for user_feedback
+    // Real-time for user_feedback
     const userFeedbackChannel = supabase
       .channel('user-feedback-viewer-channel')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_feedback' }, () => {
-        console.log('Change received on user_feedback, refetching.');
         fetchUserFeedbacks();
+      })
+      .subscribe();
+
+    // Real-time for feedback_replies
+    const repliesChannel = supabase
+      .channel('feedback-replies-channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'feedback_replies' }, () => {
+        fetchReplies();
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(userFeedbackChannel);
+      supabase.removeChannel(repliesChannel);
     };
-  }, [fetchUserFeedbacks]);
+  }, [fetchUserFeedbacks, fetchReplies]);
+  // Send reply
+  const handleSendReply = async (feedbackId: string) => {
+    setSendingReply(true);
+    setReplyError(null);
+    try {
+      const replyText = replyInput[feedbackId]?.trim();
+      if (!replyText) {
+        setReplyError('Reply cannot be empty.');
+        setSendingReply(false);
+        return;
+      }
+      // Get admin id from Supabase auth
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setReplyError('Admin not authenticated.');
+        setSendingReply(false);
+        return;
+      }
+      const { error } = await supabase
+        .from('feedback_replies')
+        .insert({
+          feedback_id: feedbackId,
+          reply_text: replyText,
+          admin_id: user.id,
+          created_at: new Date().toISOString(),
+        });
+      if (error) throw error;
+      setReplyInput((prev) => ({ ...prev, [feedbackId]: '' }));
+      setReplyingId(null);
+    } catch (err: any) {
+      setReplyError(err.message || 'Failed to send reply.');
+    } finally {
+      setSendingReply(false);
+    }
+  };
 
   // Admin Actions: Mark Feedback as Read
   const handleMarkFeedbackAsRead = async (feedbackId: string) => {
@@ -153,6 +226,46 @@ export function FeedbackViewer() {
                   )}
                 </div>
                 <p className="text-gray-800 whitespace-pre-wrap">{feedback.feedback_text}</p>
+
+                {/* Replies Section */}
+                <div className="mt-3 ml-4 border-l-2 border-gray-200 pl-4">
+                  {replies.filter(r => r.feedback_id === feedback.id).length > 0 && (
+                    <div className="mb-2">
+                      <span className="font-semibold text-sm text-gray-700">Replies:</span>
+                      <ul className="mt-1 space-y-1">
+                        {replies.filter(r => r.feedback_id === feedback.id).map(r => (
+                          <li key={r.id} className="text-sm text-gray-800 bg-gray-100 rounded px-2 py-1">
+                            <span className="font-medium text-blue-700">Admin:</span> {r.reply_text}
+                            <span className="ml-2 text-xs text-gray-500">{new Date(r.created_at).toLocaleString()}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {replyingId === feedback.id ? (
+                    <div className="flex flex-col gap-2 mt-2">
+                      <textarea
+                        className="border rounded p-2 text-sm"
+                        rows={2}
+                        value={replyInput[feedback.id] || ''}
+                        onChange={e => setReplyInput(prev => ({ ...prev, [feedback.id]: e.target.value }))}
+                        placeholder="Type your reply..."
+                        disabled={sendingReply}
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => handleSendReply(feedback.id)} disabled={sendingReply} className="bg-green-600 hover:bg-green-700 text-white">
+                          {sendingReply ? 'Sending...' : 'Send'}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setReplyingId(null)} disabled={sendingReply}>Cancel</Button>
+                      </div>
+                      {replyError && <span className="text-xs text-red-600">{replyError}</span>}
+                    </div>
+                  ) : (
+                    <Button size="sm" variant="outline" className="mt-2" onClick={() => setReplyingId(feedback.id)}>
+                      Reply
+                    </Button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
