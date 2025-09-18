@@ -1195,7 +1195,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
             </div>
 
             {/* Incident Type Buttons Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-6 max-w-3xl w-full mx-auto">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-6 max-w-3xl w-full mx-auto mb-24">
               {INCIDENT_TYPES.map((incident) => {
                 const IconComponent = incident.icon;
                 // Buttons are disabled if cooldown is active OR if credits are 0
