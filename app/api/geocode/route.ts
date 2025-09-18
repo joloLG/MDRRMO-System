@@ -5,7 +5,6 @@ export async function GET(request: Request) {
   const lat = searchParams.get('lat');
   const lon = searchParams.get('lon');
 
-  // Validate latitude and longitude
   if (!lat || !lon) {
     return NextResponse.json(
       { error: 'Latitude and longitude are required' },
@@ -13,7 +12,6 @@ export async function GET(request: Request) {
     );
   }
 
-  // Validate numeric values
   if (isNaN(Number(lat)) || isNaN(Number(lon))) {
     return NextResponse.json(
       { error: 'Invalid latitude or longitude values' },

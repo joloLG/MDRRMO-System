@@ -53,49 +53,49 @@ export function Sidebar({ onAdminViewChange, currentAdminView, unreadFeedbackCou
             className="justify-start" 
             onClick={() => handleNavigation('/admin/charts')}
           >
-            <BarChart className="mr-2 h-4 w-4" /> View Charts
+            <BarChart className="mr-2 h-4 w-4" /> Charts and Analytics
           </Button>
           <Button 
             variant="ghost" 
             className="justify-start" 
             onClick={() => handleNavigation('/admin/data')}
           >
-            <Settings className="mr-2 h-4 w-4" /> Edit Data
+            <Settings className="mr-2 h-4 w-4" /> Data Management
           </Button>
           <Button 
             variant="ghost" 
             className="justify-start" 
             onClick={() => handleNavigation('/admin/report')}
           >
-            <FileText className="mr-2 h-4 w-4" /> Make a Report
+            <FileText className="mr-2 h-4 w-4" /> Report Management
           </Button>
           <Button 
             variant="ghost" 
             className="justify-start" 
             onClick={() => handleNavigation('/admin/report-history')}
           >
-            <History className="mr-2 h-4 w-4" /> View History of Report
+            <History className="mr-2 h-4 w-4" /> History of Report
           </Button>
           <Button
             variant="ghost"
             className={`justify-start ${isActive('mdrrmo-info') ? 'bg-blue-100 text-blue-800' : ''}`}
             onClick={() => handleNavigation('/admin/mdrrmo-info')}
           >
-            <Info className="mr-2 h-4 w-4" /> Edit MDRRMO Info
+            <Info className="mr-2 h-4 w-4" /> MDRRMO Information
           </Button>
           <Button
             variant="ghost"
             className={`justify-start ${isActive('hotlines') ? 'bg-blue-100 text-blue-800' : ''}`}
             onClick={() => handleNavigation('/admin/hotlines')}
           >
-            <Phone className="mr-2 h-4 w-4" /> Edit Hotlines
+            <Phone className="mr-2 h-4 w-4" /> Hotlines Management
           </Button>
           <Button
             variant="ghost"
             className={`justify-start relative ${isActive('feedback') ? 'bg-blue-100 text-blue-800' : ''}`}
             onClick={() => handleNavigation('/admin/feedback')}
           >
-            <Mail className="mr-2 h-4 w-4" /> See Users Feedback
+            <Mail className="mr-2 h-4 w-4" /> Users Feedback
             {unreadFeedbackCount !== undefined && unreadFeedbackCount > 0 && (
               <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                 {unreadFeedbackCount}
