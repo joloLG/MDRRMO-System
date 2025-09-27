@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Mail, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 
 interface UserFeedback {
@@ -26,7 +26,6 @@ interface UserFeedback {
 }
 
 export function FeedbackViewer() {
-  const router = useRouter();
   const [userFeedbacks, setUserFeedbacks] = useState<UserFeedback[]>([]);
   const [unreadFeedbackCount, setUnreadFeedbackCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -116,7 +115,6 @@ export function FeedbackViewer() {
       supabase.removeChannel(repliesChannel);
     };
   }, [fetchUserFeedbacks, fetchReplies]);
-  // Send reply
   const handleSendReply = async (feedbackId: string) => {
     setSendingReply(true);
     setReplyError(null);
@@ -127,7 +125,6 @@ export function FeedbackViewer() {
         setSendingReply(false);
         return;
       }
-      // Get admin id from Supabase auth
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setReplyError('Admin not authenticated.');
@@ -151,8 +148,6 @@ export function FeedbackViewer() {
       setSendingReply(false);
     }
   };
-
-  // Admin Actions: Mark Feedback as Read
   const handleMarkFeedbackAsRead = async (feedbackId: string) => {
     setError(null);
     try {
@@ -161,7 +156,7 @@ export function FeedbackViewer() {
         .update({ is_read: true })
         .eq('id', feedbackId);
       if (error) throw error;
-      fetchUserFeedbacks(); // Re-fetch to update state and unread count
+      fetchUserFeedbacks(); 
     } catch (error: any) {
       console.error("Error marking feedback as read:", error);
       setError(`Failed to mark feedback as read: ${error.message}. Please check your Supabase RLS policies for 'user_feedback'.`);
@@ -187,14 +182,15 @@ export function FeedbackViewer() {
 
   return (
     <div className="grid grid-cols-1 gap-6">
-      {/* Back Button for Admin Dashboard */}
       <div className="flex justify-start mb-4">
         <Button
           variant="outline"
           className="bg-gray-200 hover:bg-gray-300 text-gray-800"
-          onClick={() => router.push('/')} 
+          asChild
         >
-          <ArrowLeft className="h-4 w-4 mr-2" /> Back
+          <Link href="/">
+            <ArrowLeft className="h-4 w-4 mr-2" /> Back
+          </Link>
         </Button>
       </div>
     <Card className="shadow-lg h-full lg:col-span-3">
@@ -226,8 +222,6 @@ export function FeedbackViewer() {
                   )}
                 </div>
                 <p className="text-gray-800 whitespace-pre-wrap">{feedback.feedback_text}</p>
-
-                {/* Replies Section */}
                 <div className="mt-3 ml-4 border-l-2 border-gray-200 pl-4">
                   {replies.filter(r => r.feedback_id === feedback.id).length > 0 && (
                     <div className="mb-2">

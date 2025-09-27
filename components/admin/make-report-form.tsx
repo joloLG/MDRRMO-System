@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { supabase } from "@/lib/supabase"
 import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react" // For success/error icons
-import { useRouter } from "next/navigation"; // Correct import for useRouter
+// Removed next/navigation useRouter; navigation is handled via Links elsewhere
 
 // Interfaces for data types (re-defined here for clarity, but could be imported)
 interface Report {
@@ -47,7 +47,6 @@ interface MakeReportFormProps {
 }
 
 export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTypes, onReportSubmitted }: MakeReportFormProps) {
-  const router = useRouter(); // Initialize useRouter
 
   const [incidentDate, setIncidentDate] = React.useState('');
   const [incidentTime, setIncidentTime] = React.useState('');

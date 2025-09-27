@@ -2,7 +2,7 @@
 
 import { ReportHistoryTable } from "@/components/admin/report-history-table";
 import { supabase } from "@/lib/supabase";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 
 // Define InternalReport interface
 interface InternalReport {
@@ -25,6 +25,10 @@ interface BaseEntry {
   name: string;
 }
 
+// --- CONSTANT FOR REPORTS PER PAGE ---
+const REPORTS_PER_PAGE = 10;
+// -------------------------------------
+
 export default function ReportHistoryPage() {
   const [internalReports, setInternalReports] = useState<InternalReport[]>([]);
   const [barangays, setBarangays] = useState<BaseEntry[]>([]);
@@ -33,7 +37,17 @@ export default function ReportHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Function to fetch Internal Reports
+  // State for Search and Filters
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedIncidentType, setSelectedIncidentType] = useState<number | 'all'>('all');
+  const [selectedBarangay, setSelectedBarangay] = useState<number | 'all'>('all');
+  const [selectedErTeam, setSelectedErTeam] = useState<number | 'all'>('all');
+  
+  // --- New State for Pagination ---
+  const [currentPage, setCurrentPage] = useState(1);
+  // --------------------------------
+
+  // Function to fetch Internal Reports (No change)
   const fetchInternalReports = useCallback(async () => {
     const { data, error } = await supabase
       .from('internal_reports')
@@ -48,6 +62,7 @@ export default function ReportHistoryPage() {
     return data || [];
   }, []);
 
+  // ... (fetchBarangays, fetchIncidentTypes, fetchErTeams remain the same)
   // Function to fetch Barangays
   const fetchBarangays = useCallback(async () => {
     const { data, error } = await supabase
@@ -90,6 +105,7 @@ export default function ReportHistoryPage() {
     return data as BaseEntry[] || [];
   }, []);
 
+
   useEffect(() => {
     const loadReportHistoryData = async () => {
       setLoading(true);
@@ -122,7 +138,7 @@ export default function ReportHistoryPage() {
 
     loadReportHistoryData();
 
-    // Set up real-time channels for all relevant tables
+    // Set up real-time channels (No change)
     const internalReportsChannel = supabase
       .channel('report-history-internal-reports-channel')
       .on(
@@ -166,6 +182,58 @@ export default function ReportHistoryPage() {
       supabase.removeChannel(erTeamsChannel);
     };
   }, [fetchInternalReports, fetchBarangays, fetchIncidentTypes, fetchErTeams]);
+  
+  // Reset page number whenever filters or search term change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedIncidentType, selectedBarangay, selectedErTeam]);
+
+
+  // Memoized Filtering Logic (Slightly modified to exclude pagination)
+  const filteredReports = useMemo(() => {
+    return internalReports.filter(report => {
+      // 1. Incident Type Filter
+      if (selectedIncidentType !== 'all' && report.incident_type_id !== selectedIncidentType) {
+        return false;
+      }
+
+      // 2. Barangay Filter
+      if (selectedBarangay !== 'all' && report.barangay_id !== selectedBarangay) {
+        return false;
+      }
+
+      // 3. ER Team Filter
+      if (selectedErTeam !== 'all' && report.er_team_id !== selectedErTeam) {
+        return false;
+      }
+
+      // 4. Search Term Filter (Checks report ID and Prepared By)
+      const term = searchTerm.toLowerCase().trim();
+      if (!term) {
+        return true; // No search term
+      }
+      
+      const preparedByMatch = report.prepared_by.toLowerCase().includes(term);
+      const reportIdMatch = String(report.id).includes(term);
+      const originalIdMatch = report.original_report_id?.toLowerCase().includes(term) ?? false;
+      
+      // Look up names for a more comprehensive search
+      const barangayName = barangays.find(b => b.id === report.barangay_id)?.name.toLowerCase() ?? '';
+      const incidentTypeName = incidentTypes.find(it => it.id === report.incident_type_id)?.name.toLowerCase() ?? '';
+      const erTeamName = erTeams.find(et => et.id === report.er_team_id)?.name.toLowerCase() ?? '';
+
+      const nameMatch = barangayName.includes(term) || incidentTypeName.includes(term) || erTeamName.includes(term);
+
+      return preparedByMatch || reportIdMatch || originalIdMatch || nameMatch;
+    });
+  }, [internalReports, selectedIncidentType, selectedBarangay, selectedErTeam, searchTerm, barangays, incidentTypes, erTeams]);
+  
+  // --- New Pagination Logic ---
+  const totalPages = Math.ceil(filteredReports.length / REPORTS_PER_PAGE);
+  const startIndex = (currentPage - 1) * REPORTS_PER_PAGE;
+  const endIndex = startIndex + REPORTS_PER_PAGE;
+  const paginatedReports = filteredReports.slice(startIndex, endIndex);
+  // ----------------------------
 
 
   if (loading) {
@@ -188,10 +256,26 @@ export default function ReportHistoryPage() {
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
       <h1 className="text-3xl font-bold text-gray-800 mb-8">Admin Report History</h1>
       <ReportHistoryTable
-        internalReports={internalReports}
+        // Pass the paginated reports
+        internalReports={paginatedReports} 
         barangays={barangays}
         incidentTypes={incidentTypes}
         erTeams={erTeams}
+        // Props for Search and Filters (No Change)
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        selectedIncidentType={selectedIncidentType}
+        setSelectedIncidentType={setSelectedIncidentType}
+        selectedBarangay={selectedBarangay}
+        setSelectedBarangay={setSelectedBarangay}
+        selectedErTeam={selectedErTeam}
+        setSelectedErTeam={setSelectedErTeam}
+        // --- New Props for Pagination ---
+        currentPage={currentPage}
+        setCurrentPage={setCurrentPage}
+        totalPages={totalPages}
+        totalReports={filteredReports.length}
+        // --------------------------------
       />
     </div>
   );

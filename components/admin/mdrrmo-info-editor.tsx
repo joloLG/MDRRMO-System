@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Info, Edit, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 interface MdrrmoInfo {
   id: string;
@@ -15,7 +15,6 @@ interface MdrrmoInfo {
 }
 
 export function MdrrmoInfoEditor() {
-  const router = useRouter();
   const [mdrrmoInfoContent, setMdrrmoInfoContent] = useState<string>('');
   const [mdrrmoInfoId, setMdrrmoInfoId] = useState<string | null>(null);
   const [mdrrmoInfoSaveMessage, setMdrrmoInfoSaveMessage] = useState<string | null>(null);
@@ -35,7 +34,7 @@ export function MdrrmoInfoEditor() {
       if (!error && data) {
         setMdrrmoInfoContent(data.content);
         setMdrrmoInfoId(data.id);
-      } else if (error && error.code !== 'PGRST116') { // PGRST116 is "No rows found"
+      } else if (error && error.code !== 'PGRST116') {
         console.error("Error fetching MDRRMO Info for edit:", error);
         setMdrrmoInfoSaveError(`Failed to load MDRRMO info: ${error.message}`);
       } else if (error && error.code === 'PGRST116') {
@@ -53,8 +52,6 @@ export function MdrrmoInfoEditor() {
 
   useEffect(() => {
     fetchMdrrmoInfoForEdit();
-
-    // Set up real-time channel for mdrrmo_info
     const mdrrmoInfoChannel = supabase
       .channel('mdrrmo-info-editor-channel')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'mdrrmo_info' }, () => {
@@ -67,8 +64,6 @@ export function MdrrmoInfoEditor() {
       supabase.removeChannel(mdrrmoInfoChannel);
     };
   }, [fetchMdrrmoInfoForEdit]);
-
-  // Handle Save MDRRMO Info
   const handleSaveMdrrmoInfo = async () => {
     setMdrrmoInfoSaveMessage(null);
     setMdrrmoInfoSaveError(null);
@@ -79,21 +74,19 @@ export function MdrrmoInfoEditor() {
 
     try {
       if (mdrrmoInfoId) {
-        // Update existing
         const { error } = await supabase
           .from('mdrrmo_info')
           .update({ content: mdrrmoInfoContent, last_updated_at: new Date().toISOString() })
           .eq('id', mdrrmoInfoId);
         if (error) throw error;
       } else {
-        // Insert new
         const { data, error } = await supabase
           .from('mdrrmo_info')
           .insert({ content: mdrrmoInfoContent, last_updated_at: new Date().toISOString() })
           .select('id')
           .single();
         if (error) throw error;
-        setMdrrmoInfoId(data.id); // Set the new ID
+        setMdrrmoInfoId(data.id); // New ID for the MDRRMO Info
       }
       setMdrrmoInfoSaveMessage("MDRRMO Information saved successfully!");
     } catch (error: any) {
@@ -110,7 +103,7 @@ export function MdrrmoInfoEditor() {
             <Info className="mr-2 h-5 w-5" />
             <span>Edit MDRRMO-Bulan Information</span>
           </div>
-          <div className="w-24"></div> {/* Spacer for balance */}
+          <div className="w-24"></div> 
         </CardHeader>
         <CardContent className="p-6 text-center">
           Loading MDRRMO Information...
@@ -126,9 +119,11 @@ export function MdrrmoInfoEditor() {
       <Button
         variant="outline"
         className="bg-gray-200 hover:bg-gray-300 text-gray-800"
-        onClick={() => router.push('/')} 
+        asChild
       >
-        <ArrowLeft className="h-4 w-4 mr-2" /> Back
+        <Link href="/">
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back
+        </Link>
       </Button>
     </div>
 

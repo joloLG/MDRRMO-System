@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabase"
 import { PlusCircle, Edit, Trash2, Save, X, CheckCircle2, XCircle, ArrowLeft } from "lucide-react" // Added icons, ArrowLeft
-import { useRouter } from "next/navigation"; // Import useRouter
+import Link from "next/link";
 
 // Interfaces for data types
 interface BaseEntry {
@@ -25,7 +25,6 @@ interface DataManagementProps {
 }
 
 export function DataManagement({ erTeams, barangays, incidentTypes, fetchErTeams, fetchBarangays, fetchIncidentTypes }: DataManagementProps) {
-  const router = useRouter(); // Initialize useRouter
 
   // Real-time subscriptions for er_teams, barangays, and incident_types
   React.useEffect(() => {
@@ -258,9 +257,11 @@ export function DataManagement({ erTeams, barangays, incidentTypes, fetchErTeams
       <Button
         variant="outline"
         className="bg-gray-200 hover:bg-gray-300 text-gray-800"
-        onClick={() => router.push('/')} 
+        asChild
       >
-        <ArrowLeft className="h-4 w-4 mr-2" /> Back
+        <Link href="/">
+          <ArrowLeft className="h-4 w-4 mr-2" /> Back
+        </Link>
       </Button>
     </div>
 

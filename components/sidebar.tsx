@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import Link from "next/link"
 // Added new icons for the admin-specific menu items
 import { Menu, BarChart, Settings, FileText, History, Info, Phone, Mail, X, MapPin } from "lucide-react"
 
@@ -18,13 +19,8 @@ interface SidebarProps {
 
 export function Sidebar({ onAdminViewChange, currentAdminView, unreadFeedbackCount }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
-
-  // Handles navigation for admin views - opens in new tab for admin
-  const handleNavigation = (path: string) => {
-    // Open in new tab for admin
-    window.open(path, '_blank', 'noopener,noreferrer');
-    setIsOpen(false);
-  };
+  
+  // Navigation is handled via Link anchors; close the sheet on left-click navigation.
   
   // Helper function to check if a path is active
   const isActive = (path: string) => {
@@ -48,59 +44,57 @@ export function Sidebar({ onAdminViewChange, currentAdminView, unreadFeedbackCou
         </SheetHeader>
         <nav className="flex flex-col gap-2 mt-4">
           {/* Navigation items using in-app routing */}
-          <Button 
-            variant="ghost" 
-            className="justify-start" 
-            onClick={() => handleNavigation('/admin/charts')}
-          >
-            <BarChart className="mr-2 h-4 w-4" /> Charts and Analytics
+          <Button variant="ghost" className="justify-start" asChild>
+            <Link href="/admin/charts" onClick={() => setIsOpen(false)}>
+              <BarChart className="mr-2 h-4 w-4" /> Charts and Analytics
+            </Link>
           </Button>
-          <Button 
-            variant="ghost" 
-            className="justify-start" 
-            onClick={() => handleNavigation('/admin/data')}
-          >
-            <Settings className="mr-2 h-4 w-4" /> Data Management
+          <Button variant="ghost" className="justify-start" asChild>
+            <Link href="/admin/data" onClick={() => setIsOpen(false)}>
+              <Settings className="mr-2 h-4 w-4" /> Data Management
+            </Link>
           </Button>
-          <Button 
-            variant="ghost" 
-            className="justify-start" 
-            onClick={() => handleNavigation('/admin/report')}
-          >
-            <FileText className="mr-2 h-4 w-4" /> Report Management
+          <Button variant="ghost" className="justify-start" asChild>
+            <Link href="/admin/report" onClick={() => setIsOpen(false)}>
+              <FileText className="mr-2 h-4 w-4" /> Report Management
+            </Link>
           </Button>
-          <Button 
-            variant="ghost" 
-            className="justify-start" 
-            onClick={() => handleNavigation('/admin/report-history')}
-          >
-            <History className="mr-2 h-4 w-4" /> History of Report
+          <Button variant="ghost" className="justify-start" asChild>
+            <Link href="/admin/report-history" onClick={() => setIsOpen(false)}>
+              <History className="mr-2 h-4 w-4" /> History of Report
+            </Link>
           </Button>
           <Button
             variant="ghost"
             className={`justify-start ${isActive('mdrrmo-info') ? 'bg-blue-100 text-blue-800' : ''}`}
-            onClick={() => handleNavigation('/admin/mdrrmo-info')}
+            asChild
           >
-            <Info className="mr-2 h-4 w-4" /> MDRRMO Information
+            <Link href="/admin/mdrrmo-info" onClick={() => setIsOpen(false)}>
+              <Info className="mr-2 h-4 w-4" /> MDRRMO Information
+            </Link>
           </Button>
           <Button
             variant="ghost"
             className={`justify-start ${isActive('hotlines') ? 'bg-blue-100 text-blue-800' : ''}`}
-            onClick={() => handleNavigation('/admin/hotlines')}
+            asChild
           >
-            <Phone className="mr-2 h-4 w-4" /> Hotlines Management
+            <Link href="/admin/hotlines" onClick={() => setIsOpen(false)}>
+              <Phone className="mr-2 h-4 w-4" /> Hotlines Management
+            </Link>
           </Button>
           <Button
             variant="ghost"
             className={`justify-start relative ${isActive('feedback') ? 'bg-blue-100 text-blue-800' : ''}`}
-            onClick={() => handleNavigation('/admin/feedback')}
+            asChild
           >
-            <Mail className="mr-2 h-4 w-4" /> Users Feedback
-            {unreadFeedbackCount !== undefined && unreadFeedbackCount > 0 && (
-              <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                {unreadFeedbackCount}
-              </span>
-            )}
+            <Link href="/admin/feedback" onClick={() => setIsOpen(false)}>
+              <Mail className="mr-2 h-4 w-4" /> Users Feedback
+              {unreadFeedbackCount !== undefined && unreadFeedbackCount > 0 && (
+                <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  {unreadFeedbackCount}
+                </span>
+              )}
+            </Link>
           </Button>
         </nav>
       </SheetContent>

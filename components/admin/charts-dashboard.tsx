@@ -16,26 +16,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 
-// Define Report interface (from emergency_reports)
 interface EmergencyReport {
   id: string;
   emergency_type: string;
   status: string;
-  created_at: string; // Timestamp from emergency_reports
+  created_at: string; 
 }
 
-// Define InternalReport interface
 interface InternalReport {
   id: number;
   incident_type_id: number;
-  incident_date: string; // Timestamp from internal_reports
+  incident_date: string; 
   barangay_id: number;
   created_at: string;
 }
 
-// Define BaseEntry for reference tables
+
 interface BaseEntry {
   id: number;
   name: string;
@@ -48,7 +46,6 @@ interface ChartsDashboardProps {
   incidentTypes: BaseEntry[];
 }
 
-// Custom Tooltip for Pie Chart
 const CustomPieTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     return (
@@ -60,7 +57,6 @@ const CustomPieTooltip = ({ active, payload }: any) => {
   return null;
 };
 
-// Custom Tooltip for Bar Chart
 const CustomBarTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     return (
@@ -78,7 +74,7 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
 };
 
 export function ChartsDashboard({ allEmergencyReports, allInternalReports, barangays, incidentTypes }: ChartsDashboardProps) {
-  const router = useRouter();
+ 
 
   // State for Pie Chart (Barangay Incidents)
   const [pieChartPeriod, setPieChartPeriod] = React.useState<string>('daily');
@@ -102,9 +98,6 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
   const [barStatusYear, setBarStatusYear] = React.useState<string>(format(new Date(), 'yyyy'));
   const [barStatusStartDateRange, setBarStatusStartDateRange] = React.useState<Date | undefined>(new Date());
   const [barStatusEndDateRange, setBarStatusEndDateRange] = React.useState<Date | undefined>(new Date());
-
-
-  // Generate years for dropdowns (e.g., current year - 5 to current year + 1)
   const years = React.useMemo(() => {
     const currentYearNum = new Date().getFullYear();
     const yearsArray = [];
@@ -366,9 +359,11 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
         <Button
           variant="outline"
           className="bg-gray-200 hover:bg-gray-300 text-gray-800"
-          onClick={() => router.push('/')} 
+          asChild
         >
-          <ArrowLeft className="h-4 w-4 mr-2" /> Back
+          <Link href="/">
+            <ArrowLeft className="h-4 w-4 mr-2" /> Back
+          </Link>
         </Button>
       </div>
 
