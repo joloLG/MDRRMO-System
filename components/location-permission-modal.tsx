@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 interface LocationPermissionModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onRequestPermission: () => void;
+  onRequestPermission: () => Promise<boolean>;
   error?: string | null;
 }
 
@@ -76,9 +76,16 @@ export function LocationPermissionModal({
     checkPermission();
   }, [error, onOpenChange, onRequestPermission]);
 
-  const handleEnableLocation = () => {
+  const handleEnableLocation = async () => {
     setIsChecking(true);
-    onRequestPermission();
+    try {
+      const granted = await onRequestPermission();
+      if (granted) {
+        onOpenChange(false);
+      }
+    } finally {
+      setIsChecking(false);
+    }
   };
 
   if (isChecking) {

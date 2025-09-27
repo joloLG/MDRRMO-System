@@ -1,6 +1,8 @@
 "use client"
 
-import React, { useState, useEffect, useCallback, useRef } from "react"
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
+import { Capacitor } from "@capacitor/core"
+import { Geolocation } from "@capacitor/geolocation"
 import { Button } from "@/components/ui/button"
 import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding, MapPin } from "lucide-react" // Added Swords for Armed Conflict
 import { UserSidebar } from "./user_sidebar"
@@ -79,11 +81,53 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [locationError, setLocationError] = useState<string | null>(null)
 
   // Enhanced location permission handling
-  const checkLocationPermission = useCallback(async () => {
+  const isNativePlatform = useMemo(() => Capacitor.isNativePlatform(), []);
+
+  const checkLocationPermission = useCallback(async (): Promise<boolean> => {
+    if (isNativePlatform) {
+      try {
+        const permission = await Geolocation.checkPermissions();
+        const locationPermission = permission.location;
+
+        const ensurePermissionGranted = async () => {
+          if (locationPermission === 'granted') {
+            return true;
+          }
+
+          const requestResult = await Geolocation.requestPermissions();
+          const requestedLocationPermission = requestResult.location;
+          return requestedLocationPermission === 'granted';
+        };
+
+        const granted = await ensurePermissionGranted();
+        if (!granted) {
+            setLocationError('location_denied');
+            setShowLocationModal(true);
+            return false;
+        }
+
+        const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
+        setLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setLocationError(null);
+        setShowLocationModal(false);
+        return true;
+      } catch (error: any) {
+        console.error('Capacitor geolocation error:', error);
+        const message = typeof error?.message === 'string' ? error.message.toLowerCase() : '';
+        if (message.includes('location services are not enabled') || message.includes('location service needs to be enabled')) {
+          setLocationError('location_services_disabled');
+        } else {
+          setLocationError('location_error');
+        }
+        setShowLocationModal(true);
+        return false;
+      }
+    }
+
     if (!navigator.geolocation) {
       setLocationError('not_supported');
       setShowLocationModal(true);
-      return;
+      return false;
     }
 
     try {
@@ -101,9 +145,10 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       });
       setLocationError(null);
       setShowLocationModal(false);
+      return true;
     } catch (error: any) {
       console.error('Error getting location:', error);
-      
+
       if (error.code === error.PERMISSION_DENIED) {
         setLocationError('location_denied');
       } else if (error.code === error.POSITION_UNAVAILABLE) {
@@ -113,44 +158,61 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       } else {
         setLocationError('location_error');
       }
-      
+
       setShowLocationModal(true);
+      return false;
     }
-  }, []);
+  }, [isNativePlatform]);
 
   // Handle location permission request from modal
-  const handleRequestLocation = useCallback(async () => {
+  const handleRequestLocation = useCallback(async (): Promise<boolean> => {
+    if (isNativePlatform) {
+      return checkLocationPermission();
+    }
+
     if (!navigator.permissions) {
       // Fallback for browsers that don't support the Permissions API
-      await checkLocationPermission();
-      return;
+      return checkLocationPermission();
     }
 
     try {
       const permissionStatus = await navigator.permissions.query({ 
         name: 'geolocation' as PermissionName 
       });
-      
-      if (permissionStatus.state === 'granted') {
-        await checkLocationPermission();
-      } else if (permissionStatus.state === 'prompt') {
-        setShowLocationModal(true);
-      } else {
-        setLocationError('location_denied');
-        setShowLocationModal(true);
-      }
-      
-      // Listen for permission changes
-      permissionStatus.onchange = () => {
+
+      const handlePermissionChange = () => {
         if (permissionStatus.state === 'granted') {
-          checkLocationPermission();
+          void checkLocationPermission();
+        } else if (permissionStatus.state === 'denied') {
+          setLocationError('location_denied');
+          setShowLocationModal(true);
         }
       };
+
+      permissionStatus.onchange = handlePermissionChange;
+
+      if (permissionStatus.state === 'granted') {
+        return checkLocationPermission();
+      }
+
+      if (permissionStatus.state === 'prompt') {
+        setShowLocationModal(true);
+        const granted = await checkLocationPermission();
+        if (!granted) {
+          setShowLocationModal(true);
+        }
+        return granted;
+      }
+
+      setLocationError('location_denied');
+      setShowLocationModal(true);
+      return false;
     } catch (error) {
       console.error('Error checking location permission:', error);
       setShowLocationModal(true);
+      return false;
     }
-  }, [checkLocationPermission]);
+  }, [checkLocationPermission, isNativePlatform]);
 
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
