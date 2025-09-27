@@ -217,6 +217,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
   const [currentView, setCurrentView] = useState<'main' | 'reportHistory' | 'mdrrmoInfo' | 'hotlines' | 'userProfile' | 'sendFeedback'>('main');
+  const [hasLoadedUserData, setHasLoadedUserData] = useState<boolean>(false);
 
   // Refs for click outside detection
   const notificationsRef = useRef<HTMLDivElement>(null);
@@ -377,6 +378,22 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   }, []);
 
+  // Unified refresh helper to fetch all user-dependent data
+  const refreshUserData = useCallback(async (userId: string) => {
+    try {
+      await Promise.all([
+        loadNotifications(userId),
+        loadUserReports(userId),
+      ]);
+    } catch (e) {
+      console.warn('Partial failure while refreshing user lists:', e);
+    }
+
+    // Fetch global data in parallel (not user-dependent)
+    void loadMdrrmoInfo();
+    void loadBulanHotlines();
+  }, [loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines]);
+
   // Effect to load initial credits and consumption times from localStorage
   useEffect(() => {
     const storedCredits = localStorage.getItem('mdrrmo_reportCredits');
@@ -493,6 +510,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
   // Main useEffect for session, user data, and initial data loading
   useEffect(() => {
+    let locationInitTimer: ReturnType<typeof setTimeout> | null = null;
     const checkSessionAndLoadUser = async () => {
       let userFromPropsOrStorage = null;
 
@@ -537,29 +555,39 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         setEditingMobileNumber(userProfile.mobileNumber || '');
         setEditingUsername(userProfile.username || '');
 
-        // Request location permission after a short delay to let the UI render
-        const locationTimer = setTimeout(() => {
-          if (navigator.geolocation) {
-            navigator.permissions.query({ name: 'geolocation' as PermissionName })
-              .then(permissionStatus => {
-                if (permissionStatus.state === 'prompt') {
-                  // Show our custom modal instead of browser's default prompt
-                  setShowLocationModal(true);
-                } else if (permissionStatus.state === 'denied') {
-                  setLocationError('location_denied');
-                  setShowLocationModal(true);
-                }
-              });
-          }
-        }, 1000);
-        
-        // Cleanup timer on unmount
-        return () => clearTimeout(locationTimer);
+        // Request location permission: use Capacitor on native, browser Permissions API on web
+        if (isNativePlatform) {
+          // On native (Android/iOS), rely on Capacitor Geolocation which will handle prompting
+          void checkLocationPermission();
+        } else {
+          // On web, check permission after a short delay to allow UI to render
+          locationInitTimer = setTimeout(() => {
+            if (navigator.geolocation && (navigator as any).permissions?.query) {
+              (navigator as any).permissions.query({ name: 'geolocation' as PermissionName })
+                .then((permissionStatus: any) => {
+                  if (permissionStatus.state === 'prompt') {
+                    // Show our custom modal instead of browser's default prompt
+                    setShowLocationModal(true);
+                  } else if (permissionStatus.state === 'denied') {
+                    setLocationError('location_denied');
+                    setShowLocationModal(true);
+                  } else if (permissionStatus.state === 'granted') {
+                    // Optionally get the location immediately
+                    void checkLocationPermission();
+                  }
+                })
+                .catch(() => {
+                  // Fallback: try to get location which will trigger the prompt
+                  void checkLocationPermission();
+                });
+            } else {
+              // Fallback for browsers without Permissions API
+              void checkLocationPermission();
+            }
+          }, 500);
+        }
 
-        loadNotifications(userProfile.id);
-        loadUserReports(userProfile.id);
-        loadMdrrmoInfo();
-        loadBulanHotlines();
+        void refreshUserData(userProfile.id);
 
       } catch (error) {
         console.error("Unexpected error during session check:", error);
@@ -630,6 +658,9 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
 
     return () => {
+      if (locationInitTimer) {
+        clearTimeout(locationInitTimer);
+      }
       if (notificationsChannel) {
         supabase.removeChannel(notificationsChannel);
       }
@@ -639,7 +670,40 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       supabase.removeChannel(mdrrmoInfoChannel);
       supabase.removeChannel(hotlinesChannel);
     }
-  }, [userData, onLogout, currentUser?.id, loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines]);
+  }, [userData, onLogout, currentUser?.id, loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines, refreshUserData]);
+
+  // When currentUser.id becomes available, ensure we have loaded the user's data at least once
+  useEffect(() => {
+    if (currentUser?.id && !hasLoadedUserData) {
+      void refreshUserData(currentUser.id);
+      setHasLoadedUserData(true);
+    }
+  }, [currentUser?.id, hasLoadedUserData, refreshUserData]);
+
+  // Listen for auth state changes and refresh data on sign-in
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user?.id) {
+        try {
+          const { data: userProfile } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          if (userProfile) {
+            setCurrentUser(userProfile);
+          }
+        } catch (e) {
+          console.warn('Auth change: failed to load user profile for refresh', e);
+        }
+        void refreshUserData(session.user.id);
+      }
+    });
+
+    return () => {
+      try { authListener?.subscription?.unsubscribe(); } catch {}
+    };
+  }, [refreshUserData]);
 
   // Modified confirmSOS to accept emergencyType
   const confirmSOS = async (emergencyType: string) => {
