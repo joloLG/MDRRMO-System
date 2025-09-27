@@ -5,23 +5,26 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { supabase } from "@/lib/supabase"
 import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react" // For success/error icons
 // Removed next/navigation useRouter; navigation is handled via Links elsewhere
 
-// Interfaces for data types (re-defined here for clarity, but could be imported)
-interface Report {
-  id: string;
-  created_at: string; // Used for incident date/time reported
-  location_address: string;
-  latitude: number; // Added for potential pre-fill
-  longitude: number; // Added for potential pre-fill
-  firstName: string; // Added for potential pre-fill
-  lastName: string; // Added for potential pre-fill
-  mobileNumber: string; // Added for potential pre-fill
-}
+  // Interfaces for data types (re-defined here for clarity, but could be imported)
+  interface Report {
+    id: string;
+    created_at: string; // Used for incident date/time reported
+    location_address: string;
+    latitude: number; // Added for potential pre-fill
+    longitude: number; // Added for potential pre-fill
+    firstName: string; // Added for potential pre-fill
+    lastName: string; // Added for potential pre-fill
+    mobileNumber: string; // Added for potential pre-fill
+    emergency_type?: string; // For pre-filling incident type
+    er_team_id?: string | number; // For pre-filling ER team (stored as text in DB but er_teams.id is integer)
+    casualties?: number; // For pre-filling persons involved
+  }
 
 interface Barangay {
   id: number;
@@ -85,6 +88,50 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
     }
     setFormMessage(null); // Clear messages on report change
   }, [selectedReport]);
+
+  // Auto-fill ER Team, Persons Involved (casualties), and Incident Type based on selected report
+  React.useEffect(() => {
+    if (!selectedReport) return;
+
+    // Prefill ER Team from the responding team stored on the report
+    // Note: emergency_reports.er_team_id is stored as text, but er_teams.id is integer
+    if (!erTeamId && selectedReport.er_team_id) {
+      // Handle both string and number types for er_team_id
+      const teamIdStr = typeof selectedReport.er_team_id === 'string' 
+        ? selectedReport.er_team_id 
+        : String(selectedReport.er_team_id);
+      
+      // Only set if the team exists in our erTeams list
+      const teamExists = erTeams.find(team => String(team.id) === teamIdStr);
+      if (teamExists) {
+        setErTeamId(teamIdStr);
+      }
+    }
+
+    // Prefill Persons Involved from casualties
+    if (personsInvolved === '' && typeof selectedReport.casualties === 'number') {
+      setPersonsInvolved(String(selectedReport.casualties));
+    }
+
+    // Prefill Incident Type by mapping emergency_type to incident_types
+    if (!incidentTypeId && selectedReport.emergency_type && incidentTypes.length > 0) {
+      // Create mapping from emergency_type to incident_types.name
+      const typeMapping: { [key: string]: string } = {
+        'Fire Incident': 'Fire Incident',
+        'Medical Emergency': 'Medical Emergency', 
+        'Vehicular Incident': 'Vehicular/Pedestrian Accident', // or 'Vehicular/Pedestrian Roadcrash Incident'
+        'Weather Disturbance': 'Weather Disturbance',
+        'Public Disturbance': 'Public Disturbance',
+        'Others': 'Others'
+      };
+
+      const mappedType = typeMapping[selectedReport.emergency_type] || selectedReport.emergency_type;
+      const match = incidentTypes.find((it) => it.name.toLowerCase() === mappedType.toLowerCase());
+      if (match) {
+        setIncidentTypeId(String(match.id));
+      }
+    }
+  }, [selectedReport, erTeamId, personsInvolved, incidentTypeId, incidentTypes, erTeams]);
 
   const filteredBarangays = barangays.filter(b =>
     b.name.toLowerCase().includes(searchTerm.toLowerCase())

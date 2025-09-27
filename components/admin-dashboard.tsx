@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
-import { Bell, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon, FireExtinguisher, HeartPulse, Car, CloudRain, Swords, HelpCircle, PersonStanding, Navigation } from "lucide-react"
+import { Bell, BellOff, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon, FireExtinguisher, HeartPulse, Car, CloudRain, Swords, HelpCircle, PersonStanding, Navigation } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Calendar } from "@/components/ui/calendar"
@@ -100,6 +100,86 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [isLoadingAction, setIsLoadingAction] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string>(''); // Store team ID instead of name
   const [barangay, setBarangay] = useState<string>('');
+
+  // Alert sound management state
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('mdrrmo_admin_sound_enabled') === 'true';
+    }
+    return false;
+  });
+  const [activeAlertPath, setActiveAlertPath] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const loadActiveAlert = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('alert_settings')
+        .select('active_file_path')
+        .order('updated_at', { ascending: false })
+        .limit(1);
+      if (!error && data && data.length > 0) {
+        setActiveAlertPath(data[0].active_file_path);
+      } else {
+        setActiveAlertPath(null);
+      }
+    } catch (e) {
+      console.warn('Failed to load alert settings (fallback to default sound).', e);
+      setActiveAlertPath(null);
+    }
+  }, []);
+
+  const playAlertSound = useCallback(async () => {
+    try {
+      if (!soundEnabled) return;
+      if (!audioRef.current) {
+        audioRef.current = new Audio();
+      }
+
+      let url: string | null = null;
+      if (activeAlertPath) {
+        const { data, error } = await supabase
+          .storage
+          .from('alert_sounds')
+          .createSignedUrl(activeAlertPath, 60);
+        if (!error && data?.signedUrl) {
+          url = data.signedUrl;
+        }
+      }
+      if (!url) {
+        url = '/sounds/alert.mp3';
+      }
+      audioRef.current.src = url;
+      audioRef.current.volume = 1.0;
+      await audioRef.current.play().catch(err => {
+        console.warn('Autoplay may be blocked by the browser:', err);
+      });
+    } catch (e) {
+      console.error('Error playing alert sound:', e);
+    }
+  }, [soundEnabled, activeAlertPath]);
+
+  const toggleSound = useCallback(async () => {
+    setSoundEnabled(prev => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('mdrrmo_admin_sound_enabled', String(next));
+      }
+      return next;
+    });
+    // Optionally play a short test when enabling
+    try {
+      // Delay to let state update
+      setTimeout(() => {
+        if (!audioRef.current) audioRef.current = new Audio();
+        if (soundEnabled === false) {
+          // we just enabled
+          audioRef.current!.src = '/sounds/alert.mp3';
+          audioRef.current!.play().catch(() => {});
+        }
+      }, 100);
+    } catch {}
+  }, [soundEnabled]);
 
   // New states for filtering and modals
   const [resolvedFilterDate, setResolvedFilterDate] = useState<Date | undefined>(new Date());
@@ -283,6 +363,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     };
 
     fetchAllDashboardData();
+    loadActiveAlert();
 
     // Set up real-time channels for all relevant tables
     const reportsChannel = supabase
@@ -305,6 +386,28 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         (payload) => {
           console.log('Change received on admin_notifications, refetching all dashboard data:', payload);
           fetchAllDashboardData();
+          // Play sound only for new incoming reports
+          try {
+            // @ts-ignore
+            if ((payload?.eventType === 'INSERT') && (payload?.new?.type === 'new_report')) {
+              playAlertSound();
+            }
+          } catch (e) {
+            console.warn('Failed to process notification payload for sound:', e);
+          }
+        }
+      )
+      .subscribe();
+
+    // Subscribe to alert_settings changes to update active alert path
+    const alertSettingsChannel = supabase
+      .channel('dashboard-alert-settings-channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'alert_settings' },
+        () => {
+          console.log('Alert settings changed, reloading active alert path');
+          loadActiveAlert();
         }
       )
       .subscribe();
@@ -342,8 +445,9 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       supabase.removeChannel(adminNotificationsChannel);
       supabase.removeChannel(internalReportsChannel);
       supabase.removeChannel(erTeamsChannel);
+      supabase.removeChannel(alertSettingsChannel);
     };
-  }, [fetchAllReports, fetchAdminNotifications, fetchInternalReports, fetchErTeams, selectedReport, internalReports]); // Added selectedReport and internalReports to dependencies for logging
+  }, [fetchAllReports, fetchAdminNotifications, fetchInternalReports, fetchErTeams, selectedReport, internalReports, loadActiveAlert, playAlertSound]); // include alert handlers
 
   // Effect to get barangay from coordinates
   useEffect(() => {
@@ -520,6 +624,99 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         console.error('Error sending user notification:', notificationError);
       }
 
+      // De-duplicate: remove redundant reports from the same user within a 1-hour window
+      // Criteria: same user_id, same emergency_type, created_at within [selectedReport.created_at - 1 hour, selectedReport.created_at + 1 hour),
+      // status is pending/active, and id != selectedReport.id
+      try {
+        const baseTime = new Date(selectedReport.created_at);
+        const startWindow = new Date(baseTime.getTime() - 60 * 60 * 1000); // -1 hour
+        const endWindow = new Date(baseTime.getTime() + 60 * 60 * 1000); // +1 hour
+
+        const { data: dupCandidates, error: dupQueryError } = await supabase
+          .from('emergency_reports')
+          .select('id, status, created_at, latitude, longitude, location_address')
+          .eq('user_id', selectedReport.user_id)
+          .eq('emergency_type', selectedReport.emergency_type)
+          .neq('id', selectedReport.id)
+          .gte('created_at', startWindow.toISOString())
+          .lte('created_at', endWindow.toISOString());
+
+        if (dupQueryError) {
+          console.error('Error querying duplicate reports:', dupQueryError);
+        } else if (dupCandidates && dupCandidates.length > 0) {
+          // Helper: Haversine distance in meters
+          const toRad = (v: number) => (v * Math.PI) / 180;
+          const haversineMeters = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+            const R = 6371000; // Earth radius in meters
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+          };
+
+          const normalize = (s?: string | null) => (s || '').trim().toLowerCase();
+          const selectedLat = (selectedReport as any).latitude as number | undefined;
+          const selectedLon = (selectedReport as any).longitude as number | undefined;
+          const selectedAddr = normalize((selectedReport as any).location_address as string | undefined);
+          const RADIUS_METERS = 300; // small radius threshold
+
+          const duplicatesToDelete = dupCandidates.filter((r: any) => {
+            const statusLower = (r.status || '').toString().trim().toLowerCase();
+            if (statusLower !== 'pending' && statusLower !== 'active') return false;
+            const candLat = r.latitude as number | undefined;
+            const candLon = r.longitude as number | undefined;
+            const candAddr = normalize(r.location_address as string | undefined);
+
+            let closeBy = false;
+            if (
+              typeof selectedLat === 'number' && typeof selectedLon === 'number' &&
+              typeof candLat === 'number' && typeof candLon === 'number'
+            ) {
+              try {
+                const dist = haversineMeters(selectedLat, selectedLon, candLat, candLon);
+                closeBy = dist <= RADIUS_METERS;
+              } catch (_) {
+                closeBy = false;
+              }
+            }
+
+            const sameAddress = selectedAddr && candAddr && selectedAddr === candAddr;
+            return closeBy || sameAddress;
+          }).map((r: any) => r.id);
+
+          if (duplicatesToDelete.length === 0) {
+            console.log('No duplicates matched the location criteria; nothing to delete.');
+          } else {
+            const duplicateIds = duplicatesToDelete;
+
+          // Clean up related admin notifications first (best effort)
+          const { error: notifDelErr } = await supabase
+            .from('admin_notifications')
+            .delete()
+            .in('emergency_report_id', duplicateIds);
+          if (notifDelErr) {
+            console.warn('Error deleting related admin notifications for duplicates:', notifDelErr);
+          }
+
+          // Delete duplicate emergency reports
+          const { error: dupDeleteError } = await supabase
+            .from('emergency_reports')
+            .delete()
+            .in('id', duplicateIds);
+          if (dupDeleteError) {
+            console.error('Error deleting duplicate reports:', dupDeleteError);
+          } else {
+            console.log(`Deleted ${duplicateIds.length} duplicate report(s) for user ${selectedReport.user_id} within 1-hour window.`);
+          }
+          }
+        }
+      } catch (dedupErr) {
+        console.error('Unexpected error during duplicate cleanup:', dedupErr);
+      }
+
       // Refresh data
       await fetchAllReports();
       setSelectedReport(updatedReport as Report);
@@ -617,6 +814,16 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
           <h1 className="text-3xl font-bold text-gray-800 ml-4">Admin Dashboard</h1>
         </div>
         <div className="flex items-center space-x-4">
+          <div className="relative">
+            <Button
+              variant="outline"
+              onClick={toggleSound}
+              title={soundEnabled ? 'Disable alert sound' : 'Enable alert sound'}
+              aria-label="Toggle alert sound"
+            >
+              {soundEnabled ? 'Sounds On' : 'Sounds Off'}
+            </Button>
+          </div>
           <div className="relative">
             <Button variant="ghost" size="icon" onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}>
               <Bell className="h-6 w-6" />

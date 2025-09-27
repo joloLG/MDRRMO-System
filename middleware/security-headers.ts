@@ -16,7 +16,7 @@ const securityHeaders = {
     "font-src 'self' https://unpkg.com",
     "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.tile.openstreetmap.org",
     "frame-src 'self' https://www.openstreetmap.org",
-    "media-src 'self'",
+    "media-src 'self' data: blob: https://*.supabase.co",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

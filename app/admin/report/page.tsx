@@ -21,6 +21,9 @@ interface Report {
   firstName: string;
   lastName: string;
   mobileNumber: string;
+  emergency_type?: string; // used to prefill incident type
+  er_team_id?: string; // used to prefill ER team (stored as text in emergency_reports table)
+  casualties?: number; // used to prefill persons involved
 }
 
 interface Barangay {

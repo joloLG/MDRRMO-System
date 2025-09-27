@@ -46,6 +46,97 @@ interface ChartsDashboardProps {
   incidentTypes: BaseEntry[];
 }
 
+type BarangayIncidentPieEntry = {
+  name: string;
+  value: number;
+  incidentTypes: { name: string; count: number }[];
+};
+
+interface PdfTableSummary {
+  title: string;
+  columns: { header: string; widthRatio: number }[];
+  rows: string[][];
+}
+
+const addSummaryTablesToPdf = (pdfInstance: jsPDF, summaries: PdfTableSummary[], baseTitle: string) => {
+  if (!summaries.length) return;
+
+  const margin = 14;
+  const headerHeight = 8;
+  const lineHeight = 5.5;
+  const pageWidth = pdfInstance.internal.pageSize.getWidth();
+  const pageHeight = pdfInstance.internal.pageSize.getHeight();
+  const tableWidth = pageWidth - margin * 2;
+
+  const startNewTablePage = (title: string) => {
+    pdfInstance.addPage();
+    let yPosition = margin;
+    pdfInstance.setFont('helvetica', 'bold');
+    pdfInstance.setFontSize(14);
+    pdfInstance.text(title, margin, yPosition);
+    return yPosition + 10;
+  };
+
+  summaries.forEach((summary) => {
+    if (summary.rows.length === 0) return;
+
+    const ratioSum = summary.columns.reduce((sum, column) => sum + column.widthRatio, 0) || 1;
+    const columnWidths = summary.columns.map(column => tableWidth * (column.widthRatio / ratioSum));
+
+    let currentY = startNewTablePage(summary.title || `${baseTitle} Summary`);
+
+    const drawHeader = () => {
+      let x = margin;
+      pdfInstance.setFont('helvetica', 'bold');
+      pdfInstance.setFontSize(11);
+      pdfInstance.setDrawColor(200, 200, 200);
+      pdfInstance.setFillColor(240, 240, 240);
+      pdfInstance.setTextColor(0, 0, 0);
+      summary.columns.forEach((column, index) => {
+        pdfInstance.setFillColor(240, 240, 240);
+        pdfInstance.rect(x, currentY, columnWidths[index], headerHeight, 'F');
+        pdfInstance.setDrawColor(200, 200, 200);
+        pdfInstance.rect(x, currentY, columnWidths[index], headerHeight, 'S');
+        pdfInstance.text(column.header, x + 2, currentY + 5);
+        x += columnWidths[index];
+      });
+      currentY += headerHeight;
+      pdfInstance.setFont('helvetica', 'normal');
+      pdfInstance.setFontSize(11);
+      pdfInstance.setTextColor(0, 0, 0);
+    };
+
+    const drawRows = () => {
+      summary.rows.forEach((row) => {
+        const cellLines = row.map((value, columnIndex) =>
+          pdfInstance.splitTextToSize(value, Math.max(columnWidths[columnIndex] - 4, 4))
+        );
+        const rowLineCount = Math.max(...cellLines.map(lines => lines.length));
+        const rowHeight = rowLineCount * lineHeight + 4;
+
+        if (currentY + rowHeight > pageHeight - margin) {
+          currentY = startNewTablePage(`${summary.title} (cont.)`);
+          drawHeader();
+        }
+
+        let x = margin;
+        cellLines.forEach((lines: string[], columnIndex: number) => {
+          pdfInstance.rect(x, currentY, columnWidths[columnIndex], rowHeight);
+          lines.forEach((line: string, lineIndex: number) => {
+            pdfInstance.text(line, x + 2, currentY + 6 + lineIndex * lineHeight);
+          });
+          x += columnWidths[columnIndex];
+        });
+
+        currentY += rowHeight;
+      });
+    };
+
+    drawHeader();
+    drawRows();
+  });
+};
+
 const CustomPieTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     return (
@@ -159,7 +250,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
   };
 
   // Pie Chart Data: Incidents per Barangay
-  const getBarangayIncidentData = React.useCallback(() => {
+  const getBarangayIncidentData = React.useCallback((): BarangayIncidentPieEntry[] => {
     const { start: periodStart, end: periodEnd } = getPeriodDateRange(
       pieChartPeriod,
       pieChartDate,
@@ -183,17 +274,32 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
       return incidentDate >= filterStart && incidentDate <= filterEnd;
     });
 
-    const barangayCounts: { [key: string]: number } = {};
+    const barangayCounts: Record<string, { total: number; incidentTypeCounts: Record<string, number> }> = {};
+
     filteredReports.forEach(report => {
       const barangayName = barangays.find(b => b.id === report.barangay_id)?.name || 'Unknown Barangay';
-      barangayCounts[barangayName] = (barangayCounts[barangayName] || 0) + 1;
+      const incidentTypeName = incidentTypes.find(it => it.id === report.incident_type_id)?.name || 'Unspecified';
+
+      if (!barangayCounts[barangayName]) {
+        barangayCounts[barangayName] = {
+          total: 0,
+          incidentTypeCounts: {},
+        };
+      }
+
+      barangayCounts[barangayName].total += 1;
+      barangayCounts[barangayName].incidentTypeCounts[incidentTypeName] =
+        (barangayCounts[barangayName].incidentTypeCounts[incidentTypeName] || 0) + 1;
     });
 
-    return Object.keys(barangayCounts).map(name => ({
+    return Object.entries(barangayCounts).map(([name, data]) => ({
       name,
-      value: barangayCounts[name],
+      value: data.total,
+      incidentTypes: Object.entries(data.incidentTypeCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([typeName, count]) => ({ name: typeName, count })),
     }));
-  }, [allInternalReports, barangays, pieChartPeriod, pieChartDate, pieChartMonth, pieChartYear, pieStartDateRange, pieEndDateRange, pieStartTime, pieEndTime]);
+  }, [allInternalReports, barangays, incidentTypes, pieChartPeriod, pieChartDate, pieChartMonth, pieChartYear, pieStartDateRange, pieEndDateRange, pieStartTime, pieEndTime]);
 
   const pieChartData = getBarangayIncidentData();
   const PIE_COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#d0ed57', '#a4de6c', '#00bfa5'];
@@ -271,6 +377,67 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
 
   const incidentTypeBarData = getIncidentTypeBarData();
 
+  const barangayIncidentSummary = React.useMemo<PdfTableSummary[]>(() => {
+    if (!pieChartData.length) return [];
+    const total = pieChartData.reduce((sum, item) => sum + item.value, 0) || 1;
+
+    const rows = pieChartData
+      .slice()
+      .sort((a, b) => b.value - a.value)
+      .map(entry => {
+        const percentage = ((entry.value / total) * 100).toFixed(1) + '%';
+        const incidentTypesDetail = entry.incidentTypes
+          .map(typeInfo => `${typeInfo.name} (${typeInfo.count})`)
+          .join(', ');
+        return [entry.name, percentage, incidentTypesDetail || '—'];
+      });
+
+    return [
+      {
+        title: 'Barangay Incident Breakdown',
+        columns: [
+          { header: 'Barangay', widthRatio: 0.28 },
+          { header: 'Incident Percentage', widthRatio: 0.22 },
+          { header: 'Incident Types', widthRatio: 0.5 },
+        ],
+        rows,
+      }
+    ];
+  }, [pieChartData]);
+
+  const incidentTypeSummary = React.useMemo<PdfTableSummary[]>(() => {
+    if (!incidentTypeBarData.length) return [];
+
+    const summarized = incidentTypes.map(type => {
+      const totalCount = incidentTypeBarData.reduce((sum, item) => sum + (item[type.name] || 0), 0);
+      return {
+        typeName: type.name,
+        total: totalCount,
+      };
+    }).filter(item => item.total > 0);
+
+    const total = summarized.reduce((sum, item) => sum + item.total, 0) || 1;
+
+    const rows = summarized
+      .sort((a, b) => b.total - a.total)
+      .map(item => {
+        const percentage = ((item.total / total) * 100).toFixed(1) + '%';
+        return [item.typeName, item.total.toString(), percentage];
+      });
+
+    return [
+      {
+        title: 'Incident Type Totals',
+        columns: [
+          { header: 'Incident Type', widthRatio: 0.5 },
+          { header: 'Total Reports', widthRatio: 0.25 },
+          { header: 'Percentage', widthRatio: 0.25 },
+        ],
+        rows,
+      }
+    ];
+  }, [incidentTypeBarData, incidentTypes]);
+
 
   // Bar Chart Data: Report Status Counts (Daily/Weekly/Monthly/Yearly)
   const getReportStatusData = React.useCallback(() => {
@@ -301,26 +468,64 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
 
   const reportStatusBarData = getReportStatusData();
 
+  const reportStatusSummary = React.useMemo<PdfTableSummary[]>(() => {
+    if (!reportStatusBarData.length) return [];
+
+    const total = reportStatusBarData.reduce((sum, item) => sum + item.count, 0) || 1;
+
+    const rows = reportStatusBarData
+      .map(item => {
+        const percentage = ((item.count / total) * 100).toFixed(1) + '%';
+        return [item.name, item.count.toString(), percentage];
+      });
+
+    return [
+      {
+        title: 'Emergency Report Status Summary',
+        columns: [
+          { header: 'Status', widthRatio: 0.5 },
+          { header: 'Total Reports', widthRatio: 0.25 },
+          { header: 'Percentage', widthRatio: 0.25 },
+        ],
+        rows,
+      }
+    ];
+  }, [reportStatusBarData]);
+
   // --- PDF Download Function ---
-  const handleDownloadPdf = async (chartId: string, chartTitle: string) => {
+  const handleDownloadPdf = async (
+    chartId: string,
+    chartTitle: string,
+    summaryTables: PdfTableSummary[] = [],
+    contentSelector: string = '[data-chart-canvas]'
+  ) => {
     const chartElement = document.getElementById(chartId);
     if (!chartElement) {
       console.error(`Chart element with ID ${chartId} not found.`);
       return;
     }
 
-    // Temporarily hide scrollbars if they appear on elements, for cleaner capture
-    const originalOverflow = chartElement.style.overflow;
-    chartElement.style.overflow = 'hidden';
+    const captureTarget = contentSelector
+      ? (chartElement.querySelector(contentSelector) as HTMLElement | null)
+      : chartElement;
+
+    if (!captureTarget) {
+      console.error(`Capture target for chart ${chartId} not found using selector "${contentSelector}".`);
+      return;
+    }
+
+    const originalOverflow = captureTarget.style.overflow;
+    captureTarget.style.overflow = 'hidden';
 
     try {
-      const canvas = await html2canvas(chartElement, {
+      const canvas = await html2canvas(captureTarget, {
         scale: 2, // Increase scale for better resolution
         useCORS: true, // Important if your charts load external resources (e.g., fonts, images)
         logging: true,
+        backgroundColor: '#ffffff',
       });
 
-      chartElement.style.overflow = originalOverflow; // Restore original overflow
+      captureTarget.style.overflow = originalOverflow; // Restore original overflow
 
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
@@ -340,18 +545,17 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
         heightLeft -= pageHeight;
       }
 
+      addSummaryTablesToPdf(pdf, summaryTables, chartTitle);
+
       pdf.save(`${chartTitle.replace(/\s/g, '_').toLowerCase()}_chart.pdf`);
+
     } catch (error) {
       console.error("Error generating PDF:", error);
       alert("Failed to generate PDF. Please try again.");
     } finally {
-      chartElement.style.overflow = originalOverflow; // Ensure overflow is restored even on error
+      captureTarget.style.overflow = originalOverflow; // Ensure overflow is restored even on error
     }
   };
-
-
-  // --- Render ---
-
   return (
     <div className="grid grid-cols-1 gap-6">
       {/* Back Button for Admin Dashboard */}
@@ -375,7 +579,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
             variant="ghost"
             size="sm"
             className="text-white hover:bg-gray-700"
-            onClick={() => handleDownloadPdf('barangay-incident-chart', 'Barangay Incidents')}
+            onClick={() => handleDownloadPdf('barangay-incident-chart', 'Barangay Incidents', barangayIncidentSummary)}
           >
             <Download className="h-4 w-4 mr-2" /> PDF
           </Button>
@@ -517,33 +721,35 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
               />
             </div>
           </div>
-          {pieChartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={350}>
-              <PieChart>
-                <Pie
-                  data={pieChartData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                  nameKey="name"
-                  label={({ name, percent }) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`}
-                >
-                  {pieChartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomPieTooltip />} />
-                <Legend layout="vertical" align="right" verticalAlign="middle" wrapperStyle={{ paddingLeft: '20px' }} />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="text-center text-gray-500 h-[350px] flex items-center justify-center">
-              No incident data for the selected filters.
-            </div>
-          )}
+          <div data-chart-canvas className="w-full">
+            {pieChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={350}>
+                <PieChart>
+                  <Pie
+                    data={pieChartData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                    nameKey="name"
+                    label={({ name, percent }) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`}
+                  >
+                    {pieChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomPieTooltip />} />
+                  <Legend layout="vertical" align="right" verticalAlign="middle" wrapperStyle={{ paddingLeft: '20px' }} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center text-gray-500 h-[350px] flex items-center justify-center">
+                No incident data for the selected filters.
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -555,7 +761,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
             variant="ghost"
             size="sm"
             className="text-white hover:bg-gray-700"
-            onClick={() => handleDownloadPdf('incident-type-chart', 'Incident Types')}
+            onClick={() => handleDownloadPdf('incident-type-chart', 'Incident Types', incidentTypeSummary)}
           >
             <Download className="h-4 w-4 mr-2" /> PDF
           </Button>
@@ -595,36 +801,38 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
               </SelectContent>
             </Select>
           </div>
-          {incidentTypeBarData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={350}>
-              <BarChart
-                data={incidentTypeBarData}
-                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                {barIncidentPeriod === 'yearly' ? (
-                  <XAxis dataKey="month" />
-                ) : (
-                  <XAxis dataKey="day" />
-                )}
-                <YAxis allowDecimals={false} />
-                <Tooltip content={<CustomBarTooltip />} />
-                <Legend />
-                {incidentTypes.map((type, index) => (
-                  <Bar
-                    key={type.id}
-                    dataKey={type.name}
-                    fill={getIncidentTypeColor(index)}
-                    name={type.name}
-                  />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="text-center text-gray-500 h-[350px] flex items-center justify-center">
-              No incident type data for the selected period.
-            </div>
-          )}
+          <div data-chart-canvas className="w-full">
+            {incidentTypeBarData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={350}>
+                <BarChart
+                  data={incidentTypeBarData}
+                  margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  {barIncidentPeriod === 'yearly' ? (
+                    <XAxis dataKey="month" />
+                  ) : (
+                    <XAxis dataKey="day" />
+                  )}
+                  <YAxis allowDecimals={false} />
+                  <Tooltip content={<CustomBarTooltip />} />
+                  <Legend />
+                  {incidentTypes.map((type, index) => (
+                    <Bar
+                      key={type.id}
+                      dataKey={type.name}
+                      fill={getIncidentTypeColor(index)}
+                      name={type.name}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center text-gray-500 h-[350px] flex items-center justify-center">
+                No incident type data for the selected period.
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -636,7 +844,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
             variant="ghost"
             size="sm"
             className="text-white hover:bg-gray-700"
-            onClick={() => handleDownloadPdf('report-status-chart', 'Report Status Overview')}
+            onClick={() => handleDownloadPdf('report-status-chart', 'Report Status Overview', reportStatusSummary)}
           >
             <Download className="h-4 w-4 mr-2" /> PDF
           </Button>
@@ -763,29 +971,31 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
               </div>
             )}
           </div>
-          {reportStatusBarData.length > 0 && reportStatusBarData.some(d => d.count > 0) ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart
-                data={reportStatusBarData}
-                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis allowDecimals={false} />
-                <Tooltip content={<CustomBarTooltip />} />
-                <Legend />
-                <Bar dataKey="count">
-                  {reportStatusBarData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="text-center text-gray-500 h-[300px] flex items-center justify-center">
-              No emergency report data for the selected period.
-            </div>
-          )}
+          <div data-chart-canvas className="w-full">
+            {reportStatusBarData.length > 0 && reportStatusBarData.some(d => d.count > 0) ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart
+                  data={reportStatusBarData}
+                  margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip content={<CustomBarTooltip />} />
+                  <Legend />
+                  <Bar dataKey="count">
+                    {reportStatusBarData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center text-gray-500 h-[300px] flex items-center justify-center">
+                No emergency report data for the selected period.
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
