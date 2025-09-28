@@ -18,6 +18,11 @@ export async function authSessionMiddleware(request: NextRequest, response: Next
   const url = new URL(request.url);
   const path = url.pathname;
 
+  // In development, do not gate admin routes to prevent redirect loops during auth setup
+  if (process.env.NODE_ENV !== 'production') {
+    return response;
+  }
+
   if (PUBLIC_PREFIXES.some((p) => path.startsWith(p))) {
     return response;
   }

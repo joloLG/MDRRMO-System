@@ -10,8 +10,6 @@ import { Menu, BarChart, Settings, FileText, History, Info, Phone, Mail, X, MapP
 type AdminViewType = 'main' | 'editMdrrmoInfo' | 'editHotlines' | 'viewFeedback';
 
 interface SidebarProps {
-  // Existing props (empty in your original code, kept as is)
-  // New optional props for admin dashboard integration
   onAdminViewChange?: (view: AdminViewType | string) => void;
   currentAdminView?: string;
   unreadFeedbackCount?: number;

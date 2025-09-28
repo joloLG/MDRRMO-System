@@ -1,4 +1,6 @@
-import { createClient } from "@supabase/supabase-js"
+"use client"
+
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 // Check if environment variables are set
 if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
@@ -9,17 +11,9 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
   throw new Error('Missing environment variable: NEXT_PUBLIC_SUPABASE_ANON_KEY')
 }
 
-export const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true
-    }
-  }
-)
+// Use auth-helpers client on the client side so sessions are stored in cookies
+// which allows middleware (createMiddlewareClient) to recognize the session
+export const supabase = createClientComponentClient()
 
 // User type
 export type UserRole = 'superadmin' | 'admin' | 'user';
