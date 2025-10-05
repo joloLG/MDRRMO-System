@@ -23,22 +23,33 @@ function ResetPasswordContent() {
   const [isTokenValid, setIsTokenValid] = useState(false) // To check if the session is valid
 
   useEffect(() => {
-    // Supabase automatically handles the session when redirecting from the reset email link.
-    // We can check the session to confirm the user is authenticated for password reset.
-    const checkSession = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession()
-
-      if (error || !session) {
-        setError("Invalid or expired password reset link. Please try again from the login page.")
-        setIsTokenValid(false)
-      } else {
-        setIsTokenValid(true)
+    // Try to exchange code if present (handles direct visits to /reset-password from email)
+    const ensureSession = async () => {
+      setIsLoading(true)
+      try {
+        const code = searchParams.get('code')
+        if (code) {
+          try {
+            // Exchange code in the URL for a session (client-side fallback)
+            await supabase.auth.exchangeCodeForSession(window.location.href)
+          } catch (e) {
+            // Ignore; we'll still check session below
+          }
+        }
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) {
+          setError("Invalid or expired password reset link. Please request a new one from the login page.")
+          setIsTokenValid(false)
+        } else {
+          setIsTokenValid(true)
+        }
+      } finally {
+        setIsLoading(false)
       }
     }
-
-    // This effect runs once on component mount to validate the session from the URL.
-    // The tokens are handled by Supabase's client-side library upon redirection.
-    checkSession()
+    // Validate on mount
+    ensureSession()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handlePasswordReset = async () => {

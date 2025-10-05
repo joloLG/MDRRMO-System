@@ -122,12 +122,23 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
     setError("")
 
     try {
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || ((typeof window !== 'undefined' && window.location?.origin) ? window.location.origin : '')
+      // Route through server callback so cookies are persisted before landing on reset page
+      const redirectTo = `${siteUrl}/auth/callback?next=/reset-password`
+
       const { error } = await supabase.auth.resetPasswordForEmail(forgotPasswordEmail, {
-        redirectTo: window.location.origin + '/reset-password', // Replace with your actual reset password page URL
+        redirectTo
       })
 
       if (error) {
-        setForgotPasswordMessage("Error: " + error.message)
+        const msg = (error.message || '').toLowerCase()
+        if (msg.includes('redirect') || msg.includes('not a valid')) {
+          setForgotPasswordMessage(
+            `Error: ${error.message}. Please ensure your Supabase Auth settings allow this redirect URL: ${redirectTo}`
+          )
+        } else {
+          setForgotPasswordMessage("Error: " + error.message)
+        }
       } else {
         setForgotPasswordMessage("Password reset email sent! Please check your inbox.")
         setForgotPasswordEmail("") // Clear email input
