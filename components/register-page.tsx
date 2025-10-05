@@ -38,6 +38,21 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [ageVerified, setAgeVerified] = useState(false)
 
+  // Derived validations for password and confirmation
+  const password = formData.password
+  const confirmPassword = formData.confirmPassword
+  const passwordTooShort = password.length > 0 && password.length < 6
+  const passwordMissingUpper = password.length > 0 && !/[A-Z]/.test(password)
+  const passwordMissingNumber = password.length > 0 && !/[0-9]/.test(password)
+  const passwordHasSpecial = password.length > 0 && /[^a-zA-Z0-9]/.test(password)
+  const passwordInvalid = password.length > 0 && (passwordTooShort || passwordMissingUpper || passwordMissingNumber || passwordHasSpecial)
+  const passwordsMismatch = confirmPassword.length > 0 && password !== confirmPassword
+  // Rule booleans for checklist
+  const hasMinLength = password.length >= 6
+  const hasUppercase = /[A-Z]/.test(password)
+  const hasNumber = /[0-9]/.test(password)
+  const hasNoSpecial = !/[^a-zA-Z0-9]/.test(password)
+
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
     setError("") // Clear error on input change
@@ -200,14 +215,14 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
                 Middle Name
               </Label>
               <Input
-                id="middleName"
-                value={formData.middleName}
-                onChange={(e) => handleInputChange("middleName", e.target.value)}
-                className="border-orange-200 focus:border-orange-500"
-                disabled={isLoading}
-              />
-            </div>
+              id="middleName"
+              value={formData.middleName}
+              onChange={(e) => handleInputChange("middleName", e.target.value)}
+              className="border-orange-200 focus:border-orange-500"
+              disabled={isLoading}
+            />
           </div>
+        </div>
 
           <div>
             <Label htmlFor="lastName" className="text-gray-700 font-medium">
@@ -314,7 +329,9 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
                 type={showPassword ? "text" : "password"}
                 value={formData.password}
                 onChange={(e) => handleInputChange("password", e.target.value)}
-                className="border-orange-200 focus:border-orange-500 pr-10"
+                className={`border-orange-200 focus:border-orange-500 pr-10 ${(passwordInvalid || passwordsMismatch) ? 'border-red-500 focus:border-red-500' : ''}`}
+                aria-invalid={passwordInvalid || passwordsMismatch}
+                aria-describedby="password-help password-rules password-mismatch"
                 required
                 disabled={isLoading}
               />
@@ -327,9 +344,27 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Password must be at least 6 characters, contain 1 uppercase letter, 1 number, and no special characters.
-            </p>
+            <ul id="password-rules" className="mt-2 space-y-1 text-sm">
+              <li className="flex items-center gap-2">
+                {hasMinLength ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
+                <span className={hasMinLength ? 'text-green-700' : 'text-red-700'}>At least 6 characters</span>
+              </li>
+              <li className="flex items-center gap-2">
+                {hasUppercase ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
+                <span className={hasUppercase ? 'text-green-700' : 'text-red-700'}>Contains an uppercase letter</span>
+              </li>
+              <li className="flex items-center gap-2">
+                {hasNumber ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
+                <span className={hasNumber ? 'text-green-700' : 'text-red-700'}>Contains a number</span>
+              </li>
+              <li className="flex items-center gap-2">
+                {hasNoSpecial ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
+                <span className={hasNoSpecial ? 'text-green-700' : 'text-red-700'}>No special characters</span>
+              </li>
+            </ul>
+            {passwordsMismatch && (
+              <p id="password-mismatch" className="text-sm text-red-500 mt-1">Your password didn't match, please match them</p>
+            )}
           </div>
 
           <div>
@@ -342,7 +377,9 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
                 type={showConfirmPassword ? "text" : "password"}
                 value={formData.confirmPassword}
                 onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
-                className="border-orange-200 focus:border-orange-500 pr-10"
+                className={`border-orange-200 focus:border-orange-500 pr-10 ${passwordsMismatch ? 'border-red-500 focus:border-red-500' : ''}`}
+                aria-invalid={passwordsMismatch}
+                aria-describedby="password-mismatch"
                 required
                 disabled={isLoading}
               />
@@ -392,9 +429,9 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
 
           <Button
             onClick={handleRegister}
-            disabled={isLoading || !ageVerified || !acceptedTerms}
+            disabled={isLoading || !ageVerified || !acceptedTerms || passwordInvalid || passwordsMismatch}
             className={`w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded transition-colors ${
-              !ageVerified || !acceptedTerms ? 'opacity-50 cursor-not-allowed' : ''
+              (!ageVerified || !acceptedTerms || passwordInvalid || passwordsMismatch) ? 'opacity-50 cursor-not-allowed' : ''
             }`}
           >
             {isLoading ? "Registering..." : "Register"}
