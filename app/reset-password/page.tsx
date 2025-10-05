@@ -27,16 +27,32 @@ function ResetPasswordContent() {
     const ensureSession = async () => {
       setIsLoading(true)
       try {
+        let exchanged = false
         const code = searchParams.get('code')
-        if (code) {
-          try {
-            // Exchange the one-time code for a session (client-side fallback)
+        const hasHashTokens = typeof window !== 'undefined' && window.location.hash && /access_token|refresh_token|provider_token/i.test(window.location.hash)
+
+        try {
+          if (code) {
             await supabase.auth.exchangeCodeForSession(code)
-          } catch (e) {
-            // Ignore; we'll still check session below
+            exchanged = true
+          } else if (hasHashTokens) {
+            // When Supabase sends tokens in URL fragment after redirect
+            await supabase.auth.exchangeCodeForSession(window.location.href)
+            exchanged = true
           }
+        } catch (e) {
+          // Continue to session check below; error will lead to invalid state if no session
+          console.warn('Exchange error (reset-password):', e)
         }
-        const { data: { session } } = await supabase.auth.getSession()
+
+        // Small retry to allow cookies/session to propagate
+        let session = null
+        for (let i = 0; i < 3; i++) {
+          const { data } = await supabase.auth.getSession()
+          session = data.session
+          if (session) break
+          await new Promise(r => setTimeout(r, 300))
+        }
         if (!session) {
           setError("Invalid or expired password reset link. Please request a new one from the login page.")
           setIsTokenValid(false)

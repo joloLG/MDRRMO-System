@@ -123,7 +123,7 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
 
     try {
       const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || ((typeof window !== 'undefined' && window.location?.origin) ? window.location.origin : '')
-      // Route through server callback so cookies are persisted before landing on reset page
+      // Route through server callback to persist cookies before landing on reset page
       const redirectTo = `${siteUrl}/auth/callback?next=/reset-password`
 
       const { error } = await supabase.auth.resetPasswordForEmail(forgotPasswordEmail, {
