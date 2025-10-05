@@ -1,18 +1,20 @@
 "use client"
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
-import { Capacitor } from "@capacitor/core"
-import { Geolocation } from "@capacitor/geolocation"
-import { Button } from "@/components/ui/button"
-import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding, MapPin } from "lucide-react" // Added Swords for Armed Conflict
-import { UserSidebar } from "./user_sidebar"
-import { LocationPermissionModal } from "./location-permission-modal"
-import { supabase } from "@/lib/supabase"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { formatDistanceToNowStrict, parseISO } from 'date-fns';
-import { FeedbackHistory } from "@/components/feedback-history"
+  import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
+  import { Capacitor } from "@capacitor/core"
+  import type { PluginListenerHandle } from "@capacitor/core"
+  import { App } from "@capacitor/app"
+  import { Geolocation } from "@capacitor/geolocation"
+  import { Button } from "@/components/ui/button"
+  import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding, MapPin } from "lucide-react" // Added Swords for Armed Conflict
+  import { UserSidebar } from "./user_sidebar"
+  import { LocationPermissionModal } from "./location-permission-modal"
+  import { supabase } from "@/lib/supabase"
+  import { Input } from "@/components/ui/input"
+  import { Textarea } from "@/components/ui/textarea"
+  import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+  import { formatDistanceToNowStrict, parseISO } from 'date-fns';
+  import { FeedbackHistory } from "@/components/feedback-history"
 
 interface Notification {
   id: string;
@@ -314,13 +316,44 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   // Track active cooldown timers
   const [activeCooldowns, setActiveCooldowns] = useState<number[]>([]);
 
+  // Recompute credits and cooldowns based on stored consumption times
+  const reconcileCooldownsAndCredits = useCallback(() => {
+    const now = Date.now();
+    const tenMinutes = 10 * 60 * 1000;
+
+    // Keep only recent consumption timestamps (within last 10 minutes)
+    const validTimes = creditConsumptionTimes.filter(ts => (now - ts) < tenMinutes);
+    if (validTimes.length !== creditConsumptionTimes.length) {
+      setCreditConsumptionTimes(validTimes);
+    }
+
+    // Build cooldown deadlines from valid times
+    const newCooldowns = validTimes.map(ts => ts + tenMinutes);
+    setActiveCooldowns(newCooldowns);
+
+    // Compute credits from remaining uses
+    const used = validTimes.length;
+    const newCredits = Math.max(0, 3 - used);
+    setReportCredits(newCredits);
+
+    // Update cooldown visual states
+    if (newCooldowns.length > 0) {
+      const nextMs = Math.max(0, Math.min(...newCooldowns) - now);
+      setCooldownRemaining(Math.ceil(nextMs / 1000));
+      setCooldownActive(newCredits === 0);
+    } else {
+      setCooldownRemaining(0);
+      setCooldownActive(false);
+    }
+  }, [creditConsumptionTimes]);
+
   // Function to load notifications for the current user
   const loadNotifications = useCallback(async (userId: string) => {
     if (!userId) return;
 
     const { data, error } = await supabase
       .from("user_notifications")
-      .select("*")
+      .select("id, emergency_report_id, message, is_read, created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
@@ -336,7 +369,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     if (!userId) return;
     const { data, error } = await supabase
       .from('emergency_reports')
-      .select('*') // Select all columns for detailed history
+      .select('id, emergency_type, status, admin_response, resolved_at, created_at') // Narrow columns for lower egress
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
@@ -351,7 +384,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const loadMdrrmoInfo = useCallback(async () => {
     const { data, error } = await supabase
       .from('mdrrmo_info')
-      .select('*')
+      .select('id, content')
       .single(); // Assuming only one row for general info
 
     if (!error && data) {
@@ -368,7 +401,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const loadBulanHotlines = useCallback(async () => {
     const { data, error } = await supabase
       .from('hotlines')
-      .select('*')
+      .select('id, name, number, description')
       .order('name', { ascending: true });
 
     if (!error && data) {
@@ -453,10 +486,16 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         setActiveCooldowns(updatedCooldowns);
       }
       
-      // If we still have active cooldowns, schedule next check
+      // Update cooldown display state
       if (updatedCooldowns.length > 0) {
-        const nextCooldown = Math.min(...updatedCooldowns) - now;
-        return Math.max(1000, nextCooldown);
+        const nextMs = Math.max(0, Math.min(...updatedCooldowns) - now);
+        setCooldownRemaining(Math.ceil(nextMs / 1000));
+        setCooldownActive(reportCredits === 0);
+        // Tick every second while cooldowns are active so the display updates smoothly
+        return 1000;
+      } else {
+        setCooldownRemaining(0);
+        setCooldownActive(false);
       }
       
       return null; // No active cooldowns
@@ -475,7 +514,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [activeCooldowns]);
+  }, [activeCooldowns, reportCredits]);
   
   // Effect to initialize cooldowns from credit consumption times
   useEffect(() => {
@@ -489,10 +528,20 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         .map(timestamp => timestamp + tenMinutes);
       
       setActiveCooldowns(newCooldowns);
+      if (newCooldowns.length > 0) {
+        const nextMs = Math.max(0, Math.min(...newCooldowns) - now);
+        setCooldownRemaining(Math.ceil(nextMs / 1000));
+        setCooldownActive(reportCredits === 0);
+      } else {
+        setCooldownRemaining(0);
+        setCooldownActive(false);
+      }
     } else {
       setActiveCooldowns([]);
+      setCooldownRemaining(0);
+      setCooldownActive(false);
     }
-  }, [creditConsumptionTimes]);
+  }, [creditConsumptionTimes, reportCredits]);
 
   // Effect to persist report credits, consumption times to user-specific localStorage
   useEffect(() => {
@@ -671,6 +720,51 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       supabase.removeChannel(hotlinesChannel);
     }
   }, [userData, onLogout, currentUser?.id, loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines, refreshUserData]);
+
+  // Handle app resume/focus (mobile and web) to refresh session, data, location, and cooldowns
+  useEffect(() => {
+    const onResume = async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData?.session) {
+          onLogout();
+          return;
+        }
+        if (currentUser?.id) {
+          await refreshUserData(currentUser.id);
+        }
+        // Refresh location silently if permitted
+        await checkLocationPermission();
+        // Recompute credits/cooldowns in case timers paused while app was backgrounded
+        reconcileCooldownsAndCredits();
+      } catch (e) {
+        console.warn('Resume handling error:', e);
+      }
+    };
+
+    let appListener: PluginListenerHandle | undefined;
+    if (isNativePlatform) {
+      // Capacitor native lifecycle
+      App.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) void onResume();
+      }).then(handle => { appListener = handle; }).catch(() => {});
+    }
+
+    const visHandler = () => { if (!document.hidden) void onResume(); };
+    const focusHandler = () => { void onResume(); };
+    const onlineHandler = () => { void onResume(); };
+
+    document.addEventListener('visibilitychange', visHandler);
+    window.addEventListener('focus', focusHandler);
+    window.addEventListener('online', onlineHandler);
+
+    return () => {
+      document.removeEventListener('visibilitychange', visHandler);
+      window.removeEventListener('focus', focusHandler);
+      window.removeEventListener('online', onlineHandler);
+      try { appListener?.remove(); } catch {}
+    };
+  }, [isNativePlatform, currentUser?.id, refreshUserData, checkLocationPermission, reconcileCooldownsAndCredits, onLogout]);
 
   // When currentUser.id becomes available, ensure we have loaded the user's data at least once
   useEffect(() => {
