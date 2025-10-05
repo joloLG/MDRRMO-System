@@ -119,7 +119,7 @@ function ResetPasswordContent() {
 
       // Redirect to login page after a short delay
       setTimeout(() => {
-        router.push("/login") // Adjust this path if your login page is different
+        router.push("/") // Adjust this path if your login page is different
       }, 3000)
 
     } catch (err) {
