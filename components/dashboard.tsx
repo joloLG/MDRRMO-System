@@ -6,10 +6,11 @@
   import { App } from "@capacitor/app"
   import { Geolocation } from "@capacitor/geolocation"
   import { Button } from "@/components/ui/button"
-  import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding, MapPin } from "lucide-react" // Added Swords for Armed Conflict
+  import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding, MapPin, RefreshCcw } from "lucide-react" // Added Swords for Armed Conflict
   import { UserSidebar } from "./user_sidebar"
   import { LocationPermissionModal } from "./location-permission-modal"
   import { supabase } from "@/lib/supabase"
+  import type { RealtimeChannel } from "@supabase/supabase-js"
   import { Input } from "@/components/ui/input"
   import { Textarea } from "@/components/ui/textarea"
   import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -220,10 +221,12 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [showNotifications, setShowNotifications] = useState(false)
   const [currentView, setCurrentView] = useState<'main' | 'reportHistory' | 'mdrrmoInfo' | 'hotlines' | 'userProfile' | 'sendFeedback'>('main');
   const [hasLoadedUserData, setHasLoadedUserData] = useState<boolean>(false);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   // Refs for click outside detection
   const notificationsRef = useRef<HTMLDivElement>(null);
   const notificationsButtonRef = useRef<HTMLButtonElement>(null);
+  const isResumingRef = useRef<boolean>(false);
 
   // States for User Profile editing
   const [editingMobileNumber, setEditingMobileNumber] = useState<string>('');
@@ -347,6 +350,35 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   }, [creditConsumptionTimes]);
 
+  // Realtime channel refs
+  const notificationsChannelRef = useRef<RealtimeChannel | null>(null);
+  const userReportsChannelRef = useRef<RealtimeChannel | null>(null);
+  const mdrrmoInfoChannelRef = useRef<RealtimeChannel | null>(null);
+  const hotlinesChannelRef = useRef<RealtimeChannel | null>(null);
+
+  const cleanupRealtime = useCallback(() => {
+    try {
+      if (notificationsChannelRef.current) {
+        supabase.removeChannel(notificationsChannelRef.current);
+        notificationsChannelRef.current = null;
+      }
+      if (userReportsChannelRef.current) {
+        supabase.removeChannel(userReportsChannelRef.current);
+        userReportsChannelRef.current = null;
+      }
+      if (mdrrmoInfoChannelRef.current) {
+        supabase.removeChannel(mdrrmoInfoChannelRef.current);
+        mdrrmoInfoChannelRef.current = null;
+      }
+      if (hotlinesChannelRef.current) {
+        supabase.removeChannel(hotlinesChannelRef.current);
+        hotlinesChannelRef.current = null;
+      }
+    } catch {}
+  }, []);
+
+  // setupRealtime is defined after loader functions
+
   // Function to load notifications for the current user
   const loadNotifications = useCallback(async (userId: string) => {
     if (!userId) return;
@@ -411,6 +443,49 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   }, []);
 
+  // Realtime setup after loaders are defined
+  const setupRealtime = useCallback((userId: string) => {
+    if (!userId) return;
+    // Ensure clean state
+    cleanupRealtime();
+
+    notificationsChannelRef.current = supabase
+      .channel(`user_notifications_channel_${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_notifications', filter: `user_id=eq.${userId}` },
+        () => loadNotifications(userId)
+      )
+      .subscribe();
+
+    userReportsChannelRef.current = supabase
+      .channel(`user_reports_channel_${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'emergency_reports', filter: `user_id=eq.${userId}` },
+        () => loadUserReports(userId)
+      )
+      .subscribe();
+
+    mdrrmoInfoChannelRef.current = supabase
+      .channel('mdrrmo_info_channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'mdrrmo_info' },
+        () => loadMdrrmoInfo()
+      )
+      .subscribe();
+
+    hotlinesChannelRef.current = supabase
+      .channel('hotlines_channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'hotlines' },
+        () => loadBulanHotlines()
+      )
+      .subscribe();
+  }, [cleanupRealtime, loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines]);
+
   // Unified refresh helper to fetch all user-dependent data
   const refreshUserData = useCallback(async (userId: string) => {
     try {
@@ -426,6 +501,44 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     void loadMdrrmoInfo();
     void loadBulanHotlines();
   }, [loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines]);
+
+  // Force full re-initialization (session -> user -> data -> realtime -> location -> cooldowns)
+  const forceReinit = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData?.session?.user?.id) {
+        onLogout();
+        return;
+      }
+      const userId = sessionData.session.user.id;
+      const { data: userProfile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      if (!userProfile) {
+        onLogout();
+        return;
+      }
+      setCurrentUser(userProfile);
+      setEditingMobileNumber(userProfile.mobileNumber || '');
+      setEditingUsername(userProfile.username || '');
+
+      await refreshUserData(userId);
+      setupRealtime(userId);
+
+      // Try to refresh location silently
+      await checkLocationPermission();
+
+      // Reconcile credits/cooldowns
+      reconcileCooldownsAndCredits();
+    } catch (e) {
+      console.warn('forceReinit error:', e);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [onLogout, refreshUserData, setupRealtime, checkLocationPermission, reconcileCooldownsAndCredits]);
 
   // Effect to load initial credits and consumption times from localStorage
   useEffect(() => {
@@ -637,6 +750,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         }
 
         void refreshUserData(userProfile.id);
+        setupRealtime(userProfile.id);
 
       } catch (error) {
         console.error("Unexpected error during session check:", error);
@@ -646,125 +760,86 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
     checkSessionAndLoadUser();
 
-    let notificationsChannel: any;
     if (currentUser?.id) {
-      notificationsChannel = supabase
-        .channel(`user_notifications_channel_${currentUser.id}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "user_notifications",
-            filter: `user_id=eq.${currentUser.id}`,
-          },
-          (payload) => {
-            console.log("User notification change received, reloading:", payload);
-            loadNotifications(currentUser.id);
-          },
-        )
-        .subscribe();
+      setupRealtime(currentUser.id);
     }
-
-    let userReportsChannel: any;
-    if (currentUser?.id) {
-      userReportsChannel = supabase
-        .channel(`user_reports_channel_${currentUser.id}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'emergency_reports', filter: `user_id=eq.${currentUser.id}` },
-          (payload) => {
-            console.log('User report change received, reloading:', payload);
-            loadUserReports(currentUser.id);
-          }
-        )
-        .subscribe();
-    }
-
-    const mdrrmoInfoChannel = supabase
-      .channel('mdrrmo_info_channel')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'mdrrmo_info' },
-        (payload) => {
-          console.log('MDRRMO Info change received, reloading:', payload);
-          loadMdrrmoInfo();
-        }
-      )
-      .subscribe();
-
-    const hotlinesChannel = supabase
-      .channel('hotlines_channel')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'hotlines' },
-        (payload) => {
-          console.log('Hotlines change received, reloading:', payload);
-          loadBulanHotlines();
-        }
-      )
-      .subscribe();
-
 
     return () => {
       if (locationInitTimer) {
         clearTimeout(locationInitTimer);
       }
-      if (notificationsChannel) {
-        supabase.removeChannel(notificationsChannel);
-      }
-      if (userReportsChannel) {
-        supabase.removeChannel(userReportsChannel);
-      }
-      supabase.removeChannel(mdrrmoInfoChannel);
-      supabase.removeChannel(hotlinesChannel);
+      cleanupRealtime();
     }
-  }, [userData, onLogout, currentUser?.id, loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines, refreshUserData]);
+  }, [userData, onLogout, currentUser?.id, refreshUserData, setupRealtime, cleanupRealtime]);
 
   // Handle app resume/focus (mobile and web) to refresh session, data, location, and cooldowns
   useEffect(() => {
     const onResume = async () => {
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (!sessionData?.session) {
-          onLogout();
-          return;
-        }
-        if (currentUser?.id) {
-          await refreshUserData(currentUser.id);
-        }
-        // Refresh location silently if permitted
-        await checkLocationPermission();
-        // Recompute credits/cooldowns in case timers paused while app was backgrounded
-        reconcileCooldownsAndCredits();
+        if (isResumingRef.current) return;
+        isResumingRef.current = true;
+        let done = false;
+        const fallback = setTimeout(() => {
+          if (!done) {
+            try { if (typeof window !== 'undefined') window.location.reload(); } catch {}
+          }
+        }, 3000);
+        await forceReinit();
+        done = true;
+        clearTimeout(fallback);
       } catch (e) {
         console.warn('Resume handling error:', e);
+      } finally {
+        isResumingRef.current = false;
       }
     };
 
     let appListener: PluginListenerHandle | undefined;
+    let resumeListener: PluginListenerHandle | undefined;
     if (isNativePlatform) {
       // Capacitor native lifecycle
       App.addListener('appStateChange', ({ isActive }) => {
         if (isActive) void onResume();
       }).then(handle => { appListener = handle; }).catch(() => {});
+      App.addListener('resume', () => { void onResume(); }).then(handle => { resumeListener = handle; }).catch(() => {});
     }
 
     const visHandler = () => { if (!document.hidden) void onResume(); };
     const focusHandler = () => { void onResume(); };
     const onlineHandler = () => { void onResume(); };
+    const pageShowHandler = () => { void onResume(); };
 
     document.addEventListener('visibilitychange', visHandler);
     window.addEventListener('focus', focusHandler);
     window.addEventListener('online', onlineHandler);
+    window.addEventListener('pageshow', pageShowHandler);
 
     return () => {
       document.removeEventListener('visibilitychange', visHandler);
       window.removeEventListener('focus', focusHandler);
       window.removeEventListener('online', onlineHandler);
+      window.removeEventListener('pageshow', pageShowHandler);
       try { appListener?.remove(); } catch {}
+      try { resumeListener?.remove(); } catch {}
     };
-  }, [isNativePlatform, currentUser?.id, refreshUserData, checkLocationPermission, reconcileCooldownsAndCredits, onLogout]);
+  }, [isNativePlatform, forceReinit]);
+
+  // Heartbeat: refresh lists every 60s while visible
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void refreshUserData(currentUser.id);
+      }
+    };
+    const interval = setInterval(tick, 60000);
+    const visHandler = () => { if (!document.hidden) tick(); };
+    document.addEventListener('visibilitychange', visHandler);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', visHandler);
+    };
+  }, [currentUser?.id, refreshUserData]);
 
   // When currentUser.id becomes available, ensure we have loaded the user's data at least once
   useEffect(() => {
@@ -801,8 +876,32 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
   // Modified confirmSOS to accept emergencyType
   const confirmSOS = async (emergencyType: string) => {
-    if (!location || !currentUser) {
-      console.error("Location not available or user not logged in");
+    if (!currentUser) {
+      console.error("User not logged in");
+      return;
+    }
+
+    // Ensure we have a fresh location right before sending
+    let effectiveLocation = location;
+    if (!effectiveLocation) {
+      try {
+        if (isNativePlatform) {
+          const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
+          effectiveLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setLocation(effectiveLocation);
+        } else if (navigator.geolocation) {
+          const pos: GeolocationPosition = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+          });
+          effectiveLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setLocation(effectiveLocation);
+        }
+      } catch (e) {
+        console.error('Unable to acquire location for SOS:', e);
+      }
+    }
+    if (!effectiveLocation) {
+      alert('Location is required to send an emergency alert. Please enable location services and try again.');
       return;
     }
 
@@ -858,7 +957,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       try {
         // Use our local API endpoint to avoid CORS issues
         const response = await fetch(
-          `/api/geocode?lat=${location.lat}&lon=${location.lng}`
+          `/api/geocode?lat=${effectiveLocation.lat}&lon=${effectiveLocation.lng}`
         );
         
         if (!response.ok) {
@@ -866,11 +965,11 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         }
         
         const data = await response.json();
-        locationAddress = data.display_name || `${location.lat}, ${location.lng}`;
+        locationAddress = data.display_name || `${effectiveLocation.lat}, ${effectiveLocation.lng}`;
       } catch (err) {
         console.error("Geocoding error:", err);
         // Fallback to coordinates if geocoding fails
-        locationAddress = `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`;
+        locationAddress = `${effectiveLocation.lat.toFixed(6)}, ${effectiveLocation.lng.toFixed(6)}`;
       }
 
       // Determine the emergency type to store
@@ -892,8 +991,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         middleName: currentUser.middleName || null,
         lastName: currentUser.lastName,
         mobileNumber: currentUser.mobileNumber,
-        latitude: location.lat,
-        longitude: location.lng,
+        latitude: effectiveLocation.lat,
+        longitude: effectiveLocation.lng,
         location_address: locationAddress,
         emergency_type: reportEmergencyType,
         status: "active",
@@ -1118,6 +1217,18 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         backgroundRepeat: "no-repeat",
       }}
     >
+      {/* Global Refreshing Overlay */}
+      {isRefreshing && (
+        <div className="fixed inset-0 z-50 pointer-events-none">
+          <div className="absolute top-2 right-2 bg-black/60 text-white px-3 py-2 rounded-md text-sm flex items-center space-x-2">
+            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+            </svg>
+            <span>Refreshing…</span>
+          </div>
+        </div>
+      )}
       {/* Overlay for better readability */}
       <div className="absolute inset-0 bg-black/30 z-0"></div>
       
@@ -1169,6 +1280,18 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                     {notifications.filter((n) => !n.is_read).length}
                   </span>
                 )}
+              </button>
+            </div>
+
+            {/* Manual Refresh */}
+            <div className="relative">
+              <button
+                onClick={() => { void forceReinit(); }}
+                className="p-2 hover:bg-orange-600 rounded-full transition-colors"
+                aria-label="Refresh now"
+                title="Refresh now"
+              >
+                <RefreshCcw className="w-6 h-6" />
               </button>
             </div>
 
