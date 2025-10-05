@@ -30,8 +30,8 @@ function ResetPasswordContent() {
         const code = searchParams.get('code')
         if (code) {
           try {
-            // Exchange code in the URL for a session (client-side fallback)
-            await supabase.auth.exchangeCodeForSession(window.location.href)
+            // Exchange the one-time code for a session (client-side fallback)
+            await supabase.auth.exchangeCodeForSession(code)
           } catch (e) {
             // Ignore; we'll still check session below
           }
