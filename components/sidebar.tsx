@@ -104,6 +104,9 @@ export function Sidebar({ onAdminViewChange, currentAdminView, unreadFeedbackCou
             </Link>
           </Button>
         </nav>
+        <div className="mt-auto pt-4 text-xs text-gray-500 border-t flex items-center justify-center">
+          MDRRMO EMERGENCY APP 2025 ©
+        </div>
       </SheetContent>
     </Sheet>
   )

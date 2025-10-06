@@ -109,6 +109,9 @@ export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps)
               );
             })}
           </nav>
+          <div className="mt-auto p-4 text-xs text-gray-400 border-t border-gray-700">
+            MDRRMO Emergency App 2025 ©
+          </div>
         </div>
       </aside>
     </>
