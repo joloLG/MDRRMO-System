@@ -25,6 +25,8 @@ const securityHeaders = {
 
 const EXCLUDED_PATHS: string[] = [
   '/api/auth', 
+  '/api/auth/callback',
+  '/auth',
   '/api/geocode', 
   '/api/users', 
   '/api/reports', 
