@@ -227,6 +227,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const notificationsRef = useRef<HTMLDivElement>(null);
   const notificationsButtonRef = useRef<HTMLButtonElement>(null);
   const isResumingRef = useRef<boolean>(false);
+  const lastResumeAtRef = useRef<number>(0);
+  const RESUME_COOLDOWN_MS = 5000; // Throttle resume handling to avoid duplicate refreshes
 
   // States for User Profile editing
   const [editingMobileNumber, setEditingMobileNumber] = useState<string>('');
@@ -775,51 +777,42 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   // Handle app resume/focus (mobile and web) to refresh session, data, location, and cooldowns
   useEffect(() => {
     const onResume = async () => {
+      const now = Date.now();
+      // Throttle: ignore events fired within a short window
+      if (now - lastResumeAtRef.current < RESUME_COOLDOWN_MS) {
+        return;
+      }
+      lastResumeAtRef.current = now;
+
+      if (isResumingRef.current) return;
+      isResumingRef.current = true;
+
       try {
-        if (isResumingRef.current) return;
-        isResumingRef.current = true;
-        let done = false;
-        const fallback = setTimeout(() => {
-          if (!done) {
-            try { if (typeof window !== 'undefined') window.location.reload(); } catch {}
-          }
-        }, 3000);
         await forceReinit();
-        done = true;
-        clearTimeout(fallback);
       } catch (e) {
         console.warn('Resume handling error:', e);
+        // Intentionally no window reload fallback to avoid refresh loops
       } finally {
         isResumingRef.current = false;
       }
     };
 
-    let appListener: PluginListenerHandle | undefined;
     let resumeListener: PluginListenerHandle | undefined;
     if (isNativePlatform) {
-      // Capacitor native lifecycle
-      App.addListener('appStateChange', ({ isActive }) => {
-        if (isActive) void onResume();
-      }).then(handle => { appListener = handle; }).catch(() => {});
+      // Prefer Capacitor resume event; avoid duplicate appStateChange callbacks
       App.addListener('resume', () => { void onResume(); }).then(handle => { resumeListener = handle; }).catch(() => {});
     }
 
+    // Web: refresh once when tab becomes visible again or window regains focus
     const visHandler = () => { if (!document.hidden) void onResume(); };
     const focusHandler = () => { void onResume(); };
-    const onlineHandler = () => { void onResume(); };
-    const pageShowHandler = () => { void onResume(); };
 
     document.addEventListener('visibilitychange', visHandler);
     window.addEventListener('focus', focusHandler);
-    window.addEventListener('online', onlineHandler);
-    window.addEventListener('pageshow', pageShowHandler);
 
     return () => {
       document.removeEventListener('visibilitychange', visHandler);
       window.removeEventListener('focus', focusHandler);
-      window.removeEventListener('online', onlineHandler);
-      window.removeEventListener('pageshow', pageShowHandler);
-      try { appListener?.remove(); } catch {}
       try { resumeListener?.remove(); } catch {}
     };
   }, [isNativePlatform, forceReinit]);
