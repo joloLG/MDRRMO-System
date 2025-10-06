@@ -292,28 +292,28 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     const timesKey = getCreditStorageKey('creditConsumptionTimes');
     
     if (creditsKey && timesKey) {
-      // Load credits
-      const storedCredits = localStorage.getItem(creditsKey);
-      if (storedCredits) {
-        setReportCredits(Math.min(3, parseInt(storedCredits, 10)));
-      } else {
-        setReportCredits(3); // Default to max 3 credits
-      }
-      
-      // Load consumption times
+      // Load consumption times (source of truth) and compute credits
       const storedTimes = localStorage.getItem(timesKey);
       if (storedTimes) {
         try {
           const parsedTimes = JSON.parse(storedTimes);
           if (Array.isArray(parsedTimes)) {
-            setCreditConsumptionTimes(parsedTimes);
+            // Keep only last 10 minutes
+            const now = Date.now();
+            const tenMinutes = 10 * 60 * 1000;
+            const validTimes = parsedTimes.filter((ts: number) => (now - ts) < tenMinutes);
+            setCreditConsumptionTimes(validTimes);
+            const used = validTimes.length;
+            setReportCredits(Math.max(0, 3 - used));
           }
         } catch (e) {
           console.error('Error parsing stored credit times:', e);
           setCreditConsumptionTimes([]);
+          setReportCredits(3);
         }
       } else {
         setCreditConsumptionTimes([]);
+        setReportCredits(3);
       }
     }
   }, [currentUser?.id, getCreditStorageKey]);
@@ -542,33 +542,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   }, [onLogout, refreshUserData, setupRealtime, checkLocationPermission, reconcileCooldownsAndCredits]);
 
-  // Effect to load initial credits and consumption times from localStorage
-  useEffect(() => {
-    const storedCredits = localStorage.getItem('mdrrmo_reportCredits');
-    const storedConsumptionTimes = localStorage.getItem('mdrrmo_creditConsumptionTimes');
-    
-    // Clean up old cooldown data if it exists
-    if (localStorage.getItem('cooldownEndTime')) {
-      localStorage.removeItem('cooldownEndTime');
-    }
-    
-    // Initialize credits (max 3)
-    if (storedCredits) {
-      setReportCredits(Math.min(3, parseInt(storedCredits, 10)));
-    }
-    
-    // Initialize consumption times and set up cooldowns
-    if (storedConsumptionTimes) {
-      try {
-        const times = JSON.parse(storedConsumptionTimes);
-        if (Array.isArray(times)) {
-          setCreditConsumptionTimes(times);
-        }
-      } catch (e) {
-        console.error('Error parsing stored credit consumption times:', e);
-      }
-    }
-  }, []); // Run once on mount for initial setup
+  // Removed old generic, non-user-scoped localStorage loader to prevent resets across app restarts
 
   // Effect to manage credit replenishment with individual cooldowns
   useEffect(() => {
@@ -694,6 +668,25 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         }
       }
 
+      // Prime credits immediately from per-user localStorage so buttons are correctly disabled before async session resolves
+      try {
+        const uid = userFromPropsOrStorage?.id;
+        if (uid) {
+          const timesKeyPrime = `mdrrmo_${uid}_creditConsumptionTimes`;
+          const storedTimesPrime = localStorage.getItem(timesKeyPrime);
+          if (storedTimesPrime) {
+            const parsed = JSON.parse(storedTimesPrime);
+            if (Array.isArray(parsed)) {
+              const now = Date.now();
+              const tenMinutes = 10 * 60 * 1000;
+              const valid = parsed.filter((ts: number) => (now - ts) < tenMinutes);
+              setCreditConsumptionTimes(valid);
+              setReportCredits(Math.max(0, 3 - valid.length));
+            }
+          }
+        }
+      } catch {}
+
       try {
         const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
 
@@ -798,9 +791,11 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     };
 
     let resumeListener: PluginListenerHandle | undefined;
+    let appStateListener: PluginListenerHandle | undefined;
     if (isNativePlatform) {
-      // Prefer Capacitor resume event; avoid duplicate appStateChange callbacks
+      // Capacitor: listen to both resume and appStateChange; throttling prevents duplicates
       App.addListener('resume', () => { void onResume(); }).then(handle => { resumeListener = handle; }).catch(() => {});
+      App.addListener('appStateChange', ({ isActive }) => { if (isActive) void onResume(); }).then(handle => { appStateListener = handle; }).catch(() => {});
     }
 
     // Web: refresh once when tab becomes visible again or window regains focus
@@ -809,11 +804,15 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
     document.addEventListener('visibilitychange', visHandler);
     window.addEventListener('focus', focusHandler);
+    const pageShowHandler = () => { void onResume(); };
+    window.addEventListener('pageshow', pageShowHandler);
 
     return () => {
       document.removeEventListener('visibilitychange', visHandler);
       window.removeEventListener('focus', focusHandler);
+      window.removeEventListener('pageshow', pageShowHandler);
       try { resumeListener?.remove(); } catch {}
+      try { appStateListener?.remove(); } catch {}
     };
   }, [isNativePlatform, forceReinit]);
 
@@ -944,6 +943,20 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     
     // Save the consumption time for persistence
     setCreditConsumptionTimes(prev => [...prev, consumptionTime]);
+
+    // Persist immediately to avoid losing state if app is closed quickly
+    try {
+      const timesKey = getCreditStorageKey('creditConsumptionTimes');
+      const creditsKey = getCreditStorageKey('reportCredits');
+      if (timesKey) {
+        const nextTimes = [...creditConsumptionTimes, consumptionTime];
+        localStorage.setItem(timesKey, JSON.stringify(nextTimes));
+      }
+      if (creditsKey) {
+        const nextCredits = Math.max(0, reportCredits - 1);
+        localStorage.setItem(creditsKey, nextCredits.toString());
+      }
+    } catch {}
 
     try {
       let locationAddress = "Location unavailable";
