@@ -307,26 +307,8 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
   const handleLogout = async () => {
     try {
-      // First try to sign out with scope 'local' which works better with SSR
-      const { error } = await supabase.auth.signOut({ scope: 'local' });
-      
-      // Clear local session data
-      await supabase.auth.setSession({ access_token: "", refresh_token: "" });
-      
-      // Clear any remaining session data
-      localStorage.removeItem('supabase.auth.token');
-      
-      // Call the parent's logout handler
-      onLogout();
-      
-      // Force a full page reload to ensure all auth state is cleared
-      if (typeof window !== 'undefined') {
-        window.location.href = '/';
-      }
-    } catch (error) {
-      console.warn('Error during sign out, forcing logout:', error);
-      // Ensure we still log the user out even if there's an error
-      onLogout();
+      await onLogout();
+    } finally {
       if (typeof window !== 'undefined') {
         window.location.href = '/';
       }

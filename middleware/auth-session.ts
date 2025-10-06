@@ -2,6 +2,18 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 
+// Edge runtime: use Web Crypto API
+const sha256Hex = async (text: string): Promise<string> => {
+  const data = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  const bytes = new Uint8Array(digest);
+  let out = '';
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, '0');
+  }
+  return out;
+}
+
 const PROTECTED_PREFIXES = ['/admin'];
 
 const PUBLIC_PREFIXES = [
@@ -42,7 +54,7 @@ export async function authSessionMiddleware(request: NextRequest, response: Next
     try {
       const { data: userProfile, error: roleError } = await supabase
         .from('users')
-        .select('user_type')
+        .select('user_type, active_session_token_hash')
         .eq('id', session.user.id)
         .single();
 
@@ -54,6 +66,17 @@ export async function authSessionMiddleware(request: NextRequest, response: Next
       if (!['admin', 'superadmin'].includes(userProfile.user_type)) {
         const redirectUrl = new URL('/', request.url);
         return NextResponse.redirect(redirectUrl);
+      }
+
+      // Enforce single active session for admin/superadmin using refresh_token (stable per session)
+      const refreshToken = (session as any)?.refresh_token as string | undefined;
+      if (refreshToken && userProfile.active_session_token_hash) {
+        const refreshHash = await sha256Hex(refreshToken);
+        if (userProfile.active_session_token_hash !== refreshHash) {
+          const redirectUrl = new URL('/', request.url);
+          redirectUrl.searchParams.set('error', 'active_session_conflict');
+          return NextResponse.redirect(redirectUrl);
+        }
       }
     } catch (e) {
       const redirectUrl = new URL('/', request.url);

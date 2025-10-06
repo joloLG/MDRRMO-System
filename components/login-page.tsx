@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,6 +26,17 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false) // State for forgot password modal visibility
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("") // State for forgot password email input
   const [forgotPasswordMessage, setForgotPasswordMessage] = useState("") // Message for forgot password flow
+
+  // Show any pending single-session conflict error
+  useEffect(() => {
+    try {
+      const flag = localStorage.getItem('mdrrmo_login_error')
+      if (flag === 'active_session_exists') {
+        setError("This admin account is already active on another device. Please sign out there first.")
+        localStorage.removeItem('mdrrmo_login_error')
+      }
+    } catch {}
+  }, [])
 
   const handleInputChange = (field: string, value: string) => {
     setLoginData((prev) => ({ ...prev, [field]: value }))
@@ -55,6 +66,17 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
       if (data.user) {
         // Wait a moment for the user to be fully authenticated
         await new Promise((resolve) => setTimeout(resolve, 1000))
+
+        // If the server rejected due to active session, SupabaseListener set a flag
+        try {
+          const flag = localStorage.getItem('mdrrmo_login_error')
+          if (flag === 'active_session_exists') {
+            await supabase.auth.signOut()
+            localStorage.removeItem('mdrrmo_login_error')
+            setError("This admin account is already active on another device. Please sign out there first.")
+            return
+          }
+        } catch {}
 
         // Get user profile with retry logic
         let profile = null

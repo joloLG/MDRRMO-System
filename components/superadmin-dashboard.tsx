@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Loader2, LogOut, Info } from "lucide-react" // Removed Ban, CheckCircle, CalendarIcon
 import { userQueries, type User, supabase } from "@/lib/supabase"
+import { robustSignOut } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 
 // Removed isBanning, tempBanUntil, tempBanReason as they are no longer used for UI interaction
@@ -25,29 +26,11 @@ type UserWithDisplayInfo = Omit<User, 'user_type'> & {
 export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => Promise<void> }) {
   const handleLogout = async () => {
     try {
-      // Clear any existing sessions
-      await supabase.auth.signOut({ scope: 'local' })
-      
-      // Call the passed logout action if it exists
+      await robustSignOut()
       if (typeof onLogoutAction === 'function') {
-        try {
-          await onLogoutAction()
-        } catch (error) {
-          console.error('Error in onLogoutAction:', error)
-        }
+        await onLogoutAction()
       }
-      
-      // Clear local storage and session storage
-      localStorage.clear()
-      sessionStorage.clear()
-      
-      // Force a full page reload to clear all state
-      window.location.href = "/"
-    } catch (error) {
-      console.error('Error during logout:', error)
-      // Still redirect even if there was an error
-      localStorage.clear()
-      sessionStorage.clear()
+    } finally {
       window.location.href = "/"
     }
   }

@@ -7,6 +7,7 @@ import { Dashboard } from "./components/dashboard"
 import { AdminDashboard } from './components/admin-dashboard'
 import { SuperadminDashboard } from "./components/superadmin-dashboard"
 import { supabase } from "@/lib/supabase"
+import { robustSignOut } from "@/lib/auth"
 
 export default function MobileApp() {
   const [currentScreen, setCurrentScreen] = useState<"login" | "register" | "dashboard" | "admin" | "superadmin">("login")
@@ -14,6 +15,19 @@ export default function MobileApp() {
   const [userData, setUserData] = useState<any>(null)
 
   useEffect(() => {
+    // Check for active session conflict redirect
+    try {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('error') === 'active_session_conflict') {
+        try { localStorage.setItem('mdrrmo_login_error', 'active_session_exists') } catch {}
+        // Best-effort sign-out to clear any partial state
+        supabase.auth.signOut().catch(() => {})
+        setUserData(null)
+        setIsLoggedIn(false)
+        setCurrentScreen("login")
+      }
+    } catch {}
+
     // Check if user is already logged in and automatically redirect
     const storedUser = localStorage.getItem("mdrrmo_user")
     if (storedUser) {
@@ -73,30 +87,12 @@ export default function MobileApp() {
   // Handle logout
   const handleLogout = async () => {
     try {
-      // Clear local state first
-      setUserData(null);
-      setIsLoggedIn(false);
-      setCurrentScreen("login");
-      localStorage.removeItem("mdrrmo_user");
-      
-      // Then attempt to sign out from Supabase
-      try {
-        const { error } = await supabase.auth.signOut();
-        if (error) {
-          console.warn("Supabase sign-out warning:", error.message);
-          // Continue with logout flow even if Supabase sign-out fails
-        }
-      } catch (err) {
-        console.warn("Error during Supabase sign-out (non-critical):", err);
-        // Continue with logout flow even if Supabase sign-out fails
-      }
-    } catch (err) {
-      console.error("Error during logout:", err);
-      // Ensure we still reset the UI state even if there's an error
-      setUserData(null);
-      setIsLoggedIn(false);
-      setCurrentScreen("login");
-      localStorage.removeItem("mdrrmo_user");
+      await robustSignOut()
+    } finally {
+      // Reset UI regardless
+      setUserData(null)
+      setIsLoggedIn(false)
+      setCurrentScreen("login")
     }
   }
 

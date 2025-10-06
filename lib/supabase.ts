@@ -31,6 +31,9 @@ export interface User {
   is_banned?: boolean
   banned_until?: string | null
   ban_reason?: string | null
+  // Single-session fields (optional)
+  active_session_token_hash?: string | null
+  active_session_set_at?: string | null
 }
 
 // Check if user is superadmin
