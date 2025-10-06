@@ -6,6 +6,7 @@ import { LoginPage } from "./components/login-page"
 import { Dashboard } from "./components/dashboard"
 import { AdminDashboard } from './components/admin-dashboard'
 import { SuperadminDashboard } from "./components/superadmin-dashboard"
+import AdminRealtimeOverlay from "@/components/admin/AdminRealtimeOverlay"
 import { supabase } from "@/lib/supabase"
 import { robustSignOut } from "@/lib/auth"
 
@@ -99,9 +100,19 @@ export default function MobileApp() {
   // If user is logged in, show appropriate dashboard
   if (isLoggedIn) {
     if (userData?.user_type === "superadmin") {
-      return <SuperadminDashboard onLogoutAction={handleLogout} />
+      return (
+        <>
+          <AdminRealtimeOverlay />
+          <SuperadminDashboard onLogoutAction={handleLogout} />
+        </>
+      )
     } else if (userData?.user_type === "admin") {
-      return <AdminDashboard onLogout={handleLogout} userData={userData} />
+      return (
+        <>
+          <AdminRealtimeOverlay />
+          <AdminDashboard onLogout={handleLogout} userData={userData} />
+        </>
+      )
     } else {
       return <Dashboard onLogout={handleLogout} userData={userData} />
     }

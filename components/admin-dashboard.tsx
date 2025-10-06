@@ -95,6 +95,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [erTeams, setErTeams] = useState<BaseEntry[]>([]); // New state for ER Teams
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'ok' | 'degraded' | 'offline'>('ok');
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [isLoadingAction, setIsLoadingAction] = useState(false);
@@ -237,9 +238,15 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
     if (error) {
       console.error("Error fetching admin notifications:", error);
-      setError(`Failed to load notifications: ${error.message || 'Unknown error'}. Please check your Supabase RLS policies for 'admin_notifications' and 'emergency_reports' tables.`);
+      // Non-blocking: keep UI running; mark degraded for transient network failures
+      if (String(error?.message || '').toLowerCase().includes('failed to fetch')) {
+        setConnectionStatus('degraded');
+      }
       return [];
     }
+
+    // Success: connection OK
+    setConnectionStatus('ok');
 
     const fetchedNotifications: Notification[] = data.map((item: any) => ({
       id: item.id,
@@ -270,9 +277,12 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
     if (error) {
       console.error("Error fetching reports:", error);
-      setError(`Failed to load reports: ${error.message || 'Unknown error'}. Please check your Supabase RLS policies for 'emergency_reports' table.`);
+      if (String(error?.message || '').toLowerCase().includes('failed to fetch')) {
+        setConnectionStatus('degraded');
+      }
       return [];
     }
+    setConnectionStatus('ok');
     return data || [];
   }, []);
 
@@ -285,9 +295,12 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
     if (error) {
       console.error("Error fetching internal reports:", error);
-      setError(`Failed to load internal reports: ${error.message || 'Unknown error'}. Please check your Supabase RLS policies.`);
+      if (String(error?.message || '').toLowerCase().includes('failed to fetch')) {
+        setConnectionStatus('degraded');
+      }
       return [];
     }
+    setConnectionStatus('ok');
     return data || [];
   }, []);
 
@@ -299,11 +312,105 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       .order('name', { ascending: true });
     if (error) {
       console.error("Error fetching ER Teams:", error);
-      setError(`Failed to load ER Teams: ${error.message}`);
+      if (String(error?.message || '').toLowerCase().includes('failed to fetch')) {
+        setConnectionStatus('degraded');
+      }
       return [];
     }
+    setConnectionStatus('ok');
     return data as BaseEntry[] || [];
   }, []);
+
+  // De-duplicate reports: keep selected report, remove others within 50m, same type, and ±30 minutes, status pending/active
+  const dedupeNearbyReports = useCallback(async (base: Report) => {
+    try {
+      const baseLat = (base as any).latitude as number | undefined;
+      const baseLon = (base as any).longitude as number | undefined;
+      const baseAddr = ((base as any).location_address || '').toString().trim().toLowerCase();
+      if (typeof baseLat !== 'number' || typeof baseLon !== 'number') {
+        console.log('Dedup skipped: base report missing coordinates');
+        return;
+      }
+
+      const baseTime = new Date(base.created_at).getTime();
+      const startWindow = new Date(baseTime - 30 * 60 * 1000).toISOString();
+      const endWindow = new Date(baseTime + 30 * 60 * 1000).toISOString();
+
+      const { data: candidates, error } = await supabase
+        .from('emergency_reports')
+        .select('id, status, created_at, latitude, longitude, location_address, emergency_type')
+        .neq('id', base.id)
+        .in('status', ['pending', 'active'])
+        .eq('emergency_type', base.emergency_type)
+        .gte('created_at', startWindow)
+        .lte('created_at', endWindow);
+
+      if (error) {
+        console.error('Error querying duplicates:', error);
+        return;
+      }
+      if (!candidates || candidates.length === 0) return;
+
+      const toRad = (v: number) => (v * Math.PI) / 180;
+      const haversineMeters = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+        const R = 6371000;
+        const dLat = toRad(lat2 - lat1);
+        const dLon = toRad(lon2 - lon1);
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+      };
+      const RADIUS_METERS = 50;
+
+      const duplicatesToDelete = candidates.filter((r: any) => {
+        const candLat = r.latitude as number | undefined;
+        const candLon = r.longitude as number | undefined;
+        const candAddr = (r.location_address || '').toString().trim().toLowerCase();
+
+        let closeBy = false;
+        if (
+          typeof candLat === 'number' && typeof candLon === 'number'
+        ) {
+          try {
+            const dist = haversineMeters(baseLat, baseLon, candLat, candLon);
+            closeBy = dist <= RADIUS_METERS;
+          } catch (_) {
+            closeBy = false;
+          }
+        }
+        const sameAddress = baseAddr && candAddr && baseAddr === candAddr;
+        return closeBy || sameAddress;
+      }).map((r: any) => r.id);
+
+      if (duplicatesToDelete.length === 0) return;
+
+      // Remove related admin notifications first
+      const { error: notifDelErr } = await supabase
+        .from('admin_notifications')
+        .delete()
+        .in('emergency_report_id', duplicatesToDelete);
+      if (notifDelErr) {
+        console.warn('Error deleting related admin notifications for duplicates:', notifDelErr);
+      }
+
+      // Delete duplicate reports
+      const { error: dupDeleteError } = await supabase
+        .from('emergency_reports')
+        .delete()
+        .in('id', duplicatesToDelete);
+      if (dupDeleteError) {
+        console.error('Error deleting duplicate reports:', dupDeleteError);
+      } else {
+        console.log(`Deleted ${duplicatesToDelete.length} duplicate report(s) within 50m and ±30min.`);
+      }
+
+      // Refresh lists
+      const refreshed = await fetchAllReports();
+      setAllReports(refreshed.map((item: any) => ({ ...item })));
+    } catch (e) {
+      console.error('Unexpected error during dedupe:', e);
+    }
+  }, [fetchAllReports]);
 
   const handleLogout = async () => {
     try {
@@ -340,7 +447,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
       } catch (err: any) {
         console.error("Error fetching dashboard data:", err);
-        setError(`Failed to load dashboard data: ${err.message}`);
+        setConnectionStatus('degraded');
       }
     };
 
@@ -606,98 +713,8 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         console.error('Error sending user notification:', notificationError);
       }
 
-      // De-duplicate: remove redundant reports from the same user within a 1-hour window
-      // Criteria: same user_id, same emergency_type, created_at within [selectedReport.created_at - 1 hour, selectedReport.created_at + 1 hour),
-      // status is pending/active, and id != selectedReport.id
-      try {
-        const baseTime = new Date(selectedReport.created_at);
-        const startWindow = new Date(baseTime.getTime() - 60 * 60 * 1000); // -1 hour
-        const endWindow = new Date(baseTime.getTime() + 60 * 60 * 1000); // +1 hour
-
-        const { data: dupCandidates, error: dupQueryError } = await supabase
-          .from('emergency_reports')
-          .select('id, status, created_at, latitude, longitude, location_address')
-          .eq('user_id', selectedReport.user_id)
-          .eq('emergency_type', selectedReport.emergency_type)
-          .neq('id', selectedReport.id)
-          .gte('created_at', startWindow.toISOString())
-          .lte('created_at', endWindow.toISOString());
-
-        if (dupQueryError) {
-          console.error('Error querying duplicate reports:', dupQueryError);
-        } else if (dupCandidates && dupCandidates.length > 0) {
-          // Helper: Haversine distance in meters
-          const toRad = (v: number) => (v * Math.PI) / 180;
-          const haversineMeters = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-            const R = 6371000; // Earth radius in meters
-            const dLat = toRad(lat2 - lat1);
-            const dLon = toRad(lon2 - lon1);
-            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            return R * c;
-          };
-
-          const normalize = (s?: string | null) => (s || '').trim().toLowerCase();
-          const selectedLat = (selectedReport as any).latitude as number | undefined;
-          const selectedLon = (selectedReport as any).longitude as number | undefined;
-          const selectedAddr = normalize((selectedReport as any).location_address as string | undefined);
-          const RADIUS_METERS = 300; // small radius threshold
-
-          const duplicatesToDelete = dupCandidates.filter((r: any) => {
-            const statusLower = (r.status || '').toString().trim().toLowerCase();
-            if (statusLower !== 'pending' && statusLower !== 'active') return false;
-            const candLat = r.latitude as number | undefined;
-            const candLon = r.longitude as number | undefined;
-            const candAddr = normalize(r.location_address as string | undefined);
-
-            let closeBy = false;
-            if (
-              typeof selectedLat === 'number' && typeof selectedLon === 'number' &&
-              typeof candLat === 'number' && typeof candLon === 'number'
-            ) {
-              try {
-                const dist = haversineMeters(selectedLat, selectedLon, candLat, candLon);
-                closeBy = dist <= RADIUS_METERS;
-              } catch (_) {
-                closeBy = false;
-              }
-            }
-
-            const sameAddress = selectedAddr && candAddr && selectedAddr === candAddr;
-            return closeBy || sameAddress;
-          }).map((r: any) => r.id);
-
-          if (duplicatesToDelete.length === 0) {
-            console.log('No duplicates matched the location criteria; nothing to delete.');
-          } else {
-            const duplicateIds = duplicatesToDelete;
-
-          // Clean up related admin notifications first (best effort)
-          const { error: notifDelErr } = await supabase
-            .from('admin_notifications')
-            .delete()
-            .in('emergency_report_id', duplicateIds);
-          if (notifDelErr) {
-            console.warn('Error deleting related admin notifications for duplicates:', notifDelErr);
-          }
-
-          // Delete duplicate emergency reports
-          const { error: dupDeleteError } = await supabase
-            .from('emergency_reports')
-            .delete()
-            .in('id', duplicateIds);
-          if (dupDeleteError) {
-            console.error('Error deleting duplicate reports:', dupDeleteError);
-          } else {
-            console.log(`Deleted ${duplicateIds.length} duplicate report(s) for user ${selectedReport.user_id} within 1-hour window.`);
-          }
-          }
-        }
-      } catch (dedupErr) {
-        console.error('Unexpected error during duplicate cleanup:', dedupErr);
-      }
+      // De-duplicate across accounts: within 50m and ±30 minutes, same type
+      await dedupeNearbyReports(updatedReport as Report);
 
       // Refresh data
       await fetchAllReports();
@@ -780,6 +797,21 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const respondedReportsList = allReports.filter(r => r.status.trim().toLowerCase() === 'responded');
 
 
+  // Greeting based on local time with 1-minute updates
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  };
+  const [greeting, setGreeting] = useState<string>(getGreeting());
+  useEffect(() => {
+    const update = () => setGreeting(getGreeting());
+    update();
+    const interval = setInterval(update, 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   if (error) {
     return (
       <div className="flex justify-center items-center h-screen text-red-500 font-sans">
@@ -790,12 +822,27 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
-      <header className="flex justify-between items-center mb-8">
+      <header className="flex items-center mb-8">
         <div className="flex items-center">
           <Sidebar/>
-          <h1 className="text-3xl font-bold text-gray-800 ml-4">Admin Dashboard</h1>
+          <div className="ml-4">
+            <h1 className="text-3xl font-bold text-gray-800">Admin Dashboard</h1>
+            {adminUser && (
+              <div className="text-sm sm:text-base font-medium text-gray-700 mt-1">
+                {greeting}, {adminUser.firstName || adminUser.username || 'Admin'}
+              </div>
+            )}
+          </div>
         </div>
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-4 ml-auto">
+          {connectionStatus !== 'ok' && (
+            <span
+              className={`hidden sm:inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${connectionStatus === 'offline' ? 'bg-red-100 text-red-800 border-red-300' : 'bg-yellow-100 text-yellow-800 border-yellow-300'}`}
+              title={connectionStatus === 'offline' ? 'Offline: live updates paused' : 'Network degraded: updates may be delayed'}
+            >
+              {connectionStatus === 'offline' ? 'Offline' : 'Connection degraded'}
+            </span>
+          )}
           <div className="relative">
             <Button
               variant="outline"

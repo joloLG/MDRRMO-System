@@ -63,6 +63,45 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
   const [formMessage, setFormMessage] = React.useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [searchTerm, setSearchTerm] = React.useState(''); // For barangay search
 
+  // Auto-fill Prepared By from logged-in admin profile
+  React.useEffect(() => {
+    const deriveFullName = (u: any) => {
+      const parts = [u?.firstName, u?.middleName, u?.lastName].filter(Boolean);
+      const name = parts.join(' ').replace(/\s+/g, ' ').trim();
+      return name || u?.username || u?.email || '';
+    };
+
+    const primePreparedBy = async () => {
+      try {
+        if (preparedBy) return; // don't overwrite if already set
+        // Try localStorage first
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('mdrrmo_user') : null;
+        if (raw) {
+          try {
+            const u = JSON.parse(raw);
+            const full = deriveFullName(u);
+            if (full) { setPreparedBy(full); return; }
+          } catch {}
+        }
+        // Fallback: fetch current user profile from Supabase
+        const { data: sessionData } = await supabase.auth.getSession();
+        const uid = sessionData?.session?.user?.id;
+        if (uid) {
+          const { data: profile } = await supabase
+            .from('users')
+            .select('firstName, middleName, lastName, username, email')
+            .eq('id', uid)
+            .single();
+          if (profile) {
+            const full = deriveFullName(profile);
+            if (full) setPreparedBy(full);
+          }
+        }
+      } catch {}
+    };
+    void primePreparedBy();
+  }, [preparedBy]);
+
   // Effect to pre-fill form if a selectedReport is provided (from resolved incident)
   React.useEffect(() => {
     if (selectedReport) {
@@ -83,7 +122,6 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
       setErTeamId(undefined);
       setPersonsInvolved('');
       setNumberOfResponders('');
-      setPreparedBy('');
       setSearchTerm('');
     }
     setFormMessage(null); // Clear messages on report change

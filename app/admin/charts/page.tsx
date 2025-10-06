@@ -39,6 +39,7 @@ export default function ChartsPage() {
   const [barangays, setBarangays] = useState<BaseEntry[]>([]);
   const [incidentTypes, setIncidentTypes] = useState<BaseEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'ok' | 'degraded' | 'offline'>('ok');
   const [loading, setLoading] = useState(true);
 
   // Function to fetch all emergency reports (for status charts)
@@ -50,9 +51,15 @@ export default function ChartsPage() {
 
     if (error) {
       console.error("Error fetching emergency reports:", error);
-      setError(`Failed to load emergency reports: ${error.message || 'Unknown error'}. Please check your Supabase RLS policies.`);
+      const msg = String(error?.message || '').toLowerCase();
+      if (msg.includes('failed to fetch')) {
+        setConnectionStatus('degraded');
+      } else {
+        setError(`Failed to load emergency reports: ${error.message || 'Unknown error'}.`);
+      }
       return [];
     }
+    setConnectionStatus('ok');
     return data || [];
   }, []);
 
@@ -65,9 +72,15 @@ export default function ChartsPage() {
 
     if (error) {
       console.error("Error fetching internal reports:", error);
-      setError(`Failed to load internal reports: ${error.message || 'Unknown error'}. Please check your Supabase RLS policies.`);
+      const msg = String(error?.message || '').toLowerCase();
+      if (msg.includes('failed to fetch')) {
+        setConnectionStatus('degraded');
+      } else {
+        setError(`Failed to load internal reports: ${error.message || 'Unknown error'}.`);
+      }
       return [];
     }
+    setConnectionStatus('ok');
     return data || [];
   }, []);
 
@@ -79,9 +92,15 @@ export default function ChartsPage() {
       .order('name', { ascending: true });
     if (error) {
       console.error("Error fetching Barangays:", error);
-      setError(`Failed to load Barangays: ${error.message}`);
+      const msg = String(error?.message || '').toLowerCase();
+      if (msg.includes('failed to fetch')) {
+        setConnectionStatus('degraded');
+      } else {
+        setError(`Failed to load Barangays: ${error.message}`);
+      }
       return [];
     }
+    setConnectionStatus('ok');
     return data as BaseEntry[] || [];
   }, []);
 
@@ -93,9 +112,15 @@ export default function ChartsPage() {
       .order('name', { ascending: true });
     if (error) {
       console.error("Error fetching Incident Types:", error);
-      setError(`Failed to load Incident Types: ${error.message}`);
+      const msg = String(error?.message || '').toLowerCase();
+      if (msg.includes('failed to fetch')) {
+        setConnectionStatus('degraded');
+      } else {
+        setError(`Failed to load Incident Types: ${error.message}`);
+      }
       return [];
     }
+    setConnectionStatus('ok');
     return data as BaseEntry[] || [];
   }, []);
 
@@ -123,7 +148,7 @@ export default function ChartsPage() {
 
       } catch (err: any) {
         console.error("Error loading chart data:", err);
-        setError(`Failed to load chart data: ${err.message}`);
+        setConnectionStatus('degraded');
       } finally {
         setLoading(false);
       }
@@ -176,7 +201,6 @@ export default function ChartsPage() {
     };
   }, [fetchAllEmergencyReports, fetchAllInternalReports, fetchBarangays, fetchIncidentTypes]);
 
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 flex items-center justify-center text-gray-600 font-sans">
@@ -185,17 +209,23 @@ export default function ChartsPage() {
     );
   }
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 flex items-center justify-center text-red-500 font-sans">
-        Error loading charts: {error}
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
-      <h1 className="text-3xl font-bold text-gray-800 mb-8">Analytics & Charts</h1>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-3xl font-bold text-gray-800">Analytics & Charts</h1>
+        <div className="flex items-center gap-3">
+          {connectionStatus !== 'ok' && (
+            <span className={`hidden sm:inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${connectionStatus === 'offline' ? 'bg-red-100 text-red-800 border-red-300' : 'bg-yellow-100 text-yellow-800 border-yellow-300'}`}>
+              {connectionStatus === 'offline' ? 'Offline' : 'Connection degraded'}
+            </span>
+          )}
+          {error && (
+            <span className="hidden sm:inline-flex items-center px-2 py-1 rounded text-xs font-medium border bg-red-100 text-red-800 border-red-300" title={error}>
+              Data error
+            </span>
+          )}
+        </div>
+      </div>
       <ChartsDashboard
         allEmergencyReports={allEmergencyReports}
         allInternalReports={allInternalReports}
