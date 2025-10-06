@@ -36,6 +36,11 @@ const EXCLUDED_PATHS: string[] = [
 export function securityHeadersMiddleware(request: NextRequest) {
   const path = new URL(request.url).pathname;
   
+  // Skip for the root path (login screen)
+  if (path === '/') {
+    return NextResponse.next();
+  }
+  
   // Skip middleware for excluded paths
   if (EXCLUDED_PATHS.some(p => path.startsWith(p))) {
     return NextResponse.next();

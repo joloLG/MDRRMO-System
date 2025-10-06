@@ -54,7 +54,7 @@ export async function authSessionMiddleware(request: NextRequest, response: Next
     try {
       const { data: userProfile, error: roleError } = await supabase
         .from('users')
-        .select('user_type, active_session_token_hash')
+        .select('user_type')
         .eq('id', session.user.id)
         .single();
 
@@ -68,16 +68,7 @@ export async function authSessionMiddleware(request: NextRequest, response: Next
         return NextResponse.redirect(redirectUrl);
       }
 
-      // Enforce single active session for admin/superadmin using refresh_token (stable per session)
-      const refreshToken = (session as any)?.refresh_token as string | undefined;
-      if (refreshToken && userProfile.active_session_token_hash) {
-        const refreshHash = await sha256Hex(refreshToken);
-        if (userProfile.active_session_token_hash !== refreshHash) {
-          const redirectUrl = new URL('/', request.url);
-          redirectUrl.searchParams.set('error', 'active_session_conflict');
-          return NextResponse.redirect(redirectUrl);
-        }
-      }
+      // Single-session enforcement removed for login simplicity
     } catch (e) {
       const redirectUrl = new URL('/', request.url);
       return NextResponse.redirect(redirectUrl);
