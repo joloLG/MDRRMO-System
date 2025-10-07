@@ -89,6 +89,66 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
   // Enhanced location permission handling
   const isNativePlatform = useMemo(() => Capacitor.isNativePlatform(), []);
+  const locationPermissionGrantedRef = useRef<boolean>(false);
+  const locationWatchIdRef = useRef<string | number | null>(null);
+
+  const stopLocationWatch = useCallback(() => {
+    if (locationWatchIdRef.current == null) return;
+    if (isNativePlatform) {
+      Geolocation.clearWatch({ id: locationWatchIdRef.current as string }).catch(() => {});
+    } else if (typeof navigator !== 'undefined' && navigator.geolocation?.clearWatch) {
+      navigator.geolocation.clearWatch(locationWatchIdRef.current as number);
+    }
+    locationWatchIdRef.current = null;
+  }, [isNativePlatform]);
+
+  const startLocationWatch = useCallback(() => {
+    if (locationWatchIdRef.current != null) return;
+    if (isNativePlatform) {
+      Geolocation.watchPosition({ enableHighAccuracy: true, maximumAge: 1000 }, (position, err) => {
+        if (err) {
+          console.warn('Native geolocation watch error:', err);
+          locationPermissionGrantedRef.current = false;
+          if ((err as any)?.code === 1) {
+            setLocationError('location_denied');
+            setShowLocationModal(true);
+          }
+          void stopLocationWatch();
+          return;
+        }
+        if (position?.coords) {
+          setLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+          setLocationError(null);
+          locationPermissionGrantedRef.current = true;
+        }
+      })
+        .then(id => {
+          locationWatchIdRef.current = id;
+        })
+        .catch(error => {
+          console.warn('Failed to start native geolocation watch:', error);
+        });
+    } else if (typeof navigator !== 'undefined' && navigator.geolocation?.watchPosition) {
+      const watchId = navigator.geolocation.watchPosition(
+        pos => {
+          setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          setLocationError(null);
+          locationPermissionGrantedRef.current = true;
+        },
+        err => {
+          console.warn('Browser geolocation watch error:', err);
+          if (err.code === err.PERMISSION_DENIED) {
+            locationPermissionGrantedRef.current = false;
+            setLocationError('location_denied');
+            setShowLocationModal(true);
+            stopLocationWatch();
+          }
+        },
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
+      );
+      locationWatchIdRef.current = watchId;
+    }
+  }, [isNativePlatform, stopLocationWatch]);
 
   const checkLocationPermission = useCallback(async (): Promise<boolean> => {
     if (isNativePlatform) {
@@ -110,9 +170,13 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         if (!granted) {
             setLocationError('location_denied');
             setShowLocationModal(true);
+            locationPermissionGrantedRef.current = false;
+            stopLocationWatch();
             return false;
         }
 
+        locationPermissionGrantedRef.current = true;
+        startLocationWatch();
         const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
         setLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
         setLocationError(null);
@@ -127,6 +191,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
           setLocationError('location_error');
         }
         setShowLocationModal(true);
+        locationPermissionGrantedRef.current = false;
+        stopLocationWatch();
         return false;
       }
     }
@@ -134,6 +200,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     if (!navigator.geolocation) {
       setLocationError('not_supported');
       setShowLocationModal(true);
+      locationPermissionGrantedRef.current = false;
+      stopLocationWatch();
       return false;
     }
 
@@ -152,6 +220,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       });
       setLocationError(null);
       setShowLocationModal(false);
+      locationPermissionGrantedRef.current = true;
+      startLocationWatch();
       return true;
     } catch (error: any) {
       console.error('Error getting location:', error);
@@ -167,9 +237,19 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       }
 
       setShowLocationModal(true);
+      locationPermissionGrantedRef.current = false;
+      stopLocationWatch();
       return false;
     }
-  }, [isNativePlatform]);
+  }, [isNativePlatform, startLocationWatch, stopLocationWatch]);
+
+  const ensureLocationReady = useCallback(async () => {
+    if (locationPermissionGrantedRef.current) {
+      startLocationWatch();
+    } else {
+      await checkLocationPermission();
+    }
+  }, [checkLocationPermission, startLocationWatch]);
 
   // Handle location permission request from modal
   const handleRequestLocation = useCallback(async (): Promise<boolean> => {
@@ -807,10 +887,10 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
         // Request location permission: use Capacitor on native, browser Permissions API on web
         if (isNativePlatform) {
-          // On native (Android/iOS), rely on Capacitor Geolocation which will handle prompting
-          void checkLocationPermission();
+          // On native (Android/iOS), rely on Capacitor Geolocation
+          void ensureLocationReady();
         } else {
-          // On web, check permission after a short delay to allow UI to render
+          // On web, check permission shortly after mount to allow UI to render
           locationInitTimer = setTimeout(() => {
             if (navigator.geolocation && (navigator as any).permissions?.query) {
               (navigator as any).permissions.query({ name: 'geolocation' as PermissionName })
@@ -823,18 +903,18 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                     setShowLocationModal(true);
                   } else if (permissionStatus.state === 'granted') {
                     // Optionally get the location immediately
-                    void checkLocationPermission();
+                    void ensureLocationReady();
                   }
                 })
                 .catch(() => {
                   // Fallback: try to get location which will trigger the prompt
-                  void checkLocationPermission();
+                  void ensureLocationReady();
                 });
             } else {
               // Fallback for browsers without Permissions API
-              void checkLocationPermission();
+              void ensureLocationReady();
             }
-          }, 500);
+          }, 100);
         }
 
         void refreshUserData(userProfile.id);
@@ -868,6 +948,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       } else if (state === 'visible') {
         const hiddenFor = lastHiddenAtRef.current ? Date.now() - lastHiddenAtRef.current : Number.POSITIVE_INFINITY;
         lastHiddenAtRef.current = null;
+        void ensureLocationReady();
         if (hiddenFor >= MIN_HIDDEN_MS_BEFORE_REFRESH) {
           void silentRefresh();
         }
@@ -877,13 +958,14 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [isNativePlatform, silentRefresh]);
+  }, [isNativePlatform, silentRefresh, ensureLocationReady]);
 
   // Native: silent refresh on resume (runs in background)
   useEffect(() => {
     if (!isNativePlatform) return;
     let resumeListener: PluginListenerHandle | undefined;
     App.addListener('resume', () => {
+      void ensureLocationReady();
       if (currentUser?.id) {
         void silentRefresh();
       }
@@ -893,7 +975,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     return () => {
       try { resumeListener?.remove(); } catch {}
     };
-  }, [isNativePlatform, silentRefresh, currentUser?.id]);
+  }, [isNativePlatform, silentRefresh, currentUser?.id, ensureLocationReady]);
 
   // Heartbeat: refresh lists every 60s while visible
   useEffect(() => {
