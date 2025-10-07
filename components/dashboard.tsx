@@ -228,6 +228,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [reportPage, setReportPage] = useState<number>(1);
   const PAGE_SIZE = 10;
+  const MIN_HIDDEN_MS_BEFORE_REFRESH = 5000; // Skip refresh for quick tab switches (<5s)
 
   // Minimal Zustand sync (currentUser provisioning for other components if needed)
   const setStoreCurrentUser = useAppStore((s: AppState) => s.setCurrentUser)
@@ -238,6 +239,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const isResumingRef = useRef<boolean>(false);
   const lastResumeAtRef = useRef<number>(0);
   const RESUME_COOLDOWN_MS = 1000; // Tighter throttle: single refresh within ~1s on resume
+  const lastHiddenAtRef = useRef<number | null>(null);
 
   // States for User Profile editing
   const [editingMobileNumber, setEditingMobileNumber] = useState<string>('');
@@ -567,18 +569,17 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     void loadBulanHotlines();
   }, [loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines]);
 
-  // Quick, single-pass refresh on resume/focus with a 1s cap and auth check
-  const quickRefresh = useCallback(async () => {
+  // Shared refresh helper (optionally shows overlay)
+  const runRefresh = useCallback(async (showSpinner: boolean) => {
     const now = Date.now();
-    if (now - lastResumeAtRef.current < RESUME_COOLDOWN_MS) return; // throttle
+    if (now - lastResumeAtRef.current < RESUME_COOLDOWN_MS) return;
     lastResumeAtRef.current = now;
 
-    if (isResumingRef.current) return; // prevent concurrent refreshes
+    if (isResumingRef.current) return;
     isResumingRef.current = true;
 
-    // Show a short spinner for up to ~1s regardless of network speed
-    setIsRefreshing(true);
-    const hideAt = Date.now() + 1000; // 1 second cap
+    const hideAt = Date.now() + 1000;
+    if (showSpinner) setIsRefreshing(true);
 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -591,20 +592,29 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         (!isNativePlatform ? mutateNotifications?.() : Promise.resolve()),
         loadUserReports(uid),
       ]);
-      // Global updates can happen in background
       void loadMdrrmoInfo();
       void loadBulanHotlines();
     } catch (e) {
-      console.warn('quickRefresh error:', e);
+      console.warn('refresh error:', e);
     } finally {
-      const remaining = hideAt - Date.now();
-      if (remaining > 0) {
-        await new Promise(res => setTimeout(res, remaining));
+      if (showSpinner) {
+        const remaining = hideAt - Date.now();
+        if (remaining > 0) {
+          await new Promise(res => setTimeout(res, remaining));
+        }
+        setIsRefreshing(false);
       }
-      setIsRefreshing(false);
       isResumingRef.current = false;
     }
-  }, [RESUME_COOLDOWN_MS, onLogout, mutateNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines]);
+  }, [RESUME_COOLDOWN_MS, onLogout, mutateNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines, isNativePlatform]);
+
+  const quickRefresh = useCallback(async () => {
+    await runRefresh(true);
+  }, [runRefresh]);
+
+  const silentRefresh = useCallback(async () => {
+    await runRefresh(false);
+  }, [runRefresh]);
 
   // Force full re-initialization (session -> user -> data -> realtime -> location -> cooldowns)
   const forceReinit = useCallback(async () => {
@@ -867,49 +877,43 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   }, [userData, onLogout, currentUser?.id, refreshUserData, setupRealtime, cleanupRealtime]);
 
-  // Handle app resume/visibility (mobile and web) with a single, quick refresh
+  // Web: silent refresh when returning from background after minimum hidden duration
   useEffect(() => {
-    const onResume = async () => {
-      await quickRefresh();
-    };
-
-    let resumeListener: PluginListenerHandle | undefined;
-    if (isNativePlatform) {
-      // Capacitor: listen to resume only to avoid duplicate triggers
-      App.addListener('resume', () => { void onResume(); }).then(handle => { resumeListener = handle; }).catch(() => {});
-    }
-
-    // Web: refresh only when transitioning from hidden -> visible
-    let lastVisibilityState: DocumentVisibilityState = typeof document !== 'undefined' ? document.visibilityState : 'visible';
-    const visHandler = () => {
+    if (isNativePlatform) return;
+    const handleVisibility = () => {
       if (typeof document === 'undefined') return;
-      const currentState = document.visibilityState;
-      if (lastVisibilityState === 'hidden' && currentState === 'visible') {
-        void onResume();
+      const state = document.visibilityState;
+      if (state === 'hidden') {
+        lastHiddenAtRef.current = Date.now();
+      } else if (state === 'visible') {
+        const hiddenFor = lastHiddenAtRef.current ? Date.now() - lastHiddenAtRef.current : Number.POSITIVE_INFINITY;
+        lastHiddenAtRef.current = null;
+        if (hiddenFor >= MIN_HIDDEN_MS_BEFORE_REFRESH) {
+          void silentRefresh();
+        }
       }
-      lastVisibilityState = currentState;
     };
-
-    document.addEventListener('visibilitychange', visHandler);
-
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
-      document.removeEventListener('visibilitychange', visHandler);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [isNativePlatform, silentRefresh]);
+
+  // Native: silent refresh on resume (runs in background)
+  useEffect(() => {
+    if (!isNativePlatform) return;
+    let resumeListener: PluginListenerHandle | undefined;
+    App.addListener('resume', () => {
+      if (currentUser?.id) {
+        void silentRefresh();
+      }
+    })
+      .then(handle => { resumeListener = handle; })
+      .catch(() => {});
+    return () => {
       try { resumeListener?.remove(); } catch {}
     };
-  }, [isNativePlatform, quickRefresh]);
-
-  // Native (Ionic/Capacitor) mobile state: subscribe to RxJS streams and init mobile listeners
-  useEffect(() => {
-    if (!isNativePlatform || !currentUser?.id) return;
-    initMobileState(currentUser.id);
-    const notifSub = notifications$.subscribe((list: MobileNotification[]) => setNotifications(list as any));
-    const reportsSub = mobileUserReports$.subscribe((list: MobileReport[]) => setUserReports(list as any));
-    return () => {
-      try { notifSub.unsubscribe() } catch {}
-      try { reportsSub.unsubscribe() } catch {}
-      destroyMobileState();
-    }
-  }, [isNativePlatform, currentUser?.id]);
+  }, [isNativePlatform, silentRefresh, currentUser?.id]);
 
   // Heartbeat: refresh lists every 60s while visible
   useEffect(() => {
@@ -920,21 +924,23 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       }
     };
     const interval = setInterval(tick, 60000);
-    let lastVisibilityState: DocumentVisibilityState = typeof document !== 'undefined' ? document.visibilityState : 'visible';
-    const visHandler = () => {
-      if (typeof document === 'undefined') return;
-      const currentState = document.visibilityState;
-      if (lastVisibilityState === 'hidden' && currentState === 'visible') {
-        tick();
-      }
-      lastVisibilityState = currentState;
-    };
-    document.addEventListener('visibilitychange', visHandler);
     return () => {
       clearInterval(interval);
-      document.removeEventListener('visibilitychange', visHandler);
     };
   }, [currentUser?.id, refreshUserData]);
+
+  // Native (Ionic/Capacitor) mobile state: subscribe to RxJS streams
+  useEffect(() => {
+    if (!isNativePlatform || !currentUser?.id) return;
+    initMobileState(currentUser.id);
+    const notifSub = notifications$.subscribe((list: MobileNotification[]) => setNotifications(list as any));
+    const reportsSub = mobileUserReports$.subscribe((list: MobileReport[]) => setUserReports(list as any));
+    return () => {
+      try { notifSub.unsubscribe() } catch {}
+      try { reportsSub.unsubscribe() } catch {}
+      destroyMobileState();
+    };
+  }, [isNativePlatform, currentUser?.id]);
 
   // When currentUser.id becomes available, ensure we have loaded the user's data at least once
   useEffect(() => {
@@ -1403,7 +1409,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
             {/* Manual Refresh */}
             <div className="relative">
               <button
-                onClick={() => { void forceReinit(); }}
+                onClick={() => window.location.reload()}
                 className="p-2 hover:bg-orange-600 rounded-full transition-colors"
                 aria-label="Refresh now"
                 title="Refresh now"
