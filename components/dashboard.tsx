@@ -658,63 +658,43 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
   // Effect to manage credit replenishment with individual cooldowns
   useEffect(() => {
-    const tenMinutes = 10 * 60 * 1000; // 10 minutes in milliseconds
-    
-    // Function to process cooldowns and update credits
-    const processCooldowns = () => {
+    if (activeCooldowns.length === 0) {
+      setCooldownRemaining(0);
+      setCooldownActive(false);
+      return;
+    }
+
+    const updateCooldowns = () => {
       const now = Date.now();
-      
-      // Process each cooldown that's ready to replenish
-      const updatedCooldowns = activeCooldowns.filter(cooldownEnd => {
-        return now < cooldownEnd; // Keep only active cooldowns
-      });
-      
-      // Calculate how many credits should be replenished
-      const creditsToReplenish = activeCooldowns.length - updatedCooldowns.length;
-      
-      if (creditsToReplenish > 0) {
-        setReportCredits(prev => {
-          const newCredits = Math.min(3, prev + creditsToReplenish);
-          if (newCredits > 0) {
-            setShowSOSConfirm(false); // Close any open SOS confirm modal if credits are available
-          }
-          return newCredits;
-        });
+      const remaining = activeCooldowns.filter(cooldownEnd => cooldownEnd > now);
+
+      if (remaining.length !== activeCooldowns.length) {
+        setActiveCooldowns(remaining);
+        const replenishedCount = activeCooldowns.length - remaining.length;
+        if (replenishedCount > 0) {
+          setReportCredits(prev => {
+            const newCredits = Math.min(3, prev + replenishedCount);
+            if (newCredits > 0) {
+              setShowSOSConfirm(false);
+            }
+            return newCredits;
+          });
+        }
       }
-      
-      // Update active cooldowns
-      if (updatedCooldowns.length !== activeCooldowns.length) {
-        setActiveCooldowns(updatedCooldowns);
-      }
-      
-      // Update cooldown display state
-      if (updatedCooldowns.length > 0) {
-        const nextMs = Math.max(0, Math.min(...updatedCooldowns) - now);
+
+      if (remaining.length > 0) {
+        const nextMs = Math.max(0, Math.min(...remaining) - now);
         setCooldownRemaining(Math.ceil(nextMs / 1000));
         setCooldownActive(reportCredits === 0);
-        // Tick every second while cooldowns are active so the display updates smoothly
-        return 1000;
       } else {
         setCooldownRemaining(0);
         setCooldownActive(false);
       }
-      
-      return null; // No active cooldowns
     };
-    
-    // Initial check
-    const timeout = processCooldowns();
-    
-    // Set up timer for next check if needed
-    let timer: NodeJS.Timeout | null = null;
-    if (timeout !== null) {
-      timer = setTimeout(processCooldowns, timeout);
-    }
-    
-    // Cleanup function
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
+
+    updateCooldowns();
+    const interval = setInterval(updateCooldowns, 1000);
+    return () => clearInterval(interval);
   }, [activeCooldowns, reportCredits]);
   
   // Effect to initialize cooldowns from credit consumption times
