@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { SupabaseListener } from "@/components/supabase-listener"
+import { SWRProvider } from "@/components/providers/SWRProvider"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -21,7 +22,9 @@ export default function RootLayout({
       <body className={inter.className}>
         {/* Keep Supabase session in sync with cookies so middleware can authorize /admin routes */}
         <SupabaseListener />
-        {children}
+        <SWRProvider>
+          {children}
+        </SWRProvider>
       </body>
     </html>
   )

@@ -16,6 +16,10 @@
   import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
   import { formatDistanceToNowStrict, parseISO } from 'date-fns';
   import { FeedbackHistory } from "@/components/feedback-history"
+  import useSWR from 'swr'
+  import { useAppStore } from '@/lib/store'
+  import type { AppState } from '@/lib/store'
+  import { initMobileState, destroyMobileState, notifications$, userReports$ as mobileUserReports$, type MobileNotification, type MobileReport } from '@/lib/mobileState'
 
 interface Notification {
   id: string;
@@ -222,13 +226,18 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [currentView, setCurrentView] = useState<'main' | 'reportHistory' | 'mdrrmoInfo' | 'hotlines' | 'userProfile' | 'sendFeedback'>('main');
   const [hasLoadedUserData, setHasLoadedUserData] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [reportPage, setReportPage] = useState<number>(1);
+  const PAGE_SIZE = 10;
+
+  // Minimal Zustand sync (currentUser provisioning for other components if needed)
+  const setStoreCurrentUser = useAppStore((s: AppState) => s.setCurrentUser)
 
   // Refs for click outside detection
   const notificationsRef = useRef<HTMLDivElement>(null);
   const notificationsButtonRef = useRef<HTMLButtonElement>(null);
   const isResumingRef = useRef<boolean>(false);
   const lastResumeAtRef = useRef<number>(0);
-  const RESUME_COOLDOWN_MS = 5000; // Throttle resume handling to avoid duplicate refreshes
+  const RESUME_COOLDOWN_MS = 1000; // Tighter throttle: single refresh within ~1s on resume
 
   // States for User Profile editing
   const [editingMobileNumber, setEditingMobileNumber] = useState<string>('');
@@ -263,6 +272,51 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [userReports, setUserReports] = useState<Report[]>([]);
   const [mdrrmoInformation, setMdrrmoInformation] = useState<MdrrmoInfo | null>(null);
   const [bulanHotlines, setBulanHotlines] = useState<Hotline[]>([]);
+
+  // SWR for user reports (Next.js web), used in report history rendering
+  const { data: swrUserReports } = useSWR<Report[]>(
+    currentUser?.id ? ['user_reports', currentUser.id] as const : null,
+    async (key: readonly [string, string]) => {
+      const [, uid] = key
+      const { data, error } = await supabase
+        .from('emergency_reports')
+        .select('id, emergency_type, status, admin_response, resolved_at, created_at')
+        .eq('user_id', uid)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data || []) as Report[];
+    }
+  );
+
+  // SWR for notifications (Next.js web)
+  const { data: swrNotifications, mutate: mutateNotifications } = useSWR<Notification[]>(
+    currentUser?.id ? ['user_notifications', currentUser.id] as const : null,
+    async (key: readonly [string, string]) => {
+      const [, uid] = key
+      const { data, error } = await supabase
+        .from('user_notifications')
+        .select('id, emergency_report_id, message, is_read, created_at')
+        .eq('user_id', uid)
+        .order('created_at', { ascending: false })
+        .limit(50)
+      if (error) throw error
+      return (data || []) as Notification[]
+    }
+  )
+
+  const reportsSource = swrUserReports ?? userReports;
+  const notificationsSource = isNativePlatform ? notifications : (swrNotifications ?? notifications);
+  const unreadNotificationsCount = useMemo(() => (notificationsSource || []).filter(n => !n.is_read).length, [notificationsSource]);
+  const totalReportPages = useMemo(() => Math.max(1, Math.ceil((reportsSource?.length || 0) / PAGE_SIZE)), [reportsSource?.length]);
+  const paginatedReports = useMemo(() => {
+    const src = reportsSource || [];
+    const start = (reportPage - 1) * PAGE_SIZE;
+    return src.slice(start, start + PAGE_SIZE);
+  }, [reportsSource, reportPage]);
+
+  useEffect(() => {
+    if (reportPage > totalReportPages) setReportPage(totalReportPages);
+  }, [totalReportPages, reportPage]);
 
   // New states for incident type buttons and cooldown
   const [selectedIncidentTypeForConfirmation, setSelectedIncidentTypeForConfirmation] = useState<string | null>(null);
@@ -389,7 +443,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       .from("user_notifications")
       .select("id, emergency_report_id, message, is_read, created_at")
       .eq("user_id", userId)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(50); // Limit for low bandwidth environments
 
     if (!error && data) {
       setNotifications(data as Notification[]);
@@ -405,7 +460,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       .from('emergency_reports')
       .select('id, emergency_type, status, admin_response, resolved_at, created_at') // Narrow columns for lower egress
       .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(100); // Limit for low bandwidth environments
 
     if (!error && data) {
       setUserReports(data as Report[]);
@@ -456,7 +512,14 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'user_notifications', filter: `user_id=eq.${userId}` },
-        () => loadNotifications(userId)
+        () => {
+          // Web uses SWR; native uses loader (native path doesn't set up web realtime normally)
+          if (!isNativePlatform && mutateNotifications) {
+            void mutateNotifications()
+          } else {
+            void loadNotifications(userId)
+          }
+        }
       )
       .subscribe();
 
@@ -503,6 +566,45 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     void loadMdrrmoInfo();
     void loadBulanHotlines();
   }, [loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines]);
+
+  // Quick, single-pass refresh on resume/focus with a 1s cap and auth check
+  const quickRefresh = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastResumeAtRef.current < RESUME_COOLDOWN_MS) return; // throttle
+    lastResumeAtRef.current = now;
+
+    if (isResumingRef.current) return; // prevent concurrent refreshes
+    isResumingRef.current = true;
+
+    // Show a short spinner for up to ~1s regardless of network speed
+    setIsRefreshing(true);
+    const hideAt = Date.now() + 1000; // 1 second cap
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const uid = sessionData?.session?.user?.id;
+      if (!uid) {
+        onLogout();
+        return;
+      }
+      await Promise.allSettled([
+        (!isNativePlatform ? mutateNotifications?.() : Promise.resolve()),
+        loadUserReports(uid),
+      ]);
+      // Global updates can happen in background
+      void loadMdrrmoInfo();
+      void loadBulanHotlines();
+    } catch (e) {
+      console.warn('quickRefresh error:', e);
+    } finally {
+      const remaining = hideAt - Date.now();
+      if (remaining > 0) {
+        await new Promise(res => setTimeout(res, remaining));
+      }
+      setIsRefreshing(false);
+      isResumingRef.current = false;
+    }
+  }, [RESUME_COOLDOWN_MS, onLogout, mutateNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines]);
 
   // Force full re-initialization (session -> user -> data -> realtime -> location -> cooldowns)
   const forceReinit = useCallback(async () => {
@@ -709,6 +811,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         }
 
         setCurrentUser(userProfile);
+        try { setStoreCurrentUser(userProfile) } catch {}
         setEditingMobileNumber(userProfile.mobileNumber || '');
         setEditingUsername(userProfile.username || '');
 
@@ -745,19 +848,16 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         }
 
         void refreshUserData(userProfile.id);
-        setupRealtime(userProfile.id);
+        if (!isNativePlatform) {
+          setupRealtime(userProfile.id);
+        }
 
       } catch (error) {
         console.error("Unexpected error during session check:", error);
         onLogout();
-      }
-    };
+      }};
 
     checkSessionAndLoadUser();
-
-    if (currentUser?.id) {
-      setupRealtime(currentUser.id);
-    }
 
     return () => {
       if (locationInitTimer) {
@@ -767,54 +867,49 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   }, [userData, onLogout, currentUser?.id, refreshUserData, setupRealtime, cleanupRealtime]);
 
-  // Handle app resume/focus (mobile and web) to refresh session, data, location, and cooldowns
+  // Handle app resume/visibility (mobile and web) with a single, quick refresh
   useEffect(() => {
     const onResume = async () => {
-      const now = Date.now();
-      // Throttle: ignore events fired within a short window
-      if (now - lastResumeAtRef.current < RESUME_COOLDOWN_MS) {
-        return;
-      }
-      lastResumeAtRef.current = now;
-
-      if (isResumingRef.current) return;
-      isResumingRef.current = true;
-
-      try {
-        await forceReinit();
-      } catch (e) {
-        console.warn('Resume handling error:', e);
-        // Intentionally no window reload fallback to avoid refresh loops
-      } finally {
-        isResumingRef.current = false;
-      }
+      await quickRefresh();
     };
 
     let resumeListener: PluginListenerHandle | undefined;
-    let appStateListener: PluginListenerHandle | undefined;
     if (isNativePlatform) {
-      // Capacitor: listen to both resume and appStateChange; throttling prevents duplicates
+      // Capacitor: listen to resume only to avoid duplicate triggers
       App.addListener('resume', () => { void onResume(); }).then(handle => { resumeListener = handle; }).catch(() => {});
-      App.addListener('appStateChange', ({ isActive }) => { if (isActive) void onResume(); }).then(handle => { appStateListener = handle; }).catch(() => {});
     }
 
-    // Web: refresh once when tab becomes visible again or window regains focus
-    const visHandler = () => { if (!document.hidden) void onResume(); };
-    const focusHandler = () => { void onResume(); };
+    // Web: refresh only when transitioning from hidden -> visible
+    let lastVisibilityState: DocumentVisibilityState = typeof document !== 'undefined' ? document.visibilityState : 'visible';
+    const visHandler = () => {
+      if (typeof document === 'undefined') return;
+      const currentState = document.visibilityState;
+      if (lastVisibilityState === 'hidden' && currentState === 'visible') {
+        void onResume();
+      }
+      lastVisibilityState = currentState;
+    };
 
     document.addEventListener('visibilitychange', visHandler);
-    window.addEventListener('focus', focusHandler);
-    const pageShowHandler = () => { void onResume(); };
-    window.addEventListener('pageshow', pageShowHandler);
 
     return () => {
       document.removeEventListener('visibilitychange', visHandler);
-      window.removeEventListener('focus', focusHandler);
-      window.removeEventListener('pageshow', pageShowHandler);
       try { resumeListener?.remove(); } catch {}
-      try { appStateListener?.remove(); } catch {}
     };
-  }, [isNativePlatform, forceReinit]);
+  }, [isNativePlatform, quickRefresh]);
+
+  // Native (Ionic/Capacitor) mobile state: subscribe to RxJS streams and init mobile listeners
+  useEffect(() => {
+    if (!isNativePlatform || !currentUser?.id) return;
+    initMobileState(currentUser.id);
+    const notifSub = notifications$.subscribe((list: MobileNotification[]) => setNotifications(list as any));
+    const reportsSub = mobileUserReports$.subscribe((list: MobileReport[]) => setUserReports(list as any));
+    return () => {
+      try { notifSub.unsubscribe() } catch {}
+      try { reportsSub.unsubscribe() } catch {}
+      destroyMobileState();
+    }
+  }, [isNativePlatform, currentUser?.id]);
 
   // Heartbeat: refresh lists every 60s while visible
   useEffect(() => {
@@ -825,7 +920,15 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       }
     };
     const interval = setInterval(tick, 60000);
-    const visHandler = () => { if (!document.hidden) tick(); };
+    let lastVisibilityState: DocumentVisibilityState = typeof document !== 'undefined' ? document.visibilityState : 'visible';
+    const visHandler = () => {
+      if (typeof document === 'undefined') return;
+      const currentState = document.visibilityState;
+      if (lastVisibilityState === 'hidden' && currentState === 'visible') {
+        tick();
+      }
+      lastVisibilityState = currentState;
+    };
     document.addEventListener('visibilitychange', visHandler);
     return () => {
       clearInterval(interval);
@@ -1104,7 +1207,11 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       .eq("user_id", currentUser.id)
       .eq("is_read", false);
     if (!error) {
-      loadNotifications(currentUser.id);
+      if (!isNativePlatform && mutateNotifications) {
+        await mutateNotifications();
+      } else {
+        await loadNotifications(currentUser.id);
+      }
     } else {
       console.error("Error marking all as read:", error);
     }
@@ -1119,7 +1226,11 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     if (error) {
       console.error("Error marking notification as read:", error);
     } else {
-      loadNotifications(currentUser.id);
+      if (!isNativePlatform && mutateNotifications) {
+        await mutateNotifications();
+      } else {
+        await loadNotifications(currentUser.id);
+      }
     }
   };
 
@@ -1281,9 +1392,9 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                 aria-expanded={showNotifications}
               >
                 <Bell className="w-6 h-6" />
-                {notifications.filter((n) => !n.is_read).length > 0 && (
+                {unreadNotificationsCount > 0 && (
                   <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                    {notifications.filter((n) => !n.is_read).length}
+                    {unreadNotificationsCount}
                   </span>
                 )}
               </button>
@@ -1336,7 +1447,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
             >
               <X className="w-5 h-5" />
             </button>
-            {notifications.some(n => !n.is_read) && (
+            {(notificationsSource || []).some(n => !n.is_read) && (
               <Button
                 size="sm"
                 className="bg-blue-600 hover:bg-blue-700 text-white text-xs py-1 px-2 rounded-full ml-2"
@@ -1350,10 +1461,10 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
             )}
           </div>
           <div className="max-h-64 overflow-y-auto">
-            {notifications.length === 0 ? (
+            {(notificationsSource?.length || 0) === 0 ? (
               <div className="p-4 text-gray-500 text-center">No notifications</div>
             ) : (
-              notifications.map((notification) => (
+              notificationsSource!.map((notification) => (
                 <div
                   key={notification.id}
                   className={`p-4 border-b border-gray-100 ${!notification.is_read ? "bg-blue-50" : ""}`}
@@ -1607,7 +1718,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
               <CardTitle className="text-xl sm:text-2xl font-bold text-gray-800">Your Report History</CardTitle>
             </CardHeader>
             <CardContent>
-              {userReports.length === 0 ? (
+              {(reportsSource?.length || 0) === 0 ? (
                 <p className="text-gray-600 text-center py-4">No emergency reports found.</p>
               ) : (
                 <div className="overflow-x-auto">
@@ -1629,7 +1740,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {userReports.map((report) => (
+                      {paginatedReports.map((report: Report) => (
                         <tr key={report.id}>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{report.emergency_type}</td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm">
@@ -1649,6 +1760,27 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                       ))}
                     </tbody>
                   </table>
+                  <div className="flex items-center justify-between mt-4">
+                    <div className="text-sm text-gray-600">
+                      Page {reportPage} of {totalReportPages}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => setReportPage(p => Math.max(1, p - 1))}
+                        disabled={reportPage <= 1}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setReportPage(p => Math.min(totalReportPages, p + 1))}
+                        disabled={reportPage >= totalReportPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               )}
             </CardContent>
