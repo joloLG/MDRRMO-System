@@ -387,6 +387,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   
   // Track when credits were consumed for replenishment
   const [creditConsumptionTimes, setCreditConsumptionTimes] = useState<number[]>([]);
+  const provisionalTimeRef = useRef<number | null>(null);
   
   // Get user-specific storage key
   const getCreditStorageKey = useCallback((suffix: string) => {
@@ -578,7 +579,28 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'emergency_reports', filter: `user_id=eq.${userId}` },
-        () => loadUserReports(userId)
+        (payload) => {
+          loadUserReports(userId);
+          // Refine cooldown with server timestamp
+          if (payload.eventType === 'INSERT' && payload.new.user_id === userId) {
+            const serverCreatedAt = new Date(payload.new.created_at).getTime();
+            setCreditConsumptionTimes(prev => {
+              const newTimes = [...prev];
+              if (provisionalTimeRef.current) {
+                const index = newTimes.indexOf(provisionalTimeRef.current);
+                if (index > -1) {
+                  newTimes[index] = serverCreatedAt;
+                } else {
+                  newTimes.push(serverCreatedAt);
+                }
+                provisionalTimeRef.current = null;
+              } else {
+                newTimes.push(serverCreatedAt);
+              }
+              return newTimes.sort((a, b) => a - b);
+            });
+          }
+        }
       )
       .subscribe();
 
@@ -713,27 +735,37 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
 
     const updateCooldowns = () => {
-      const now = Date.now();
-      const remaining = activeCooldowns.filter(cooldownEnd => cooldownEnd > now);
+      const timesKey = getCreditStorageKey('creditConsumptionTimes');
+      if (!timesKey) return;
 
-      if (remaining.length !== activeCooldowns.length) {
-        setActiveCooldowns(remaining);
-        const replenishedCount = activeCooldowns.length - remaining.length;
-        if (replenishedCount > 0) {
-          setReportCredits(prev => {
-            const newCredits = Math.min(3, prev + replenishedCount);
-            if (newCredits > 0) {
-              setShowSOSConfirm(false);
-            }
-            return newCredits;
-          });
-        }
+      const storedTimes = localStorage.getItem(timesKey);
+      let consumptionTimes: number[] = [];
+      if (storedTimes) {
+        try {
+          const parsed = JSON.parse(storedTimes);
+          if (Array.isArray(parsed)) {
+            consumptionTimes = parsed;
+          }
+        } catch {}
       }
 
-      if (remaining.length > 0) {
-        const nextMs = Math.max(0, Math.min(...remaining) - now);
+      const now = Date.now();
+      const tenMinutes = 10 * 60 * 1000;
+      const validTimes = consumptionTimes.filter(ts => (now - ts) < tenMinutes);
+
+      if (validTimes.length !== consumptionTimes.length) {
+        localStorage.setItem(timesKey, JSON.stringify(validTimes));
+      }
+      
+      setCreditConsumptionTimes(validTimes);
+      const newCredits = Math.max(0, 3 - validTimes.length);
+      setReportCredits(newCredits);
+
+      const newCooldowns = validTimes.map(ts => ts + tenMinutes);
+      if (newCooldowns.length > 0) {
+        const nextMs = Math.max(0, Math.min(...newCooldowns) - now);
         setCooldownRemaining(Math.ceil(nextMs / 1000));
-        setCooldownActive(reportCredits === 0);
+        setCooldownActive(newCredits === 0);
       } else {
         setCooldownRemaining(0);
         setCooldownActive(false);
@@ -786,124 +818,76 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   }, [reportCredits, creditConsumptionTimes, currentUser?.id, getCreditStorageKey]);
 
 
-  // Main useEffect for session, user data, and initial data loading
+  // Main effect for initialization, data fetching, and real-time subscriptions
   useEffect(() => {
     let locationInitTimer: ReturnType<typeof setTimeout> | null = null;
-    const checkSessionAndLoadUser = async () => {
-      let userFromPropsOrStorage = null;
 
-      if (userData) {
-        userFromPropsOrStorage = userData;
-      } else {
-        const storedUser = localStorage.getItem("mdrrmo_user");
-        if (storedUser) {
-          try {
-            userFromPropsOrStorage = JSON.parse(storedUser);
-          } catch (parseError) {
-            console.error("Error parsing stored user data in Dashboard:", parseError);
-            localStorage.removeItem("mdrrmo_user");
-            onLogout();
-            return;
-          }
-        }
+    const initialize = async () => {
+      // 1. Get session and user profile
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData?.session?.user) {
+        onLogout();
+        return;
+      }
+      const user = sessionData.session.user;
+
+      const { data: userProfile, error: profileError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError || !userProfile) {
+        onLogout();
+        return;
       }
 
-      // Prime credits immediately from per-user localStorage so buttons are correctly disabled before async session resolves
-      try {
-        const uid = userFromPropsOrStorage?.id;
-        if (uid) {
-          const timesKeyPrime = `mdrrmo_${uid}_creditConsumptionTimes`;
-          const storedTimesPrime = localStorage.getItem(timesKeyPrime);
-          if (storedTimesPrime) {
-            const parsed = JSON.parse(storedTimesPrime);
-            if (Array.isArray(parsed)) {
-              const now = Date.now();
-              const tenMinutes = 10 * 60 * 1000;
-              const valid = parsed.filter((ts: number) => (now - ts) < tenMinutes);
-              setCreditConsumptionTimes(valid);
-              setReportCredits(Math.max(0, 3 - valid.length));
-            }
-          }
+      setCurrentUser(userProfile);
+      setStoreCurrentUser(userProfile);
+      setEditingMobileNumber(userProfile.mobileNumber || '');
+      setEditingUsername(userProfile.username || '');
+
+      // 2. Initial data fetch
+      await Promise.all([
+        loadNotifications(user.id),
+        loadUserReports(user.id),
+        loadMdrrmoInfo(),
+        loadBulanHotlines(),
+      ]);
+
+      // 3. Set up real-time subscriptions
+      setupRealtime(user.id);
+      
+      // 4. Handle location
+      locationInitTimer = setTimeout(() => {
+        void ensureLocationReady();
+      }, 100);
+      
+      // 5. Reconcile credits
+      reconcileCooldownsAndCredits();
+    };
+
+    initialize();
+
+    // Listen for auth changes to re-initialize
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (session?.user?.id !== currentUser?.id) {
+          initialize();
         }
-      } catch {}
-
-      try {
-        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-
-        if (sessionError || !sessionData?.session) {
-          console.error("Supabase session invalid or not found:", sessionError);
-          onLogout();
-          return;
-        }
-
-        const { data: userProfile, error: profileError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', sessionData.session.user.id)
-          .single();
-
-        if (profileError || !userProfile) {
-          console.error("Error fetching user profile:", profileError);
-          onLogout();
-          return;
-        }
-
-        setCurrentUser(userProfile);
-        try { setStoreCurrentUser(userProfile) } catch {}
-        setEditingMobileNumber(userProfile.mobileNumber || '');
-        setEditingUsername(userProfile.username || '');
-
-        // Request location permission: use Capacitor on native, browser Permissions API on web
-        if (isNativePlatform) {
-          // On native (Android/iOS), rely on Capacitor Geolocation
-          void ensureLocationReady();
-        } else {
-          // On web, check permission shortly after mount to allow UI to render
-          locationInitTimer = setTimeout(() => {
-            if (navigator.geolocation && (navigator as any).permissions?.query) {
-              (navigator as any).permissions.query({ name: 'geolocation' as PermissionName })
-                .then((permissionStatus: any) => {
-                  if (permissionStatus.state === 'prompt') {
-                    // Show our custom modal instead of browser's default prompt
-                    setShowLocationModal(true);
-                  } else if (permissionStatus.state === 'denied') {
-                    setLocationError('location_denied');
-                    setShowLocationModal(true);
-                  } else if (permissionStatus.state === 'granted') {
-                    // Optionally get the location immediately
-                    void ensureLocationReady();
-                  }
-                })
-                .catch(() => {
-                  // Fallback: try to get location which will trigger the prompt
-                  void ensureLocationReady();
-                });
-            } else {
-              // Fallback for browsers without Permissions API
-              void ensureLocationReady();
-            }
-          }, 100);
-        }
-
-        void refreshUserData(userProfile.id);
-        if (!isNativePlatform) {
-          setupRealtime(userProfile.id);
-        }
-
-      } catch (error) {
-        console.error("Unexpected error during session check:", error);
+      } else if (event === 'SIGNED_OUT') {
         onLogout();
-      }};
-
-    checkSessionAndLoadUser();
+      }
+    });
 
     return () => {
+      cleanupRealtime();
+      authListener?.subscription?.unsubscribe();
       if (locationInitTimer) {
         clearTimeout(locationInitTimer);
       }
-      cleanupRealtime();
-    }
-  }, [userData, onLogout, currentUser?.id, refreshUserData, setupRealtime, cleanupRealtime]);
+    };
+  }, []); // Run only once on mount
 
   // Web: silent refresh when returning from background after minimum hidden duration
   useEffect(() => {
@@ -964,43 +948,33 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     };
   }, [isNativePlatform, silentRefresh, currentUser?.id, ensureLocationReady, userReports]);
 
-  // Heartbeat: refresh lists every 1s and check for deep-link intent on web
+  // Heartbeat to check for deep-link intent on web
   useEffect(() => {
-    if (!currentUser?.id) return;
-    const tick = () => {
-      if (!currentUser?.id) return;
-      void refreshUserData(currentUser.id);
-      if (!locationPermissionGrantedRef.current) {
-        void ensureLocationReady();
-      }
-      // Check for notification intent on web
-      if (!isNativePlatform) {
-        const intentKey = `mdrrmo_${currentUser.id}_notificationIntent`;
-        const intent = localStorage.getItem(intentKey);
-        if (intent) {
-          try {
-            const { emergencyReportId, timestamp } = JSON.parse(intent);
-            if (Date.now() - timestamp < 60000) {
-              const report = userReports.find(r => r.id === emergencyReportId);
-              if (report) {
-                setDeepLinkedReport(report);
-                setIsReportDetailModalOpen(true);
-              }
+    if (isNativePlatform || !currentUser?.id) return;
+
+    const checkIntent = () => {
+      const intentKey = `mdrrmo_${currentUser.id}_notificationIntent`;
+      const intent = localStorage.getItem(intentKey);
+      if (intent) {
+        try {
+          const { emergencyReportId, timestamp } = JSON.parse(intent);
+          if (Date.now() - timestamp < 60000) {
+            const report = userReports.find(r => r.id === emergencyReportId);
+            if (report) {
+              setDeepLinkedReport(report);
+              setIsReportDetailModalOpen(true);
             }
-          } catch (e) {
-            console.error("Error parsing notification intent:", e);
           }
-          localStorage.removeItem(intentKey); // Clear intent after handling
+        } catch (e) {
+          console.error("Error parsing notification intent:", e);
         }
+        localStorage.removeItem(intentKey); // Clear intent after handling
       }
     };
-    const interval = setInterval(tick, 1000);
-    // run once immediately for faster first refresh
-    void tick();
-    return () => {
-      clearInterval(interval);
-    };
-  }, [currentUser?.id, refreshUserData, isNativePlatform, userReports]);
+
+    const interval = setInterval(checkIntent, 1000);
+    return () => clearInterval(interval);
+  }, [currentUser?.id, isNativePlatform, userReports]);
 
   // Native (Ionic/Capacitor) mobile state: subscribe to RxJS streams
   useEffect(() => {
@@ -1015,38 +989,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     };
   }, [isNativePlatform, currentUser?.id]);
 
-  // When currentUser.id becomes available, ensure we have loaded the user's data at least once
-  useEffect(() => {
-    if (currentUser?.id && !hasLoadedUserData) {
-      void refreshUserData(currentUser.id);
-      setHasLoadedUserData(true);
-    }
-  }, [currentUser?.id, hasLoadedUserData, refreshUserData]);
-
-  // Listen for auth state changes and refresh data on sign-in
-  useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user?.id) {
-        try {
-          const { data: userProfile } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          if (userProfile) {
-            setCurrentUser(userProfile);
-          }
-        } catch (e) {
-          console.warn('Auth change: failed to load user profile for refresh', e);
-        }
-        void refreshUserData(session.user.id);
-      }
-    });
-
-    return () => {
-      try { authListener?.subscription?.unsubscribe(); } catch {}
-    };
-  }, [refreshUserData]);
 
   // Modified confirmSOS to accept emergencyType
   const confirmSOS = async (emergencyType: string) => {
@@ -1111,8 +1053,9 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     setIsEmergencyActive(true);
     setShowSOSConfirm(false);
     
-    // Record the time when credit was consumed (before the async operation)
+    // Record a provisional time when credit was consumed
     const consumptionTime = Date.now();
+    provisionalTimeRef.current = consumptionTime;
     
     // Immediately update the credit state to prevent double submissions
     setReportCredits(prev => {
@@ -1206,6 +1149,9 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         console.error("Supabase Report Insert Error Details:", reportError);
         console.error("Failed to send emergency alert: Please check Supabase RLS policies for 'emergency_reports' INSERT operation, or schema constraints.");
         setIsEmergencyActive(false); // Deactivate if report fails
+        // Refund credit if report fails
+        setCreditConsumptionTimes(prev => prev.filter(t => t !== consumptionTime));
+        setReportCredits(prev => Math.min(3, prev + 1));
         return;
       }
 
@@ -1436,7 +1382,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       />
 
       {/* Header */}
-      <div className="relative z-20 bg-orange-500/95 backdrop-blur-sm text-white p-4 shadow-lg">
+      <div className="sticky top-0 z-30 bg-orange-500/95 backdrop-blur-sm text-white p-4 shadow-lg">
         <div className="flex items-center justify-between">
           <div className="flex items-center">
             {/* Hamburger Menu Button - Always visible */}
@@ -1450,7 +1396,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
             
             {/* Desktop Title - Hidden on small screens */}
             <div className="hidden md:flex items-center space-x-3 ml-2">
-              <span className="font-medium text-lg">SORSU-Students</span>
+              <span className="font-medium text-lg">BULAN EMERGENCY APP</span>
             </div>
           </div>
 
@@ -1571,7 +1517,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-lg">
-              <p className="text-sm font-medium text-gray-900">Hi {currentUser?.firstName || "User"}!</p>
+              <p className="text-sm font-medium text-gray-900">Hi {currentUser?.username || currentUser?.firstName || "User"}!</p>
               <p className="text-xs text-gray-500">{currentUser?.email || currentUser?.username}</p>
             </div>
             <div className="p-2">
@@ -1695,7 +1641,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       )}
 
       {/* Main Content Area - Adjusted for sidebar on desktop */}
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-center p-4 sm:p-8 lg:ml-64">
+      <div className="relative z-10 flex-1 flex flex-col items-center p-4 sm:p-8 lg:ml-64">
         {currentView === 'main' && (
           <>
             {/* Welcome Card with Logo */}
@@ -1717,19 +1663,16 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
               </CardContent>
             </Card>
             <div className="text-center mb-8">
-              {cooldownActive ? (
-                <div className="bg-yellow-500 text-white px-6 py-3 rounded-full shadow-lg text-lg sm:text-xl font-bold">
-                  Cooldown: {formatTime(cooldownRemaining)}
-                </div>
-              ) : (
-                <p className="text-white text-lg sm:text-xl font-semibold mb-4 bg-black/50 p-3 rounded-lg shadow-md">
-                  {reportCredits === 0 ? (
-                    "No credits. Cooldown active."
-                  ) :
-                    `You still have ${reportCredits} Credits left!`
-                  }
+              <div className="space-y-2">
+                <p className="text-white text-lg sm:text-xl font-semibold bg-black/50 p-3 rounded-lg shadow-md">
+                  {`You have ${reportCredits} Credits left`}
                 </p>
-              )}
+                {cooldownActive && (
+                  <div className="bg-yellow-500 text-white px-6 py-3 rounded-full shadow-lg text-lg sm:text-xl font-bold">
+                    Cooldown: {formatTime(cooldownRemaining)}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Incident Type Buttons Grid */}
@@ -1791,7 +1734,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         )}
 
         {currentView === 'reportHistory' && (
-          <Card className="w-full max-w-full lg:max-w-6xl bg-white/90 backdrop-blur-sm shadow-lg rounded-lg p-4 sm:p-6">
+          <Card className="w-full max-w-full lg:max-w-6xl bg-white/90 backdrop-blur-sm shadow-lg rounded-lg p-4 sm:p-6 mb-20">
             <CardHeader>
               <CardTitle className="text-xl sm:text-2xl font-bold text-gray-800">Your Report History</CardTitle>
             </CardHeader>
@@ -1801,7 +1744,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-gray-50 sticky top-0 z-10">
                       <tr>
                         <th scope="col" className="px-4 py-2 text-left text-xs sm:text-sm font-medium text-gray-500 uppercase tracking-wider">
                           Type

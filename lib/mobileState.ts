@@ -223,7 +223,9 @@ export function initMobileState(userId: string) {
   if (initializedFor === userId && teardown) return
   initializedFor = userId
 
-  void ensureLocalNotificationPermission()
+  // Request notification permission on initialization
+  void ensureLocalNotificationPermission();
+
   if (!notificationActionHandle) {
     LocalNotifications.addListener('localNotificationActionPerformed', (event: LocalNotificationActionPerformed) => {
       void handleNotificationAction(event)

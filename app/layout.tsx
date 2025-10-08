@@ -13,6 +13,9 @@ export const metadata: Metadata = {
   description: "Emergency Reporting System",
   manifest: "/manifest.json",
   themeColor: "#ea580c",
+  icons: {
+    icon: '/images/logo.png',
+  },
 }
 
 export default function RootLayout({

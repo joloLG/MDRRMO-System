@@ -102,6 +102,10 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [selectedTeamId, setSelectedTeamId] = useState<string>(''); // Store team ID instead of name
   const [barangay, setBarangay] = useState<string>('');
 
+  // Refs for click outside detection
+  const notificationsDropdownRef = useRef<HTMLDivElement>(null);
+  const notificationsButtonRef = useRef<HTMLButtonElement>(null);
+
   // Alert sound management state
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -209,6 +213,26 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       setLoading(false);
     }
   }, [userData]);
+
+  // Close notifications when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        showNotificationsDropdown &&
+        notificationsDropdownRef.current &&
+        !notificationsDropdownRef.current.contains(event.target as Node) &&
+        notificationsButtonRef.current &&
+        !notificationsButtonRef.current.contains(event.target as Node)
+      ) {
+        setShowNotificationsDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showNotificationsDropdown]);
 
   // Function to fetch notifications
   const fetchAdminNotifications = useCallback(async () => {
@@ -854,12 +878,12 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
             </Button>
           </div>
           <div className="relative">
-            <Button variant="ghost" size="icon" onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}>
+            <Button variant="ghost" size="icon" onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)} ref={notificationsButtonRef}>
               <Bell className="h-6 w-6" />
               {unreadCount > 0 && <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />}
             </Button>
             {showNotificationsDropdown && (
-              <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl z-20">
+              <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl z-20" ref={notificationsDropdownRef}>
                 <div className="p-4 font-bold border-b">Notifications</div>
                 <ul className="max-h-96 overflow-y-auto">
                   {notifications.length > 0 ? notifications.map(n => (
