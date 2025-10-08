@@ -23,14 +23,13 @@ const menuItems = [
 export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps) {
   const installPromptEvent = useAppStore(state => state.installPromptEvent);
   const setInstallPromptEvent = useAppStore(state => state.setInstallPromptEvent);
-  // Close sidebar when clicking outside
+
   const handleOverlayClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
       onClose();
     }
   };
 
-  // Close sidebar when pressing Escape key
   React.useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -44,17 +43,13 @@ export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps)
 
   const handleMenuItemClick = (item: { id: string; type: string; path?: string }) => {
     if (item.type === 'internal' && item.path) {
-      // For internal navigation, let Next.js handle the routing
-      // We'll use a full page refresh to ensure chunks are loaded properly
       const fullPath = window.location.origin + item.path;
       window.location.href = fullPath;
       onClose();
     } else if (item.type === 'internal') {
-      // For dashboard views
       onChangeView(item.id);
       onClose();
     } else if (item.type === 'external' && item.path) {
-      // Fallback for external links (shouldn't be used for mobile-first)
       window.location.href = item.path;
       onClose();
     }
@@ -63,13 +58,11 @@ export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps)
   const handleInstallClick = () => {
     if (!installPromptEvent) return;
     (installPromptEvent as any).prompt();
-    // The prompt() method can only be used once.
     setInstallPromptEvent(null);
   };
 
   return (
     <>
-      {/* Overlay for mobile */}
       {isOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ease-in-out lg:hidden"
@@ -80,7 +73,6 @@ export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps)
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={`fixed top-0 left-0 h-full w-64 bg-gray-800 text-white shadow-lg z-50 transform ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
