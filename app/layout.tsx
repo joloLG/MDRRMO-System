@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   themeColor: "#ea580c",
   icons: {
-    icon: '/images/logo.png',
+    icon: '/images/logo.png?v=1',
   },
 }
 
