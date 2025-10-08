@@ -330,6 +330,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [editingUsername, setEditingUsername] = useState<string>('');
   const [profileEditSuccess, setProfileEditSuccess] = useState<string | null>(null);
   const [profileEditError, setProfileEditError] = useState<string | null>(null);
+  const [mobileNumberError, setMobileNumberError] = useState<string | null>(null);
 
   // Close notifications when clicking outside
   useEffect(() => {
@@ -1260,11 +1261,18 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     setProfileEditSuccess(null);
     setProfileEditError(null);
 
+    // Validate mobile number
+    if (editingMobileNumber.length !== 10) {
+      setMobileNumberError('Please complete the mobile number (10 digits required).');
+      return;
+    }
+
     try {
+      const fullMobileNumber = `63${editingMobileNumber}`;
       const { data, error } = await supabase
         .from('users')
         .update({
-          mobileNumber: editingMobileNumber,
+          mobileNumber: fullMobileNumber,
           username: editingUsername,
         })
         .eq('id', currentUser.id)
@@ -1868,19 +1876,37 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
               </div>
               <div>
                 <label htmlFor="mobileNumber" className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label>
-                <Input
-                  id="mobileNumber"
-                  type="text"
-                  value={editingMobileNumber}
-                  onChange={(e) => setEditingMobileNumber(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                />
+                  <div className="flex items-center">
+                    <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm h-10">
+                      63
+                    </span>
+                    <Input 
+                      id="mobileNumber" 
+                      type="tel" 
+                      value={editingMobileNumber} 
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, ''); // Remove non-digits
+                        if (value.length <= 10) {
+                          setEditingMobileNumber(value);
+                          if (value.length < 10) {
+                            setMobileNumberError('Please complete the mobile number (10 digits required).');
+                          } else {
+                            setMobileNumberError(null);
+                          }
+                        }
+                      }}
+                      maxLength={10}
+                      className={`rounded-l-none ${mobileNumberError ? 'border-red-500' : ''}`}
+                      placeholder="xxxxxxxxxx"
+                    />
+                  </div>
+                  {mobileNumberError && <p className="mt-2 text-sm text-red-600">{mobileNumberError}</p>}
               </div>
-              <Button onClick={handleProfileUpdate} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg">
+              <Button onClick={handleProfileUpdate} disabled={!!mobileNumberError} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-2 px-4 rounded-lg">
                 <Edit className="mr-2 h-4 w-4" /> Update Profile
               </Button>
               {profileEditSuccess && <p className="text-green-600 text-sm mt-2 text-center">{profileEditSuccess}</p>}
-              {profileEditError && <p className="text-red-600 text-sm mt-2 text-center">{profileEditError}</p>}
+
             </CardContent>
           </Card>
         )}

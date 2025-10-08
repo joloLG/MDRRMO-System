@@ -37,6 +37,7 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [ageVerified, setAgeVerified] = useState(false)
+  const [mobileNumberError, setMobileNumberError] = useState<string | null>(null);
 
   // Derived validations for password and confirmation
   const password = formData.password
@@ -106,6 +107,13 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
       return
     }
 
+    // Mobile number validation
+    if (formData.mobileNumber.length !== 10) {
+      setError("Please provide a valid 10-digit mobile number.");
+      setMobileNumberError("A 10-digit mobile number is required.");
+      return;
+    }
+
     // Password policy validation
     if (formData.password.length < 6) {
       setError("Password must be at least 6 characters long.")
@@ -152,7 +160,7 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
           email: formData.email,
           username: formData.username,
           birthday: formData.birthday || null,
-          mobileNumber: formData.mobileNumber,
+          mobileNumber: `63${formData.mobileNumber}`,
         })
 
         if (profileError) {
@@ -307,16 +315,33 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
             <Label htmlFor="mobileNumber" className="text-gray-700 font-medium">
               Mobile Number *
             </Label>
-            <Input
-              id="mobileNumber"
-              type="tel"
-              value={formData.mobileNumber}
-              onChange={(e) => handleInputChange("mobileNumber", e.target.value)}
-              className="border-orange-200 focus:border-orange-500"
-              placeholder="+63 XXX XXX XXXX"
-              required
-              disabled={isLoading}
-            />
+            <div className="flex items-center">
+              <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm h-10">
+                63
+              </span>
+              <Input
+                id="mobileNumber"
+                type="tel"
+                value={formData.mobileNumber}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, ''); // Remove non-digits
+                  if (value.length <= 10) {
+                    handleInputChange("mobileNumber", value);
+                    if (value.length < 10) {
+                      setMobileNumberError('Please complete the mobile number (10 digits required).');
+                    } else {
+                      setMobileNumberError(null);
+                    }
+                  }
+                }}
+                maxLength={10}
+                className={`rounded-l-none border-orange-200 focus:border-orange-500 ${mobileNumberError ? 'border-red-500' : ''}`}
+                placeholder="xxxxxxxxxx"
+                required
+                disabled={isLoading}
+              />
+            </div>
+            {mobileNumberError && <p className="text-sm text-red-500 mt-1">{mobileNumberError}</p>}
           </div>
 
           <div>
