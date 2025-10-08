@@ -15,13 +15,12 @@ import { format, isSameDay } from "date-fns"
 import { cn } from "@/lib/utils"
 import React from "react"
 
-// Dynamically import the map component to avoid SSR issues
 const LocationMap = dynamic(
   () => import('@/components/LocationMap'),
   { ssr: false }
 );
 
-// Define Notification interface
+
 interface Notification {
   id: string;
   emergency_report_id: string;
@@ -64,14 +63,14 @@ interface InternalReport {
   id: number;
   original_report_id: string | null;
   incident_type_id: number;
-  incident_date: string; // TIMESTAMPTZ
-  time_responded: string | null; // TIMESTAMPTZ
+  incident_date: string; 
+  time_responded: string | null;
   barangay_id: number;
   er_team_id: number;
   persons_involved: number | null;
   number_of_responders: number | null;
   prepared_by: string;
-  created_at: string; // TIMESTAMPTZ
+  created_at: string; 
 }
 
 // Define BaseEntry for reference tables (used for ER Teams)
@@ -92,14 +91,14 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [allReports, setAllReports] = useState<Report[]>([]);
   const [internalReports, setInternalReports] = useState<InternalReport[]>([]);
-  const [erTeams, setErTeams] = useState<BaseEntry[]>([]); // New state for ER Teams
+  const [erTeams, setErTeams] = useState<BaseEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'ok' | 'degraded' | 'offline'>('ok');
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [isLoadingAction, setIsLoadingAction] = useState(false);
-  const [selectedTeamId, setSelectedTeamId] = useState<string>(''); // Store team ID instead of name
+  const [selectedTeamId, setSelectedTeamId] = useState<string>(''); 
   const [barangay, setBarangay] = useState<string>('');
 
   // Refs for click outside detection
