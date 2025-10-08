@@ -4,12 +4,15 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import { SupabaseListener } from "@/components/supabase-listener"
 import { SWRProvider } from "@/components/providers/SWRProvider"
+import { PwaRegistry } from "@/components/PwaRegistry"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "MDRRMO Mobile App",
   description: "Emergency Reporting System",
+  manifest: "/manifest.json",
+  themeColor: "#ea580c",
 }
 
 export default function RootLayout({
@@ -22,6 +25,7 @@ export default function RootLayout({
       <body className={inter.className}>
         {/* Keep Supabase session in sync with cookies so middleware can authorize /admin routes */}
         <SupabaseListener />
+        <PwaRegistry />
         <SWRProvider>
           {children}
         </SWRProvider>

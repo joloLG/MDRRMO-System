@@ -3,21 +3,21 @@
   import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
   import { Capacitor } from "@capacitor/core"
   import type { PluginListenerHandle } from "@capacitor/core"
-  import { App } from "@capacitor/app"
-  import { Geolocation } from "@capacitor/geolocation"
+import { App } from "@capacitor/app"
+import { Geolocation } from "@capacitor/geolocation"
   import { Button } from "@/components/ui/button"
   import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding, MapPin, RefreshCcw } from "lucide-react" // Added Swords for Armed Conflict
   import { UserSidebar } from "./user_sidebar"
   import { LocationPermissionModal } from "./location-permission-modal"
-  import { supabase } from "@/lib/supabase"
-  import type { RealtimeChannel } from "@supabase/supabase-js"
-  import { Input } from "@/components/ui/input"
+import { supabase } from "@/lib/supabase"
+import type { RealtimeChannel } from "@supabase/supabase-js"
+import { Input } from "@/components/ui/input"
   import { Textarea } from "@/components/ui/textarea"
   import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
   import { formatDistanceToNowStrict, parseISO } from 'date-fns';
   import { FeedbackHistory } from "@/components/feedback-history"
-  import useSWR from 'swr'
-  import { useAppStore } from '@/lib/store'
+import { ReportDetailModal } from "@/components/ReportDetailModal"
+import { useAppStore } from '@/lib/store'
   import type { AppState } from '@/lib/store'
   import { initMobileState, destroyMobileState, notifications$, userReports$ as mobileUserReports$, type MobileNotification, type MobileReport } from '@/lib/mobileState'
 
@@ -310,6 +310,10 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const PAGE_SIZE = 10;
   const MIN_HIDDEN_MS_BEFORE_REFRESH = 5000; // Skip refresh for quick tab switches (<5s)
 
+  // State for deep-linked report modal
+  const [deepLinkedReport, setDeepLinkedReport] = useState<Report | null>(null);
+  const [isReportDetailModalOpen, setIsReportDetailModalOpen] = useState(false);
+
   // Minimal Zustand sync (currentUser provisioning for other components if needed)
   const setStoreCurrentUser = useAppStore((s: AppState) => s.setCurrentUser)
 
@@ -355,39 +359,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [mdrrmoInformation, setMdrrmoInformation] = useState<MdrrmoInfo | null>(null);
   const [bulanHotlines, setBulanHotlines] = useState<Hotline[]>([]);
 
-  // SWR for user reports (Next.js web), used in report history rendering
-  const { data: swrUserReports } = useSWR<Report[]>(
-    currentUser?.id ? ['user_reports', currentUser.id] as const : null,
-    async (key: readonly [string, string]) => {
-      const [, uid] = key
-      const { data, error } = await supabase
-        .from('emergency_reports')
-        .select('id, emergency_type, status, admin_response, resolved_at, created_at')
-        .eq('user_id', uid)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return (data || []) as Report[];
-    }
-  );
-
-  // SWR for notifications (Next.js web)
-  const { data: swrNotifications, mutate: mutateNotifications } = useSWR<Notification[]>(
-    currentUser?.id ? ['user_notifications', currentUser.id] as const : null,
-    async (key: readonly [string, string]) => {
-      const [, uid] = key
-      const { data, error } = await supabase
-        .from('user_notifications')
-        .select('id, emergency_report_id, message, is_read, created_at')
-        .eq('user_id', uid)
-        .order('created_at', { ascending: false })
-        .limit(50)
-      if (error) throw error
-      return (data || []) as Notification[]
-    }
-  )
-
-  const reportsSource = swrUserReports ?? userReports;
-  const notificationsSource = isNativePlatform ? notifications : (swrNotifications ?? notifications);
+  const reportsSource = userReports;
+  const notificationsSource = notifications;
   const unreadNotificationsCount = useMemo(() => (notificationsSource || []).filter(n => !n.is_read).length, [notificationsSource]);
   const totalReportPages = useMemo(() => Math.max(1, Math.ceil((reportsSource?.length || 0) / PAGE_SIZE)), [reportsSource?.length]);
   const paginatedReports = useMemo(() => {
@@ -595,12 +568,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'user_notifications', filter: `user_id=eq.${userId}` },
         () => {
-          // Web uses SWR; native uses loader (native path doesn't set up web realtime normally)
-          if (!isNativePlatform && mutateNotifications) {
-            void mutateNotifications()
-          } else {
-            void loadNotifications(userId)
-          }
+          void loadNotifications(userId)
         }
       )
       .subscribe();
@@ -669,7 +637,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         return;
       }
       await Promise.allSettled([
-        (!isNativePlatform ? mutateNotifications?.() : Promise.resolve()),
+        loadNotifications(uid),
         loadUserReports(uid),
       ]);
       void loadMdrrmoInfo();
@@ -686,7 +654,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       }
       isResumingRef.current = false;
     }
-  }, [RESUME_COOLDOWN_MS, onLogout, mutateNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines, isNativePlatform]);
+  }, [RESUME_COOLDOWN_MS, onLogout, loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines, isNativePlatform]);
 
   const quickRefresh = useCallback(async () => {
     await runRefresh(true);
@@ -960,7 +928,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     };
   }, [isNativePlatform, silentRefresh, ensureLocationReady]);
 
-  // Native: silent refresh on resume (runs in background)
+  // Native: silent refresh on resume (runs in background) and check for deep-link intent
   useEffect(() => {
     if (!isNativePlatform) return;
     let resumeListener: PluginListenerHandle | undefined;
@@ -968,28 +936,71 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       void ensureLocationReady();
       if (currentUser?.id) {
         void silentRefresh();
+        // Check for notification intent on resume
+        const intentKey = `mdrrmo_${currentUser.id}_notificationIntent`;
+        const intent = localStorage.getItem(intentKey);
+        if (intent) {
+          try {
+            const { emergencyReportId, timestamp } = JSON.parse(intent);
+            // Only handle if recent (e.g., within last minute)
+            if (Date.now() - timestamp < 60000) {
+              const report = userReports.find(r => r.id === emergencyReportId);
+              if (report) {
+                setDeepLinkedReport(report);
+                setIsReportDetailModalOpen(true);
+              }
+            }
+          } catch (e) {
+            console.error("Error parsing notification intent:", e);
+          }
+          localStorage.removeItem(intentKey); // Clear intent after handling
+        }
       }
     })
-      .then(handle => { resumeListener = handle; })
+      .then((handle: PluginListenerHandle) => { resumeListener = handle; })
       .catch(() => {});
     return () => {
       try { resumeListener?.remove(); } catch {}
     };
-  }, [isNativePlatform, silentRefresh, currentUser?.id, ensureLocationReady]);
+  }, [isNativePlatform, silentRefresh, currentUser?.id, ensureLocationReady, userReports]);
 
-  // Heartbeat: refresh lists every 60s while visible
+  // Heartbeat: refresh lists every 1s and check for deep-link intent on web
   useEffect(() => {
     if (!currentUser?.id) return;
     const tick = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        void refreshUserData(currentUser.id);
+      if (!currentUser?.id) return;
+      void refreshUserData(currentUser.id);
+      if (!locationPermissionGrantedRef.current) {
+        void ensureLocationReady();
+      }
+      // Check for notification intent on web
+      if (!isNativePlatform) {
+        const intentKey = `mdrrmo_${currentUser.id}_notificationIntent`;
+        const intent = localStorage.getItem(intentKey);
+        if (intent) {
+          try {
+            const { emergencyReportId, timestamp } = JSON.parse(intent);
+            if (Date.now() - timestamp < 60000) {
+              const report = userReports.find(r => r.id === emergencyReportId);
+              if (report) {
+                setDeepLinkedReport(report);
+                setIsReportDetailModalOpen(true);
+              }
+            }
+          } catch (e) {
+            console.error("Error parsing notification intent:", e);
+          }
+          localStorage.removeItem(intentKey); // Clear intent after handling
+        }
       }
     };
-    const interval = setInterval(tick, 60000);
+    const interval = setInterval(tick, 1000);
+    // run once immediately for faster first refresh
+    void tick();
     return () => {
       clearInterval(interval);
     };
-  }, [currentUser?.id, refreshUserData]);
+  }, [currentUser?.id, refreshUserData, isNativePlatform, userReports]);
 
   // Native (Ionic/Capacitor) mobile state: subscribe to RxJS streams
   useEffect(() => {
@@ -1275,11 +1286,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       .eq("user_id", currentUser.id)
       .eq("is_read", false);
     if (!error) {
-      if (!isNativePlatform && mutateNotifications) {
-        await mutateNotifications();
-      } else {
-        await loadNotifications(currentUser.id);
-      }
+      await loadNotifications(currentUser.id);
     } else {
       console.error("Error marking all as read:", error);
     }
@@ -1294,11 +1301,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     if (error) {
       console.error("Error marking notification as read:", error);
     } else {
-      if (!isNativePlatform && mutateNotifications) {
-        await mutateNotifications();
-      } else {
-        await loadNotifications(currentUser.id);
-      }
+      await loadNotifications(currentUser.id);
     }
   };
 
@@ -1402,6 +1405,13 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         backgroundRepeat: "no-repeat",
       }}
     >
+      {/* Report Detail Modal for deep-linking */}
+      <ReportDetailModal
+        report={deepLinkedReport}
+        isOpen={isReportDetailModalOpen}
+        onClose={() => setIsReportDetailModalOpen(false)}
+      />
+
       {/* Global Refreshing Overlay */}
       {isRefreshing && (
         <div className="fixed inset-0 z-50 pointer-events-none">
