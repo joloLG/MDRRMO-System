@@ -7,6 +7,8 @@ export interface AppState {
   setCurrentUser: (u: AppUser) => void
   isRefreshing: boolean
   setIsRefreshing: (v: boolean) => void
+  installPromptEvent: Event | null;
+  setInstallPromptEvent: (e: Event | null) => void;
 }
 
 export const useAppStore = create<AppState>((set: any) => ({
@@ -14,4 +16,6 @@ export const useAppStore = create<AppState>((set: any) => ({
   setCurrentUser: (u: AppUser) => set({ currentUser: u }),
   isRefreshing: false,
   setIsRefreshing: (v: boolean) => set({ isRefreshing: v }),
+  installPromptEvent: null,
+  setInstallPromptEvent: (e: Event | null) => set({ installPromptEvent: e }),
 }))

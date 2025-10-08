@@ -1,9 +1,21 @@
 "use client"
 
+"use client"
+
 import { useEffect } from 'react';
+import { useAppStore } from '@/lib/store';
 
 export function PwaRegistry() {
+  const setInstallPromptEvent = useAppStore(state => state.setInstallPromptEvent);
+
   useEffect(() => {
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPromptEvent(event);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').then(registration => {
@@ -13,7 +25,11 @@ export function PwaRegistry() {
         });
       });
     }
-  }, []);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, [setInstallPromptEvent]);
 
   return null;
 }
