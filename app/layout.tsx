@@ -15,6 +15,12 @@ export const metadata: Metadata = {
   themeColor: "#ea580c",
   icons: {
     icon: '/images/logo.png?v=2',
+    apple: '/images/logo.png?v=2',
+  },
+  appleWebApp: {
+    capable: true,
+    title: "MDRRMO Mobile App",
+    statusBarStyle: "default",
   },
 }
 
