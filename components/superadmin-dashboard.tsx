@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -49,6 +49,11 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
   const [banReason, setBanReason] = useState<string>('')
   const [isSubmittingBan, setIsSubmittingBan] = useState(false)
   const [banError, setBanError] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [roleFilter, setRoleFilter] = useState<'all' | User['user_type']>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'banned'>('all')
+  const PAGE_SIZE = 15
+  const [currentPage, setCurrentPage] = useState(1)
 
   // Fetch all users
   const fetchUsers = async () => {
@@ -201,6 +206,71 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
     }
   }
 
+  const filteredUsers = useMemo(() => {
+    const search = searchTerm.trim().toLowerCase();
+    return users.filter((user) => {
+      const matchesSearch = search.length === 0 || [
+        `${user.firstName} ${user.middleName ? `${user.middleName} ` : ''}${user.lastName}`.toLowerCase(),
+        user.email.toLowerCase(),
+        user.mobileNumber?.toLowerCase() || ''
+      ].some(value => value.includes(search));
+
+      const matchesRole = roleFilter === 'all' || user.user_type === roleFilter;
+      const matchesStatus = statusFilter === 'all'
+        ? true
+        : statusFilter === 'banned'
+          ? !!user.is_banned
+          : !user.is_banned;
+
+      return matchesSearch && matchesRole && matchesStatus;
+    });
+  }, [users, searchTerm, roleFilter, statusFilter]);
+
+  const sortedUsers = useMemo(() => {
+    const roleOrder: Record<string, number> = { superadmin: 0, admin: 1, responder: 2, user: 3 };
+    return [...filteredUsers].sort((a, b) => {
+      const roleA = roleOrder[a.user_type] || 3;
+      const roleB = roleOrder[b.user_type] || 3;
+      if (roleA !== roleB) return roleA - roleB;
+
+      const nameA = `${a.firstName} ${a.lastName}`.toLowerCase();
+      const nameB = `${b.firstName} ${b.lastName}`.toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  }, [filteredUsers]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, roleFilter, statusFilter]);
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(sortedUsers.length / PAGE_SIZE)), [sortedUsers.length]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedUsers = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return sortedUsers.slice(start, start + PAGE_SIZE);
+  }, [sortedUsers, currentPage]);
+
+  const showingRange = useMemo(() => {
+    const total = sortedUsers.length;
+    if (total === 0) return { from: 0, to: 0, total };
+    const from = (currentPage - 1) * PAGE_SIZE + 1;
+    const to = Math.min(total, currentPage * PAGE_SIZE);
+    return { from, to, total };
+  }, [sortedUsers.length, currentPage]);
+
+  const goToPage = (page: number) => {
+    setCurrentPage(prev => {
+      const target = Math.min(Math.max(page, 1), totalPages);
+      return target === prev ? prev : target;
+    });
+  };
+
   // Removed toggleBanUser, handleBanDateChange, handleBanReasonChange as they are no longer needed.
 
   if (isLoading) {
@@ -211,26 +281,11 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
     )
   }
   
-  // Sort users with admins first, then by name
-  const sortedUsers = [...users].sort((a, b) => {
-    // First sort by role (superadmin > admin > responder > user)
-    const roleOrder: Record<string, number> = { superadmin: 0, admin: 1, responder: 2, user: 3 };
-    const roleA = roleOrder[a.user_type] || 3;
-    const roleB = roleOrder[b.user_type] || 3;
-    
-    if (roleA !== roleB) return roleA - roleB;
-    
-    // If same role, sort by name
-    const nameA = `${a.firstName} ${a.lastName}`.toLowerCase();
-    const nameB = `${b.firstName} ${b.lastName}`.toLowerCase();
-    return nameA.localeCompare(nameB);
-  });
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow">
+    <div className="min-h-screen bg-blue-100">
+      <header className="bg-orange-500 shadow">
         <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900">Superadmin Dashboard</h1>
+          <h1 className="text-2xl font-bold text-gray-900 text-center">Superadmin Dashboard</h1>
           <Button 
             variant="outline" 
             onClick={handleLogout}
@@ -251,7 +306,38 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
 
         <Card>
           <CardHeader>
-            <CardTitle>User Management</CardTitle>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <CardTitle>User Management</CardTitle>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <Input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search by name, email, or contact"
+                  className="sm:w-64"
+                />
+                <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v as typeof roleFilter)}>
+                  <SelectTrigger className="sm:w-48">
+                    <SelectValue placeholder="Filter by role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Roles</SelectItem>
+                    <SelectItem value="superadmin">Superadmin</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="user">User</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
+                  <SelectTrigger className="sm:w-44">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="banned">Banned</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <Table>
@@ -266,7 +352,13 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedUsers.map((user) => (
+                {paginatedUsers.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-8 text-center text-sm text-gray-500">
+                      No users match the current filters.
+                    </TableCell>
+                  </TableRow>
+                ) : paginatedUsers.map((user) => (
                   <TableRow key={user.id}>
                     <TableCell className="font-medium">
                       {user.firstName} {user.middleName ? `${user.middleName} ` : ''}{user.lastName}
@@ -346,6 +438,34 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
                 ))}
               </TableBody>
             </Table>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm text-gray-600">
+                {showingRange.total === 0
+                  ? 'No results found.'
+                  : `Showing ${showingRange.from}-${showingRange.to} of ${showingRange.total} users`}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => goToPage(currentPage - 1)}
+                  disabled={currentPage <= 1 || showingRange.total === 0}
+                >
+                  Previous
+                </Button>
+                <span className="text-sm text-gray-600">
+                  Page {showingRange.total === 0 ? 0 : currentPage} of {showingRange.total === 0 ? 0 : totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => goToPage(currentPage + 1)}
+                  disabled={currentPage >= totalPages || showingRange.total === 0}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </main>
