@@ -40,6 +40,7 @@
     "leaflet": "^1.9.4",
     "lucide-react": "^0.525.0",
     "next": "^14.2.30",
+    "nodemailer": "^7.0.9",
     "react": "^18",
     "react-day-picker": "^9.8.0",
     "react-dom": "^18",

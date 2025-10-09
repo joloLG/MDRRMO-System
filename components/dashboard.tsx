@@ -332,6 +332,16 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [profileEditError, setProfileEditError] = useState<string | null>(null);
   const [mobileNumberError, setMobileNumberError] = useState<string | null>(null);
 
+  // Ban gate: if user is banned (permanent or until future), block app usage and show notice
+  const isUserBanned = useMemo(() => {
+    const u = currentUser;
+    if (!u || !u.is_banned) return false;
+    // Permanent ban if no banned_until; otherwise ban active until future date
+    if (!u.banned_until) return true;
+    const until = new Date(u.banned_until).getTime();
+    return isFinite(until) && until > Date.now();
+  }, [currentUser]);
+
   // Close notifications when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1349,9 +1359,38 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  if (isUserBanned) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <Card className="w-full max-w-md bg-white/95 backdrop-blur-sm shadow-2xl">
+          <CardHeader className="bg-red-600 text-white rounded-t-lg">
+            <CardTitle className="text-xl font-bold">Account Banned</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 p-6">
+            <p className="text-gray-800">Your account is currently banned and you cannot use the app.</p>
+            {currentUser?.ban_reason && (
+              <p className="text-sm"><span className="font-semibold">Reason:</span> {currentUser.ban_reason}</p>
+            )}
+            <p className="text-sm">
+              <span className="font-semibold">Duration:</span>{' '}
+              {currentUser?.banned_until ? (
+                <>Until {new Date(currentUser.banned_until).toLocaleString()}</>
+              ) : (
+                <>Permanent</>
+              )}
+            </p>
+            <div className="pt-2">
+              <Button onClick={onLogout} className="w-full bg-gray-800 hover:bg-gray-900 text-white">Sign out</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div
-      className="min-h-screen relative flex flex-col"
+      className="min-h-screen bg-gray-100 pb-20 lg:pb-24"
       style={{
         backgroundImage: "url('/images/mdrrmo_dashboard_bg.jpg')",
         backgroundSize: "cover",

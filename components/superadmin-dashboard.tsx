@@ -10,6 +10,9 @@ import { Loader2, LogOut, Info } from "lucide-react" // Removed Ban, CheckCircle
 import { userQueries, type User, supabase } from "@/lib/supabase"
 import { robustSignOut } from "@/lib/auth"
 import { cn } from "@/lib/utils"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 
 // Removed isBanning, tempBanUntil, tempBanReason as they are no longer used for UI interaction
 type UserWithDisplayInfo = Omit<User, 'user_type'> & {
@@ -38,6 +41,14 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
   const [users, setUsers] = useState<UserWithDisplayInfo[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Ban modal state
+  const [showBanModal, setShowBanModal] = useState(false)
+  const [banTarget, setBanTarget] = useState<UserWithDisplayInfo | null>(null)
+  const [banType, setBanType] = useState<'temporary' | 'permanent'>('temporary')
+  const [banDays, setBanDays] = useState<string>('7')
+  const [banReason, setBanReason] = useState<string>('')
+  const [isSubmittingBan, setIsSubmittingBan] = useState(false)
+  const [banError, setBanError] = useState<string | null>(null)
 
   // Fetch all users
   const fetchUsers = async () => {
@@ -108,6 +119,85 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
     } catch (err) {
       console.error("Error updating user role:", err)
       setError("Failed to update user role. Please try again.")
+    }
+  }
+
+  // Ban helpers
+  const openBanDialog = (user: UserWithDisplayInfo) => {
+    setBanTarget(user)
+    setBanType('temporary')
+    setBanDays('7')
+    setBanReason('')
+    setBanError(null)
+    setShowBanModal(true)
+  }
+
+  const handleSubmitBan = async () => {
+    if (!banTarget) return
+    setIsSubmittingBan(true)
+    setBanError(null)
+    try {
+      let bannedUntil: string | null = null
+      if (banType === 'temporary') {
+        const daysNum = parseInt(banDays || '0', 10)
+        if (!Number.isFinite(daysNum) || daysNum <= 0) {
+          setBanError('Please enter a valid number of days (> 0).')
+          setIsSubmittingBan(false)
+          return
+        }
+        bannedUntil = new Date(Date.now() + daysNum * 24 * 60 * 60 * 1000).toISOString()
+      }
+
+      await userQueries.updateUserBanStatus(banTarget.id, true, (banReason?.trim() || undefined), (bannedUntil ?? undefined))
+
+      // In-app notification to the user (best-effort)
+      try {
+        await supabase.from('user_notifications').insert({
+          user_id: banTarget.id,
+          emergency_report_id: null,
+          message: banType === 'permanent'
+            ? `Your account has been permanently banned. Reason: ${banReason || 'No reason provided.'}`
+            : `Your account has been banned for ${banDays} day(s). Reason: ${banReason || 'No reason provided.'}`,
+        })
+      } catch {}
+
+      // Email notification (best-effort)
+      try {
+        await fetch('/api/send-ban-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: banTarget.email,
+            name: `${banTarget.firstName} ${banTarget.lastName}`.trim(),
+            reason: banReason || 'No reason provided.',
+            until: bannedUntil,
+            permanent: banType === 'permanent',
+          }),
+        })
+      } catch {}
+
+      setShowBanModal(false)
+      setBanTarget(null)
+    } catch (e: any) {
+      setBanError(e?.message || 'Failed to ban user.')
+    } finally {
+      setIsSubmittingBan(false)
+    }
+  }
+
+  const handleUnban = async (user: UserWithDisplayInfo) => {
+    try {
+      await userQueries.updateUserBanStatus(user.id, false, undefined, undefined)
+      try {
+        await supabase.from('user_notifications').insert({
+          user_id: user.id,
+          emergency_report_id: null,
+          message: 'Your account ban has been lifted. You may now use the app again.',
+        })
+      } catch {}
+    } catch (e) {
+      console.error('Unban failed:', e)
+      setError('Failed to unban user.')
     }
   }
 
@@ -243,9 +333,14 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                          {/* No ban/unban button here anymore */}
-                        {/* You can add other actions here if needed, like a 'View Details' button */}
-                      </div> 
+                        {user.user_type !== 'superadmin' && (
+                          user.is_banned ? (
+                            <Button variant="outline" size="sm" onClick={() => handleUnban(user)}>Unban</Button>
+                          ) : (
+                            <Button variant="destructive" size="sm" onClick={() => openBanDialog(user)}>Ban</Button>
+                          )
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -254,6 +349,54 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
           </CardContent>
         </Card>
       </main>
+
+      {/* Ban Dialog */}
+      <Dialog open={showBanModal} onOpenChange={setShowBanModal}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Ban User</DialogTitle>
+            <DialogDescription>
+              Choose ban type and provide a reason. The user will be notified and blocked from using the app.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="text-sm text-gray-700">
+              User: {banTarget ? `${banTarget.firstName} ${banTarget.lastName} (${banTarget.email})` : ''}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium">Ban Type</label>
+                <Select value={banType} onValueChange={(v) => setBanType(v as 'temporary' | 'permanent')}>
+                  <SelectTrigger className="w-full mt-1">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="temporary">Temporary</SelectItem>
+                    <SelectItem value="permanent">Permanent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {banType === 'temporary' && (
+                <div>
+                  <label className="text-sm font-medium">Days</label>
+                  <Input type="number" min={1} value={banDays} onChange={(e) => setBanDays(e.target.value)} className="mt-1" />
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="text-sm font-medium">Reason</label>
+              <Textarea rows={3} value={banReason} onChange={(e) => setBanReason(e.target.value)} placeholder="Describe the reason for banning..." className="mt-1" />
+            </div>
+            {banError && <div className="text-sm text-red-600">{banError}</div>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowBanModal(false)} disabled={isSubmittingBan}>Cancel</Button>
+              <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleSubmitBan} disabled={isSubmittingBan || !banReason.trim()}>
+                {isSubmittingBan ? 'Banning...' : 'Ban User'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

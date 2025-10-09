@@ -26,6 +26,8 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false) // State for forgot password modal visibility
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("") // State for forgot password email input
   const [forgotPasswordMessage, setForgotPasswordMessage] = useState("") // Message for forgot password flow
+  // If a user is banned, show message immediately after sign-in instead of proceeding
+  const [banInfo, setBanInfo] = useState<{ reason?: string; until?: string | null } | null>(null)
 
   // Show any pending single-session conflict error
   useEffect(() => {
@@ -115,6 +117,14 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
           return
         }
 
+        // If profile indicates the account is banned, show a ban message instead of proceeding
+        const banActive = !!profile.is_banned && (!profile.banned_until || new Date(profile.banned_until).getTime() > Date.now())
+        if (banActive) {
+          setBanInfo({ reason: profile.ban_reason || undefined, until: profile.banned_until ?? null })
+          try { await supabase.auth.signOut() } catch {}
+          return
+        }
+
         // Include the user_type in the profile data
         const userWithType = {
           ...profile,
@@ -199,74 +209,99 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
             <h3 className="text-lg font-semibold text-gray-700">Welcome Back</h3>
           </div>
 
-          {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
-
-          <div>
-            <Label htmlFor="email" className="text-gray-700 font-medium">
-              Email Address
-            </Label>
-            <Input
-              id="email"
-              type="email"
-              value={loginData.email}
-              onChange={(e) => handleInputChange("email", e.target.value)}
-              className="border-orange-200 focus:border-orange-500 mt-1"
-              placeholder="Enter your email"
-              required
-              disabled={isLoading}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="password" className="text-gray-700 font-medium">
-              Password
-            </Label>
-            <div className="relative mt-1">
-              <Input
-                id="password"
-                type={showPassword ? "text" : "password"} 
-                value={loginData.password}
-                onChange={(e) => handleInputChange("password", e.target.value)}
-                className="border-orange-200 focus:border-orange-500 pr-10" 
-                placeholder="Enter password"
-                required
-                disabled={isLoading}
-              />
-              <button
-                type="button" // Important to prevent form submission
-                onClick={() => setShowPassword((prev) => !prev)}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700"
-                disabled={isLoading}
-              >
-                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />} {/* Toggle icon */}
-              </button>
+          {banInfo ? (
+            <div className="space-y-4">
+              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded">
+                <div className="font-semibold mb-1">Account Banned</div>
+                <p className="text-sm text-gray-800">Your account is currently banned and cannot sign in.</p>
+                {banInfo.reason && (
+                  <p className="text-sm mt-2"><span className="font-semibold">Reason:</span> {banInfo.reason}</p>
+                )}
+                <p className="text-sm mt-1">
+                  <span className="font-semibold">Duration:</span>{' '}
+                  {banInfo.until ? (
+                    <>Until {new Date(banInfo.until).toLocaleString()}</>
+                  ) : (
+                    <>Permanent</>
+                  )}
+                </p>
+              </div>
+              <div className="flex justify-end">
+                <Button onClick={() => setBanInfo(null)} className="bg-gray-800 hover:bg-gray-900 text-white">Back to Login</Button>
+              </div>
             </div>
-          </div>
+          ) : (
+            <>
+              {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
 
-          <Button
-            onClick={handleLogin}
-            className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 text-lg"
-            disabled={isLoading}
-          >
-            {isLoading ? "Logging in..." : "LOGIN"}
-          </Button>
+              <div>
+                <Label htmlFor="email" className="text-gray-700 font-medium">
+                  Email Address
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={loginData.email}
+                  onChange={(e) => handleInputChange("email", e.target.value)}
+                  className="border-orange-200 focus:border-orange-500 mt-1"
+                  placeholder="Enter your email"
+                  required
+                  disabled={isLoading}
+                />
+              </div>
 
-          <div className="text-center space-y-2">
-            <p className="text-sm text-gray-600">
-              <span
-                className="text-orange-500 font-medium cursor-pointer hover:underline"
-                onClick={() => setShowForgotPasswordModal(true)} // Open modal on click
+              <div>
+                <Label htmlFor="password" className="text-gray-700 font-medium">
+                  Password
+                </Label>
+                <div className="relative mt-1">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={loginData.password}
+                    onChange={(e) => handleInputChange("password", e.target.value)}
+                    className="border-orange-200 focus:border-orange-500 pr-10"
+                    placeholder="Enter password"
+                    required
+                    disabled={isLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700"
+                    disabled={isLoading}
+                  >
+                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
+              </div>
+
+              <Button
+                onClick={handleLogin}
+                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 text-lg"
+                disabled={isLoading}
               >
-                Forgot Password?
-              </span>
-            </p>
-            <p className="text-sm text-gray-600">
-              Don't have an account?{" "}
-              <span className="text-orange-500 font-medium cursor-pointer hover:underline" onClick={onGoToRegister}>
-                Register here
-              </span>
-            </p>
-          </div>
+                {isLoading ? "Logging in..." : "LOGIN"}
+              </Button>
+
+              <div className="text-center space-y-2">
+                <p className="text-sm text-gray-600">
+                  <span
+                    className="text-orange-500 font-medium cursor-pointer hover:underline"
+                    onClick={() => setShowForgotPasswordModal(true)}
+                  >
+                    Forgot Password?
+                  </span>
+                </p>
+                <p className="text-sm text-gray-600">
+                  Don't have an account?{" "}
+                  <span className="text-orange-500 font-medium cursor-pointer hover:underline" onClick={onGoToRegister}>
+                    Register here
+                  </span>
+                </p>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
