@@ -114,6 +114,8 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   });
   const [activeAlertPath, setActiveAlertPath] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Ensure we only auto-select a default report once per mount
+  const hasAutoSelectedRef = useRef<boolean>(false);
 
   const loadActiveAlert = useCallback(async () => {
     try {
@@ -184,6 +186,27 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       }, 100);
     } catch {}
   }, [soundEnabled]);
+
+  // Auto-select the most relevant latest report on first load
+  useEffect(() => {
+    if (hasAutoSelectedRef.current) return;
+    if (selectedReport) return; // respect manual selection
+    if (!allReports || allReports.length === 0) return;
+
+    // Prefer active/pending, otherwise the newest (already sorted desc by created_at)
+    const prioritized = allReports.find(r => {
+      const s = (r.status || '').trim().toLowerCase();
+      return s === 'pending' || s === 'active';
+    }) || allReports[0];
+
+    setSelectedReport(prioritized);
+    hasAutoSelectedRef.current = true;
+
+    // Preselect first ER team if available
+    if (!selectedTeamId && erTeams.length > 0) {
+      setSelectedTeamId(String(erTeams[0].id));
+    }
+  }, [allReports, selectedReport, erTeams, selectedTeamId]);
 
   // New states for filtering and modals
   const [resolvedFilterDate, setResolvedFilterDate] = useState<Date | undefined>(new Date());

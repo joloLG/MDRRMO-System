@@ -114,7 +114,7 @@ export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps)
                 onClick={() => setIosDialogOpen(true)}
               >
                 <Share className="mr-3 h-5 w-5 flex-shrink-0" />
-                <span className="truncate">Add to Home Screen (iOS)</span>
+                <span className="truncate">Add to Home Screen</span>
               </Button>
             )}
             {installPromptEvent && (

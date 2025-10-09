@@ -168,7 +168,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
  
 
   // State for Pie Chart (Barangay Incidents)
-  const [pieChartPeriod, setPieChartPeriod] = React.useState<string>('daily');
+  const [pieChartPeriod, setPieChartPeriod] = React.useState<string>('yearly');
   const [pieChartDate, setPieChartDate] = React.useState<Date | undefined>(new Date());
   const [pieChartMonth, setPieChartMonth] = React.useState<string>(format(new Date(), 'MM'));
   const [pieChartYear, setPieChartYear] = React.useState<string>(format(new Date(), 'yyyy'));
@@ -178,12 +178,12 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
   const [pieEndTime, setPieEndTime] = React.useState<string>('23:59');
 
   // State for Bar Chart (Incident Types)
-  const [barIncidentPeriod, setBarIncidentPeriod] = React.useState<string>('monthly');
+  const [barIncidentPeriod, setBarIncidentPeriod] = React.useState<string>('yearly');
   const [barIncidentMonth, setBarIncidentMonth] = React.useState<string>(format(new Date(), 'MM'));
   const [barIncidentYear, setBarIncidentYear] = React.useState<string>(format(new Date(), 'yyyy'));
 
   // State for Bar Chart (Report Status Counts)
-  const [barStatusPeriod, setBarStatusPeriod] = React.useState<string>('daily');
+  const [barStatusPeriod, setBarStatusPeriod] = React.useState<string>('yearly');
   const [barStatusDate, setBarStatusDate] = React.useState<Date | undefined>(new Date());
   const [barStatusMonth, setBarStatusMonth] = React.useState<string>(format(new Date(), 'MM'));
   const [barStatusYear, setBarStatusYear] = React.useState<string>(format(new Date(), 'yyyy'));
