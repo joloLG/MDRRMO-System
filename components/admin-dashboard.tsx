@@ -629,6 +629,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const confirmBroadcastAlert = useCallback(async () => {
     if (!pendingBroadcastType) return
     const label = pendingBroadcastType === 'earthquake' ? 'EARTHQUAKE ALERT' : 'TSUNAMI ALERT'
+    const typeToSend: 'earthquake' = 'earthquake'
     const trimmed = broadcastMessage.trim()
     if (!trimmed) {
       setBroadcastValidationError('Message is required.')
@@ -641,7 +642,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       const res = await fetch('/api/broadcast-alert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: pendingBroadcastType, title: label, body: trimmed })
+        body: JSON.stringify({ type: typeToSend, title: label, body: trimmed })
       })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
