@@ -1,30 +1,24 @@
--- This script sets up the new tables and data for the Admin Reporting and Analytics feature.
-
--- 1. Create table for ER Teams
 CREATE TABLE er_teams (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. Create table for Incident Types
 CREATE TABLE incident_types (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. Create table for Barangays
 CREATE TABLE barangays (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. Create the main table for internal (admin-generated) reports
 CREATE TABLE internal_reports (
     id SERIAL PRIMARY KEY,
-    original_report_id UUID REFERENCES emergency_reports(id) NULL, -- Link to original report if applicable
+    original_report_id UUID REFERENCES emergency_reports(id) NULL,
     incident_type_id INT NOT NULL REFERENCES incident_types(id),
     incident_date TIMESTAMPTZ NOT NULL,
     time_responded TIMESTAMPTZ,
@@ -33,18 +27,54 @@ CREATE TABLE internal_reports (
     persons_involved INT,
     number_of_responders INT,
     prepared_by TEXT NOT NULL,
+    patient_name TEXT,
+    patient_contact_number TEXT,
+    patient_birthday DATE,
+    patient_age INT,
+    patient_address TEXT,
+    patient_sex TEXT,
+    evacuation_priority TEXT,
+    emergency_category TEXT,
+    airway_interventions TEXT,
+    breathing_support TEXT,
+    circulation_status TEXT,
+    body_parts_front TEXT,
+    body_parts_back TEXT,
+    injury_types TEXT,
+    incident_location TEXT,
+    moi_poi_toi TEXT,
+    receiving_hospital_name TEXT,
+    receiving_hospital_date TIMESTAMPTZ,
+    emt_ert_date TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. Insert initial data into the new tables
+-- Keep existing deployments in sync with the added patient, transfer, and body diagram fields
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS patient_name TEXT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS patient_contact_number TEXT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS patient_birthday DATE;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS patient_age INT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS patient_address TEXT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS patient_sex TEXT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS evacuation_priority TEXT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS emergency_category TEXT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS airway_interventions TEXT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS breathing_support TEXT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS circulation_status TEXT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS body_parts_front TEXT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS body_parts_back TEXT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS injury_types TEXT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS incident_location TEXT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS moi_poi_toi TEXT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS receiving_hospital_name TEXT;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS receiving_hospital_date TIMESTAMPTZ;
+ALTER TABLE internal_reports ADD COLUMN IF NOT EXISTS emt_ert_date TIMESTAMPTZ;
 
--- ER Teams
 INSERT INTO er_teams (name) VALUES
 ('Team Alpha'),
 ('Team Charlie'),
 ('Team Bravo');
 
--- Incident Types
 INSERT INTO incident_types (name) VALUES
 ('Armed Conflict'),
 ('Medical Emergency'),
@@ -56,7 +86,6 @@ INSERT INTO incident_types (name) VALUES
 ('Vehicular/Pedestrian Accident'),
 ('Weather Disturbance');
 
--- Barangays
 INSERT INTO barangays (name) VALUES
 ('A. Bonifacio (Tinurilan)'),
 ('Abad Santos (Kambal)'),

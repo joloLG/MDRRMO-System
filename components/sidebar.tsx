@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import Link from "next/link"
 // Added new icons for the admin-specific menu items
-import { Menu, BarChart, Settings, FileText, History, Info, Phone, Mail, X, MapPin, Bell } from "lucide-react"
+import { Menu, BarChart, Settings, FileText, History, Info, Phone, Mail, X, MapPin, Bell, Flame } from "lucide-react"
 
 type AdminViewType = 'main' | 'editMdrrmoInfo' | 'editHotlines' | 'viewFeedback';
 
@@ -45,6 +45,11 @@ export function Sidebar({ onAdminViewChange, currentAdminView, unreadFeedbackCou
           <Button variant="ghost" className="justify-start" asChild>
             <Link href="/admin/charts" onClick={() => setIsOpen(false)}>
               <BarChart className="mr-2 h-4 w-4" /> Charts and Analytics
+            </Link>
+          </Button>
+          <Button variant="ghost" className="justify-start" asChild>
+            <Link href="/admin/heatmap" onClick={() => setIsOpen(false)}>
+              <Flame className="mr-2 h-4 w-4" /> Incident Heat Map
             </Link>
           </Button>
           <Button variant="ghost" className="justify-start" asChild>

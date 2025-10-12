@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+
+# firebase
+firebase-service-account.b64.txt
+firebase-adminsdk.b64.txt
+mdrrmo-emergency-system-520dc044c795.json

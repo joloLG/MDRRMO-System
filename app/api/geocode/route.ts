@@ -28,8 +28,7 @@ export async function GET(request: Request) {
           'Accept-Language': 'en-US,en;q=0.5',
           'Referer': 'https://mdrrmo-bulan.com'
         },
-        // Add a small delay to respect Nominatim's usage policy
-        next: { revalidate: 3600 } // Cache for 1 hour
+        next: { revalidate: 3600 }
       }
     );
 
@@ -46,7 +45,6 @@ export async function GET(request: Request) {
 
     const data = await response.json();
     
-    // Log successful response for debugging (remove in production)
     console.log('Geocoding successful:', {
       lat,
       lon,
@@ -58,7 +56,6 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error('Error in geocoding API:', error);
     
-    // Return a more detailed error message in development
     const errorMessage = process.env.NODE_ENV === 'development' 
       ? error instanceof Error ? error.message : 'Unknown error occurred'
       : 'Failed to fetch location data';

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, Suspense } from "react"
-import { useRouter, useSearchParams } from "next/navigation" // Assuming Next.js App Router for useSearchParams
+import { useRouter, useSearchParams } from "next/navigation" 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,7 +11,7 @@ import { Eye, EyeOff, LogOut } from "lucide-react"
 
 function ResetPasswordContent() {
   const router = useRouter()
-  const searchParams = useSearchParams() // Hook to get URL search parameters
+  const searchParams = useSearchParams() 
 
   const [newPassword, setNewPassword] = useState("")
   const [confirmNewPassword, setConfirmNewPassword] = useState("")
@@ -20,10 +20,9 @@ function ResetPasswordContent() {
   const [success, setSuccess] = useState("")
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false)
-  const [isTokenValid, setIsTokenValid] = useState(false) // To check if the session is valid
+  const [isTokenValid, setIsTokenValid] = useState(false) 
 
   useEffect(() => {
-    // Try to exchange code if present (handles direct visits to /reset-password from email)
     const ensureSession = async () => {
       setIsLoading(true)
       try {
@@ -36,16 +35,12 @@ function ResetPasswordContent() {
             await supabase.auth.exchangeCodeForSession(code)
             exchanged = true
           } else if (hasHashTokens) {
-            // When Supabase sends tokens in URL fragment after redirect
             await supabase.auth.exchangeCodeForSession(window.location.href)
             exchanged = true
           }
         } catch (e) {
-          // Continue to session check below; error will lead to invalid state if no session
           console.warn('Exchange error (reset-password):', e)
         }
-
-        // Small retry to allow cookies/session to propagate
         let session = null
         for (let i = 0; i < 3; i++) {
           const { data } = await supabase.auth.getSession()
@@ -63,9 +58,7 @@ function ResetPasswordContent() {
         setIsLoading(false)
       }
     }
-    // Validate on mount
     ensureSession()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handlePasswordReset = async () => {
@@ -81,8 +74,6 @@ function ResetPasswordContent() {
       setError("New passwords do not match.")
       return
     }
-
-    // Password policy validation (same as registration)
     if (newPassword.length < 6) {
       setError("Password must be at least 6 characters long.")
       return
@@ -103,7 +94,6 @@ function ResetPasswordContent() {
     setIsLoading(true)
 
     try {
-      // Update the user's password
       const { data, error: updateError } = await supabase.auth.updateUser({
         password: newPassword,
       })
@@ -117,9 +107,8 @@ function ResetPasswordContent() {
       setNewPassword("")
       setConfirmNewPassword("")
 
-      // Redirect to login page after a short delay
       setTimeout(() => {
-        router.push("/") // Adjust this path if your login page is different
+        router.push("/")  
       }, 3000)
 
     } catch (err) {
@@ -140,7 +129,6 @@ function ResetPasswordContent() {
         backgroundRepeat: "no-repeat",
       }}
     >
-      {/* Overlay for better readability */}
       <div className="absolute inset-0 bg-black/40"></div>
 
       <Card className="w-full max-w-md bg-white/95 backdrop-blur-sm shadow-2xl relative z-10">

@@ -4,7 +4,6 @@ import { DataManagement } from "@/components/admin/data-management";
 import { supabase } from "@/lib/supabase";
 import { useState, useEffect, useCallback } from "react";
 
-// Interfaces for data types (needs to be consistent with admin-dashboard.tsx)
 interface BaseEntry {
   id: number;
   name: string;
@@ -16,7 +15,6 @@ export default function DataManagementPage() {
   const [incidentTypes, setIncidentTypes] = useState<BaseEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Function to fetch ER Teams
   const fetchErTeams = useCallback(async () => {
     const { data, error } = await supabase
       .from('er_teams')
@@ -30,7 +28,6 @@ export default function DataManagementPage() {
     return data as BaseEntry[] || [];
   }, []);
 
-  // Function to fetch Barangays
   const fetchBarangays = useCallback(async () => {
     const { data, error } = await supabase
       .from('barangays')
@@ -44,7 +41,6 @@ export default function DataManagementPage() {
     return data as BaseEntry[] || [];
   }, []);
 
-  // Function to fetch Incident Types
   const fetchIncidentTypes = useCallback(async () => {
     const { data, error } = await supabase
       .from('incident_types')
@@ -59,12 +55,10 @@ export default function DataManagementPage() {
   }, []);
 
   useEffect(() => {
-    // Initial data fetch for all reference tables
     fetchErTeams().then(setErTeams);
     fetchBarangays().then(setBarangays);
     fetchIncidentTypes().then(setIncidentTypes);
 
-    // Set up real-time listeners for reference tables
     const erTeamsChannel = supabase
       .channel('data-er-teams-channel')
       .on(
@@ -97,7 +91,7 @@ export default function DataManagementPage() {
       supabase.removeChannel(barangaysChannel);
       supabase.removeChannel(incidentTypesChannel);
     };
-  }, [fetchErTeams, fetchBarangays, fetchIncidentTypes]); // Dependencies for initial fetch and channel setup
+  }, [fetchErTeams, fetchBarangays, fetchIncidentTypes]);
 
   if (error) {
     return (

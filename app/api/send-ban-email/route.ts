@@ -37,24 +37,18 @@ export async function POST(req: NextRequest) {
     lines.push('');
     lines.push('If you believe this was a mistake or need further information, please reply to this email.');
     const text = lines.filter(Boolean).join('\n');
-
-    // If SMTP is not configured, no-op and still succeed
     if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
       console.warn('[send-ban-email] SMTP not configured. Skipping actual email send.');
       return NextResponse.json({ ok: true, skipped: true });
     }
-
-    // Dynamic import; module may be absent in some deployments
-    // @ts-ignore - optional dependency; types may not be installed
     const nodemailer: any = await import('nodemailer').catch(() => null);
-    if (!nodemailer?.default && !nodemailer?.createTransport) {
-      // Nodemailer not installed; treat as no-op success
+      if (!nodemailer?.default && !nodemailer?.createTransport) {
       return NextResponse.json({ ok: true, skipped: true });
     }
     const transporter = (nodemailer.default || nodemailer).createTransport({
       host: SMTP_HOST,
       port: SMTP_PORT,
-      secure: SMTP_PORT === 465, // true for 465, false for other ports
+      secure: SMTP_PORT === 465,
       auth: {
         user: SMTP_USER,
         pass: SMTP_PASS,

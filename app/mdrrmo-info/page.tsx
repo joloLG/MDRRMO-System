@@ -24,7 +24,7 @@ export default function MdrrmoInfoPage() {
           .select('*')
           .single()
 
-        if (error && error.code !== 'PGRST116') throw error // PGRST116 is "No rows found"
+        if (error && error.code !== 'PGRST116') throw error 
         
         if (data) {
           setMdrrmoInfo(data)
@@ -47,8 +47,6 @@ export default function MdrrmoInfoPage() {
       window.location.href = '/'
     }
   }
-
-  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-orange-50 p-4 sm:p-6 lg:p-8 flex items-center justify-center">
@@ -59,8 +57,6 @@ export default function MdrrmoInfoPage() {
       </div>
     )
   }
-
-  // Error state
   if (error) {
     return (
       <div className="min-h-screen bg-orange-50 p-4 sm:p-6 lg:p-8 flex items-center justify-center">

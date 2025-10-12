@@ -1,8 +1,8 @@
 "use client"
 
   import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
-  import { Capacitor } from "@capacitor/core"
-  import type { PluginListenerHandle } from "@capacitor/core"
+import { Capacitor } from "@capacitor/core"
+import type { PluginListenerHandle } from "@capacitor/core"
 import { App } from "@capacitor/app"
 import { Geolocation } from "@capacitor/geolocation"
   import { Button } from "@/components/ui/button"
@@ -18,8 +18,11 @@ import { Input } from "@/components/ui/input"
   import { FeedbackHistory } from "@/components/feedback-history"
 import { ReportDetailModal } from "@/components/ReportDetailModal"
 import { useAppStore } from '@/lib/store'
+import { NotificationPermissionBanner } from './NotificationPermissionBanner'
   import type { AppState } from '@/lib/store'
   import { initMobileState, destroyMobileState, notifications$, userReports$ as mobileUserReports$, type MobileNotification, type MobileReport } from '@/lib/mobileState'
+import { useRouter } from 'next/navigation'
+import { usePushNotifications } from '@/components/providers/PushNotificationsProvider'
 
 interface Notification {
   id: string;
@@ -78,6 +81,8 @@ const INCIDENT_TYPES = [
 ];
 
 export function Dashboard({ onLogout, userData }: DashboardProps) {
+  const router = useRouter();
+  const { playAlertSound, showBroadcastAlert } = usePushNotifications();
   const [isEmergencyActive, setIsEmergencyActive] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -478,6 +483,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const userReportsChannelRef = useRef<RealtimeChannel | null>(null);
   const mdrrmoInfoChannelRef = useRef<RealtimeChannel | null>(null);
   const hotlinesChannelRef = useRef<RealtimeChannel | null>(null);
+  const broadcastAlertsChannelRef = useRef<RealtimeChannel | null>(null);
 
   const cleanupRealtime = useCallback(() => {
     try {
@@ -496,6 +502,10 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       if (hotlinesChannelRef.current) {
         supabase.removeChannel(hotlinesChannelRef.current);
         hotlinesChannelRef.current = null;
+      }
+      if (broadcastAlertsChannelRef.current) {
+        supabase.removeChannel(broadcastAlertsChannelRef.current);
+        broadcastAlertsChannelRef.current = null;
       }
     } catch {}
   }, []);
@@ -579,8 +589,15 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'user_notifications', filter: `user_id=eq.${userId}` },
-        () => {
+        (payload) => {
           void loadNotifications(userId)
+          try {
+            // Play a lightweight notification sound for new inserts only
+            // Avoid playing for updates/deletes
+            if ((payload as any)?.eventType === 'INSERT') {
+              void playAlertSound('notification')
+            }
+          } catch {}
         }
       )
       .subscribe();
@@ -632,7 +649,40 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         () => loadBulanHotlines()
       )
       .subscribe();
-  }, [cleanupRealtime, loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines]);
+
+    // Listen for broadcast alerts (earthquake/tsunami) for all users
+    broadcastAlertsChannelRef.current = supabase
+      .channel('broadcast_alerts_channel')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'broadcast_alerts' },
+        (payload: any) => {
+          try {
+            console.log('[BroadcastAlert] incoming', payload?.new);
+            const t = String(payload?.new?.type || '').toLowerCase();
+            const title = payload?.new?.title || 'MDRRMO Alert';
+            const body = payload?.new?.body || '';
+            // Show a lightweight in-app notice
+            try { console.log('[Broadcast Alert]', title, body); } catch {}
+            if (t === 'earthquake' || t === 'tsunami') {
+              showBroadcastAlert({
+                type: t as 'earthquake' | 'tsunami',
+                title,
+                body,
+                createdAt: payload?.new?.created_at || null,
+              });
+              if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+                try {
+                  navigator.vibrate?.([400, 200, 400]);
+                } catch {}
+              }
+              void playAlertSound(t as 'earthquake' | 'tsunami');
+            }
+          } catch {}
+        }
+      )
+      .subscribe();
+  }, [cleanupRealtime, loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines, playAlertSound, showBroadcastAlert]);
 
   // Unified refresh helper to fetch all user-dependent data
   const refreshUserData = useCallback(async (userId: string) => {
@@ -737,18 +787,12 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
   // Removed old generic, non-user-scoped localStorage loader to prevent resets across app restarts
 
-  // Effect to manage credit replenishment with individual cooldowns
+  // Effect to sync credits from storage on an interval (no cross-effects to avoid loops)
   useEffect(() => {
-    if (activeCooldowns.length === 0) {
-      setCooldownRemaining(0);
-      setCooldownActive(false);
-      return;
-    }
+    const timesKey = getCreditStorageKey('creditConsumptionTimes');
+    if (!timesKey) return;
 
-    const updateCooldowns = () => {
-      const timesKey = getCreditStorageKey('creditConsumptionTimes');
-      if (!timesKey) return;
-
+    const updateFromStorage = () => {
       const storedTimes = localStorage.getItem(timesKey);
       let consumptionTimes: number[] = [];
       if (storedTimes) {
@@ -764,29 +808,25 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       const tenMinutes = 10 * 60 * 1000;
       const validTimes = consumptionTimes.filter(ts => (now - ts) < tenMinutes);
 
+      // Persist pruned list if it changed length
       if (validTimes.length !== consumptionTimes.length) {
         localStorage.setItem(timesKey, JSON.stringify(validTimes));
       }
-      
-      setCreditConsumptionTimes(validTimes);
-      const newCredits = Math.max(0, 3 - validTimes.length);
-      setReportCredits(newCredits);
 
-      const newCooldowns = validTimes.map(ts => ts + tenMinutes);
-      if (newCooldowns.length > 0) {
-        const nextMs = Math.max(0, Math.min(...newCooldowns) - now);
-        setCooldownRemaining(Math.ceil(nextMs / 1000));
-        setCooldownActive(newCredits === 0);
-      } else {
-        setCooldownRemaining(0);
-        setCooldownActive(false);
-      }
+      // Update state only if actually changed (prevents render loops)
+      setCreditConsumptionTimes(prev => {
+        if (prev.length === validTimes.length && prev.every((v, i) => v === validTimes[i])) return prev;
+        return validTimes;
+      });
+
+      const newCredits = Math.max(0, 3 - validTimes.length);
+      setReportCredits(prev => (prev === newCredits ? prev : newCredits));
     };
 
-    updateCooldowns();
-    const interval = setInterval(updateCooldowns, 1000);
+    updateFromStorage();
+    const interval = setInterval(updateFromStorage, 1000);
     return () => clearInterval(interval);
-  }, [activeCooldowns, reportCredits]);
+  }, [getCreditStorageKey]);
   
   // Effect to initialize cooldowns from credit consumption times
   useEffect(() => {
@@ -877,7 +917,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       // 5. Reconcile credits
       reconcileCooldownsAndCredits();
     };
-
+    
     initialize();
 
     // Listen for auth changes to re-initialize
@@ -1361,31 +1401,34 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
   if (isUserBanned) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <Card className="w-full max-w-md bg-white/95 backdrop-blur-sm shadow-2xl">
-          <CardHeader className="bg-red-600 text-white rounded-t-lg">
-            <CardTitle className="text-xl font-bold">Account Banned</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 p-6">
-            <p className="text-gray-800">Your account is currently banned and you cannot use the app.</p>
-            {currentUser?.ban_reason && (
-              <p className="text-sm"><span className="font-semibold">Reason:</span> {currentUser.ban_reason}</p>
-            )}
-            <p className="text-sm">
-              <span className="font-semibold">Duration:</span>{' '}
-              {currentUser?.banned_until ? (
-                <>Until {new Date(currentUser.banned_until).toLocaleString()}</>
-              ) : (
-                <>Permanent</>
+      <div className="min-h-screen bg-white">
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <Card className="w-full max-w-md bg-white/95 backdrop-blur-sm shadow-2xl">
+            <CardHeader className="bg-red-600 text-white rounded-t-lg">
+              <CardTitle className="text-xl font-bold">Account Banned</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 p-6">
+              <p className="text-gray-800">Your account is currently banned and you cannot use the app.</p>
+              {currentUser?.ban_reason && (
+                <p className="text-sm"><span className="font-semibold">Reason:</span> {currentUser.ban_reason}</p>
               )}
-            </p>
-            <div className="pt-2">
-              <Button onClick={onLogout} className="w-full bg-gray-800 hover:bg-gray-900 text-white">Sign out</Button>
-            </div>
-          </CardContent>
-        </Card>
+              {currentUser?.banned_until ? (
+                <p className="text-sm">
+                  <span className="font-semibold">Duration:</span>{' '}
+                  Until {new Date(currentUser.banned_until).toLocaleString()}
+                </p>
+              ) : (
+                <p className="text-sm">This ban is currently permanent.</p>
+              )}
+              <p className="text-sm text-gray-600">
+                If you believe this is an error, please contact MDRRMO support.
+              </p>
+              <Button onClick={() => router.push('/')} className="w-full">Return to Login</Button>
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    )
+    );
   }
 
   return (

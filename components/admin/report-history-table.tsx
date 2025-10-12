@@ -9,6 +9,7 @@ import { ArrowLeft, Search, ChevronLeft, ChevronRight } from "lucide-react" // A
 import Link from "next/link";
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 
 // Define InternalReport interface (must match your database schema)
 interface InternalReport {
@@ -90,6 +91,128 @@ export function ReportHistoryTable({
     }
   };
 
+  const [exportDialogOpen, setExportDialogOpen] = React.useState(false);
+  const [exportIncidentType, setExportIncidentType] = React.useState<number | 'all'>('all');
+  const [exportBarangay, setExportBarangay] = React.useState<number | 'all'>('all');
+  const [exportErTeam, setExportErTeam] = React.useState<number | 'all'>('all');
+  const [exportSearch, setExportSearch] = React.useState('');
+  const [dateFilterType, setDateFilterType] = React.useState<'all' | 'day' | 'month' | 'year' | 'range'>('all');
+  const [dateDay, setDateDay] = React.useState('');
+  const [dateMonth, setDateMonth] = React.useState('');
+  const [dateYear, setDateYear] = React.useState(String(new Date().getFullYear()));
+  const [dateRangeStart, setDateRangeStart] = React.useState('');
+  const [dateRangeEnd, setDateRangeEnd] = React.useState('');
+  const [isExporting, setIsExporting] = React.useState(false);
+  const [exportError, setExportError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (exportDialogOpen) {
+      setExportIncidentType(selectedIncidentType);
+      setExportBarangay(selectedBarangay);
+      setExportErTeam(selectedErTeam);
+      setExportSearch(searchTerm);
+      setDateFilterType('all');
+      setDateDay('');
+      setDateMonth('');
+      setDateYear(String(new Date().getFullYear()));
+      setDateRangeStart('');
+      setDateRangeEnd('');
+      setExportError(null);
+    }
+  }, [exportDialogOpen, selectedIncidentType, selectedBarangay, selectedErTeam, searchTerm]);
+
+  const computeDateRange = () => {
+    if (dateFilterType === 'all') {
+      return { dateFrom: null, dateTo: null };
+    }
+    if (dateFilterType === 'day') {
+      if (!dateDay) {
+        setExportError('Please select a day.');
+        return null;
+      }
+      const start = new Date(`${dateDay}T00:00:00`);
+      const end = new Date(`${dateDay}T23:59:59.999`);
+      return { dateFrom: start.toISOString(), dateTo: end.toISOString() };
+    }
+    if (dateFilterType === 'month') {
+      if (!dateMonth) {
+        setExportError('Please select a month.');
+        return null;
+      }
+      const start = new Date(`${dateMonth}-01T00:00:00`);
+      const end = new Date(start);
+      end.setMonth(end.getMonth() + 1);
+      end.setMilliseconds(end.getMilliseconds() - 1);
+      return { dateFrom: start.toISOString(), dateTo: end.toISOString() };
+    }
+    if (dateFilterType === 'year') {
+      const yearNum = Number(dateYear);
+      if (!dateYear || Number.isNaN(yearNum)) {
+        setExportError('Please enter a valid year.');
+        return null;
+      }
+      const start = new Date(yearNum, 0, 1, 0, 0, 0);
+      const end = new Date(yearNum + 1, 0, 1, 0, 0, 0);
+      end.setMilliseconds(end.getMilliseconds() - 1);
+      return { dateFrom: start.toISOString(), dateTo: end.toISOString() };
+    }
+    if (dateFilterType === 'range') {
+      if (!dateRangeStart || !dateRangeEnd) {
+        setExportError('Please choose both start and end dates.');
+        return null;
+      }
+      const start = new Date(`${dateRangeStart}T00:00:00`);
+      const end = new Date(`${dateRangeEnd}T23:59:59.999`);
+      if (end < start) {
+        setExportError('End date must be after start date.');
+        return null;
+      }
+      return { dateFrom: start.toISOString(), dateTo: end.toISOString() };
+    }
+    return { dateFrom: null, dateTo: null };
+  };
+
+  const handleExport = async () => {
+    setExportError(null);
+    const range = computeDateRange();
+    if (range === null) return;
+    try {
+      setIsExporting(true);
+      const payload = {
+        incidentTypeId: exportIncidentType === 'all' ? null : exportIncidentType,
+        barangayId: exportBarangay === 'all' ? null : exportBarangay,
+        erTeamId: exportErTeam === 'all' ? null : exportErTeam,
+        dateFrom: range.dateFrom,
+        dateTo: range.dateTo,
+        searchTerm: exportSearch.trim() ? exportSearch.trim() : null,
+      };
+      const response = await fetch('/api/internal-reports/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        throw new Error('Request failed');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      link.download = `internal-reports-${timestamp}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      setExportDialogOpen(false);
+    } catch (err) {
+      console.error('Failed to export internal reports CSV:', err);
+      setExportError('Failed to generate CSV. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 gap-6">
       {/* Back Button for Admin Dashboard */}
@@ -106,9 +229,112 @@ export function ReportHistoryTable({
       </div>
 
     <Card className="shadow-lg h-full rounded-lg">
-      <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex justify-between items-center">
-        {/* CardTitle is the "History of Admin Reports" text */}
+      <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <CardTitle className="text-2xl font-bold">History of Admin Reports</CardTitle>
+        <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+          <DialogTrigger asChild>
+            <Button variant="secondary" className="bg-white text-orange-600 hover:bg-orange-50">
+              Download CSV
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Download reports as CSV</DialogTitle>
+              <DialogDescription>
+                Choose the filters to apply before generating the CSV export.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-gray-700">Barangay</p>
+                <Select value={String(exportBarangay)} onValueChange={(value) => setExportBarangay(value === 'all' ? 'all' : Number(value))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Barangays" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Barangays</SelectItem>
+                    {barangays.map((barangay) => (
+                      <SelectItem key={barangay.id} value={String(barangay.id)}>
+                        {barangay.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-gray-700">Incident Type</p>
+                <Select value={String(exportIncidentType)} onValueChange={(value) => setExportIncidentType(value === 'all' ? 'all' : Number(value))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Incident Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Incident Types</SelectItem>
+                    {incidentTypes.map((type) => (
+                      <SelectItem key={type.id} value={String(type.id)}>
+                        {type.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-gray-700">ER Team</p>
+                <Select value={String(exportErTeam)} onValueChange={(value) => setExportErTeam(value === 'all' ? 'all' : Number(value))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All ER Teams" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All ER Teams</SelectItem>
+                    {erTeams.map((team) => (
+                      <SelectItem key={team.id} value={String(team.id)}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-gray-700">Date filter</p>
+                <Select value={dateFilterType} onValueChange={(value: typeof dateFilterType) => setDateFilterType(value)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All dates</SelectItem>
+                    <SelectItem value="day">Specific day</SelectItem>
+                    <SelectItem value="month">Specific month</SelectItem>
+                    <SelectItem value="year">Specific year</SelectItem>
+                    <SelectItem value="range">Custom range</SelectItem>
+                  </SelectContent>
+                </Select>
+                {dateFilterType === 'day' && (
+                  <Input type="date" value={dateDay} onChange={(e) => setDateDay(e.target.value)} />
+                )}
+                {dateFilterType === 'month' && (
+                  <Input type="month" value={dateMonth} onChange={(e) => setDateMonth(e.target.value)} />
+                )}
+                {dateFilterType === 'year' && (
+                  <Input type="number" value={dateYear} onChange={(e) => setDateYear(e.target.value)} min="1900" max="2100" />
+                )}
+                {dateFilterType === 'range' && (
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <Input type="date" value={dateRangeStart} onChange={(e) => setDateRangeStart(e.target.value)} placeholder="Start date" />
+                    <Input type="date" value={dateRangeEnd} onChange={(e) => setDateRangeEnd(e.target.value)} placeholder="End date" />
+                  </div>
+                )}
+              </div>
+              {exportError && <p className="text-sm text-red-600">{exportError}</p>}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setExportDialogOpen(false)} disabled={isExporting}>
+                Cancel
+              </Button>
+              <Button onClick={handleExport} disabled={isExporting}>
+                {isExporting ? 'Generating...' : 'Download CSV'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardHeader>
       
       <CardContent className="p-6 bg-white rounded-b-lg">

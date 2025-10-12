@@ -10,9 +10,6 @@ export async function POST(req: Request) {
       try { await supabase.auth.signOut() } catch {}
       return NextResponse.json({ ok: true })
     }
-
-    // For SIGNED_IN, TOKEN_REFRESHED, PASSWORD_RECOVERY, INITIAL_SESSION, etc.
-    // Persist cookies and return success.
     if (session) {
       try { await supabase.auth.setSession(session) } catch {}
     }

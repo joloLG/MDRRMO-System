@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
 import { Bell, BellOff, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon, FireExtinguisher, HeartPulse, Car, CloudRain, Swords, HelpCircle, PersonStanding, Navigation } from "lucide-react"
@@ -100,6 +102,10 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [isLoadingAction, setIsLoadingAction] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string>(''); 
   const [barangay, setBarangay] = useState<string>('');
+  const [broadcastModalOpen, setBroadcastModalOpen] = useState(false);
+  const [pendingBroadcastType, setPendingBroadcastType] = useState<'earthquake' | 'tsunami' | null>(null);
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [broadcastValidationError, setBroadcastValidationError] = useState<string | null>(null);
 
   // Refs for click outside detection
   const notificationsDropdownRef = useRef<HTMLDivElement>(null);
@@ -153,7 +159,8 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         }
       }
       if (!url) {
-        url = '/sounds/alert.mp3';
+        console.warn('[AdminAlertSound] No signed URL available for active alert path', activeAlertPath);
+        return;
       }
       audioRef.current.src = url;
       audioRef.current.volume = 1.0;
@@ -178,10 +185,8 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       // Delay to let state update
       setTimeout(() => {
         if (!audioRef.current) audioRef.current = new Audio();
-        if (soundEnabled === false) {
-          // we just enabled
-          audioRef.current!.src = '/sounds/alert.mp3';
-          audioRef.current!.play().catch(() => {});
+        if (soundEnabled === false && activeAlertPath) {
+          void playAlertSound();
         }
       }, 100);
     } catch {}
@@ -608,6 +613,55 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     }
   }, [selectedReport]);
 
+  // Broadcast Alerts: Earthquake/Tsunami
+  const triggerBroadcastAlert = useCallback((type: 'earthquake' | 'tsunami') => {
+    setPendingBroadcastType(type)
+    setBroadcastMessage('')
+    setBroadcastValidationError(null)
+    setBroadcastModalOpen(true)
+  }, [])
+
+  const confirmBroadcastAlert = useCallback(async () => {
+    if (!pendingBroadcastType) return
+    const label = pendingBroadcastType === 'earthquake' ? 'EARTHQUAKE ALERT' : 'TSUNAMI ALERT'
+    const trimmed = broadcastMessage.trim()
+    if (!trimmed) {
+      setBroadcastValidationError('Message is required.')
+      return
+    }
+    setBroadcastValidationError(null)
+    setIsLoadingAction(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/broadcast-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: pendingBroadcastType, title: label, body: trimmed })
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j?.error || `Failed to send ${label}`)
+      }
+      setBroadcastModalOpen(false)
+      setPendingBroadcastType(null)
+      setBroadcastMessage('')
+    } catch (e: any) {
+      console.error('Broadcast error:', e)
+      setError(e?.message || 'Broadcast failed')
+    } finally {
+      setIsLoadingAction(false)
+    }
+  }, [pendingBroadcastType, broadcastMessage])
+
+  const handleBroadcastModalChange = useCallback((open: boolean) => {
+    setBroadcastModalOpen(open)
+    if (!open) {
+      setPendingBroadcastType(null)
+      setBroadcastMessage('')
+      setBroadcastValidationError(null)
+    }
+  }, [])
+
   const markAllNotificationsAsRead = useCallback(async () => {
     if (unreadCount === 0) return;
     
@@ -779,13 +833,22 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     setIsLoadingAction(true);
     setError(null);
     try {
+      const nowIso = new Date().toISOString();
       const { data: updatedReport, error: updateError } = await supabase
         .from('emergency_reports')
-        .update({ status: 'resolved', resolved_at: new Date().toISOString() })
+        .update({ status: 'resolved', resolved_at: nowIso })
         .eq('id', selectedReport.id)
         .select()
         .single();
       if (updateError) throw updateError;
+
+      const { error: timeUpdateError } = await supabase
+        .from('internal_reports')
+        .update({ time_responded: nowIso })
+        .eq('original_report_id', selectedReport.id);
+      if (timeUpdateError) {
+        console.error('Error updating time_responded on internal_reports:', timeUpdateError);
+      }
 
       const { error: notificationError } = await supabase.from('user_notifications').insert({
         user_id: selectedReport.user_id,
@@ -868,6 +931,37 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
+      <Dialog open={broadcastModalOpen} onOpenChange={handleBroadcastModalChange}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>{pendingBroadcastType === 'earthquake' ? 'Earthquake Alert' : pendingBroadcastType === 'tsunami' ? 'Tsunami Alert' : 'Alert'} Message</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="broadcast-message">Message</Label>
+              <Textarea
+                id="broadcast-message"
+                rows={5}
+                value={broadcastMessage}
+                onChange={event => setBroadcastMessage(event.target.value)}
+                placeholder="Provide the alert details to be sent to all users."
+                disabled={isLoadingAction}
+              />
+            </div>
+            {broadcastValidationError && (
+              <p className="text-sm text-red-600">{broadcastValidationError}</p>
+            )}
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => handleBroadcastModalChange(false)} disabled={isLoadingAction}>
+              Cancel
+            </Button>
+            <Button onClick={confirmBroadcastAlert} disabled={isLoadingAction}>
+              {isLoadingAction ? 'Sending…' : 'Send Alert'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <header className="flex items-center mb-8">
         <div className="flex items-center">
           <Sidebar/>
@@ -880,7 +974,25 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
             )}
           </div>
         </div>
-        <div className="flex items-center space-x-4 ml-auto">
+        <div className="flex items-center space-x-2 sm:space-x-4 ml-auto">
+          <div className="hidden md:flex items-center gap-2 mr-2">
+            <Button
+              variant="destructive"
+              onClick={() => triggerBroadcastAlert('tsunami')}
+              disabled={isLoadingAction}
+              title="Send Tsunami Alert to all users"
+            >
+              TSUNAMI ALERT
+            </Button>
+            <Button
+              variant="default"
+              onClick={() => triggerBroadcastAlert('earthquake')}
+              disabled={isLoadingAction}
+              title="Send Earthquake Alert to all users"
+            >
+              EARTHQUAKE ALERT
+            </Button>
+          </div>
           {connectionStatus !== 'ok' && (
             <span
               className={`hidden sm:inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${connectionStatus === 'offline' ? 'bg-red-100 text-red-800 border-red-300' : 'bg-yellow-100 text-yellow-800 border-yellow-300'}`}

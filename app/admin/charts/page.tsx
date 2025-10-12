@@ -4,16 +4,13 @@ import { ChartsDashboard } from "@/components/admin/charts-dashboard";
 import { supabase } from "@/lib/supabase";
 import { useState, useEffect, useCallback } from "react";
 
-// Define Report interface (needs to be consistent with admin-dashboard.tsx)
 interface Report {
   id: string;
   emergency_type: string;
   status: string;
   created_at: string;
-  // Add other properties if needed by ChartsDashboard
 }
 
-// Define InternalReport interface
 interface InternalReport {
   id: number;
   original_report_id: string | null;
@@ -27,7 +24,6 @@ interface InternalReport {
   created_at: string;
 }
 
-// Define BaseEntry for reference tables
 interface BaseEntry {
   id: number;
   name: string;
@@ -42,7 +38,6 @@ export default function ChartsPage() {
   const [connectionStatus, setConnectionStatus] = useState<'ok' | 'degraded' | 'offline'>('ok');
   const [loading, setLoading] = useState(true);
 
-  // Function to fetch all emergency reports (for status charts)
   const fetchAllEmergencyReports = useCallback(async () => {
     const { data, error } = await supabase
       .from('emergency_reports')
@@ -63,7 +58,6 @@ export default function ChartsPage() {
     return data || [];
   }, []);
 
-  // Function to fetch all internal reports (for incident type and barangay charts)
   const fetchAllInternalReports = useCallback(async () => {
     const { data, error } = await supabase
       .from('internal_reports')
@@ -84,7 +78,6 @@ export default function ChartsPage() {
     return data || [];
   }, []);
 
-  // Function to fetch Barangays
   const fetchBarangays = useCallback(async () => {
     const { data, error } = await supabase
       .from('barangays')
@@ -104,7 +97,6 @@ export default function ChartsPage() {
     return data as BaseEntry[] || [];
   }, []);
 
-  // Function to fetch Incident Types
   const fetchIncidentTypes = useCallback(async () => {
     const { data, error } = await supabase
       .from('incident_types')
@@ -156,7 +148,6 @@ export default function ChartsPage() {
 
     loadAllChartData();
 
-    // Set up real-time channels for all relevant tables
     const emergencyReportsChannel = supabase
       .channel('charts-emergency-reports-realtime-channel')
       .on(

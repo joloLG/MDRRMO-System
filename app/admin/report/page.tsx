@@ -8,10 +8,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useState, useEffect, useCallback, Suspense } from "react";
-import { useSearchParams } from 'next/navigation'; // For reading query parameters
-import { useRouter } from "next/navigation"; // Correct import for App Router
+import { useSearchParams } from 'next/navigation';
+import { useRouter } from "next/navigation";
 
-// Interfaces for data types (needs to be consistent with admin-dashboard.tsx)
 interface Report {
   id: string;
   created_at: string;
@@ -21,9 +20,9 @@ interface Report {
   firstName: string;
   lastName: string;
   mobileNumber: string;
-  emergency_type?: string; // used to prefill incident type
-  er_team_id?: string; // used to prefill ER team (stored as text in emergency_reports table)
-  casualties?: number; // used to prefill persons involved
+  emergency_type?: string;
+  er_team_id?: string;
+  casualties?: number;
 }
 
 interface Barangay {
@@ -42,9 +41,9 @@ interface IncidentType {
 }
 
 function MakeReportContent() {
-  const router = useRouter(); // Initialize the router hook
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const incidentId = searchParams.get('incidentId'); // Get incidentId from URL query param
+  const incidentId = searchParams.get('incidentId');
 
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [erTeams, setErTeams] = useState<ERTeam[]>([]);
@@ -53,7 +52,6 @@ function MakeReportContent() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Function to fetch ER Teams
   const fetchErTeams = useCallback(async () => {
     const { data, error } = await supabase
       .from('er_teams')
@@ -67,7 +65,6 @@ function MakeReportContent() {
     return data as ERTeam[] || [];
   }, []);
 
-  // Function to fetch Barangays
   const fetchBarangays = useCallback(async () => {
     const { data, error } = await supabase
       .from('barangays')
@@ -81,7 +78,6 @@ function MakeReportContent() {
     return data as Barangay[] || [];
   }, []);
 
-  // Function to fetch Incident Types
   const fetchIncidentTypes = useCallback(async () => {
     const { data, error } = await supabase
       .from('incident_types')
@@ -95,7 +91,6 @@ function MakeReportContent() {
     return data as IncidentType[] || [];
   }, []);
 
-  // Fetch all necessary data for the form
   useEffect(() => {
     const loadFormData = async () => {
       setLoading(true);
@@ -130,7 +125,6 @@ function MakeReportContent() {
 
     loadFormData();
 
-    // Setup real-time listeners for reference data
     const erTeamsChannel = supabase.channel('report-er-teams-channel')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'er_teams' }, () => { fetchErTeams().then(setErTeams); })
       .subscribe();
@@ -164,34 +158,27 @@ function MakeReportContent() {
   return (
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
       <h1 className="text-3xl font-bold text-gray-800 mb-8">Make Report Form</h1>
-    <div className="grid grid-cols-1 gap-6">
-    {/* Back Button for Admin Dashboard */}
-    <div className="flex justify-start mb-4">
-      <Button
-        variant="outline"
-        className="bg-gray-200 hover:bg-gray-300 text-gray-800"
-        onClick={() => router.push('/')} 
-      >
-        <ArrowLeft className="h-4 w-4 mr-2" /> Back
-      </Button>
-    </div>
+      <div className="grid grid-cols-1 gap-6">
+        <div className="flex justify-start mb-4">
+          <Button
+            variant="outline"
+            className="bg-gray-200 hover:bg-gray-300 text-gray-800"
+            onClick={() => router.push('/')}
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" /> Back
+          </Button>
+        </div>
 
-    {/* Pie Chart: Incidents per Barangay */}
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
-      <MakeReportForm
-        selectedReport={selectedReport}
-        erTeams={erTeams}
-        barangays={barangays}
-        incidentTypes={incidentTypes}
-        onReportSubmitted={() => {
-          // You can redirect the user or show a success message here
-          console.log("Report submitted, returning to dashboard or showing success.");
-          // Example: window.close() if you want to close the tab after submission
-          // Or redirect to the main admin dashboard: window.location.href = '/admin';
-        }}
-      />
-    </div>
-    </div>
+        <MakeReportForm
+          selectedReport={selectedReport}
+          erTeams={erTeams}
+          barangays={barangays}
+          incidentTypes={incidentTypes}
+          onReportSubmitted={() => {
+            console.log("Report submitted.");
+          }}
+        />
+      </div>
     </div>
   );
 }

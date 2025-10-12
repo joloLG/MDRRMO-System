@@ -4,6 +4,7 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import { SupabaseListener } from "@/components/supabase-listener"
 import { SWRProvider } from "@/components/providers/SWRProvider"
+import { PushNotificationsProvider } from '@/components/providers/PushNotificationsProvider'
 import { PwaRegistry } from "@/components/PwaRegistry"
 
 const inter = Inter({ subsets: ["latin"] })
@@ -32,11 +33,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        {/* Keep Supabase session in sync with cookies so middleware can authorize /admin routes */}
         <SupabaseListener />
         <PwaRegistry />
         <SWRProvider>
-          {children}
+          <PushNotificationsProvider>
+            {children}
+          </PushNotificationsProvider>
         </SWRProvider>
       </body>
     </html>

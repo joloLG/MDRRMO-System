@@ -8,7 +8,7 @@ const securityHeaders = {
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=*, payment=()',
   'Content-Security-Policy': [
-    "default-src 'self'",
+    "default-src 'self' https://*.supabase.co",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com",
     "style-src 'self' 'unsafe-inline' https://unpkg.com",
     `img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com`,

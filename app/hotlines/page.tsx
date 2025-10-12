@@ -45,8 +45,6 @@ export default function HotlinesPage() {
       window.location.href = '/'
     }
   }
-
-  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-orange-50 p-4 sm:p-6 lg:p-8 flex items-center justify-center">
@@ -57,8 +55,6 @@ export default function HotlinesPage() {
       </div>
     )
   }
-
-  // Error state
   if (error) {
     return (
       <div className="min-h-screen bg-orange-50 p-4 sm:p-6 lg:p-8 flex items-center justify-center">
@@ -80,13 +76,10 @@ export default function HotlinesPage() {
       </div>
     )
   }
-
-  // Main content
   return (
     <div className="min-h-screen bg-orange-50 p-4 sm:p-6 lg:p-8">
       <div className="max-w-4xl mx-auto">
         <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-          {/* Back button */}
           <button 
             onClick={handleBack}
             className="flex items-center text-orange-600 hover:text-orange-800 mb-4 transition-colors"
@@ -95,13 +88,11 @@ export default function HotlinesPage() {
             <span>Back</span>
           </button>
           
-          {/* Page header */}
           <div className="text-center mb-6">
             <h1 className="text-2xl sm:text-3xl font-bold text-black-800 mb-2">Emergency Hotlines</h1>
             <p className="text-black-700 font-medium">Important contact numbers for emergencies in Bulan, Sorsogon</p>
           </div>
 
-          {/* Hotlines list */}
           <Card className="shadow-md border-orange-200 mb-6">
             <CardHeader className="bg-orange-500 text-white">
               <CardTitle className="flex items-center">
@@ -139,8 +130,6 @@ export default function HotlinesPage() {
               )}
             </CardContent>
           </Card>
-
-          {/* Important reminder */}
           <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
             <h3 className="font-medium text-black-800 mb-2">Important Reminder</h3>
             <p className="text-sm text-black-700">
@@ -148,8 +137,6 @@ export default function HotlinesPage() {
               For life-threatening situations, call the emergency hotline at <strong className="text-red-900">911</strong> or visit the nearest hospital.
             </p>
           </div>
-
-          {/* Footer */}
           <div className="mt-8 text-center text-sm text-black-800">
             <p>&copy; {new Date().getFullYear()} MDRRMO Bulan, Sorsogon. All rights reserved.</p>
           </div>

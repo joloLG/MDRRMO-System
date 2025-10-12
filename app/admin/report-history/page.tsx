@@ -4,30 +4,26 @@ import { ReportHistoryTable } from "@/components/admin/report-history-table";
 import { supabase } from "@/lib/supabase";
 import { useState, useEffect, useCallback, useMemo } from "react";
 
-// Define InternalReport interface
+
 interface InternalReport {
   id: number;
   original_report_id: string | null;
   incident_type_id: number;
-  incident_date: string; // TIMESTAMPTZ
-  time_responded: string | null; // TIMESTAMPTZ
+  incident_date: string; 
+  time_responded: string | null; 
   barangay_id: number;
   er_team_id: number;
   persons_involved: number | null;
   number_of_responders: number | null;
   prepared_by: string;
-  created_at: string; // TIMESTAMPTZ
+  created_at: string;
 }
 
-// Define BaseEntry for reference tables
 interface BaseEntry {
   id: number;
   name: string;
 }
-
-// --- CONSTANT FOR REPORTS PER PAGE ---
 const REPORTS_PER_PAGE = 10;
-// -------------------------------------
 
 export default function ReportHistoryPage() {
   const [internalReports, setInternalReports] = useState<InternalReport[]>([]);
@@ -62,8 +58,6 @@ export default function ReportHistoryPage() {
     return data || [];
   }, []);
 
-  // ... (fetchBarangays, fetchIncidentTypes, fetchErTeams remain the same)
-  // Function to fetch Barangays
   const fetchBarangays = useCallback(async () => {
     const { data, error } = await supabase
       .from('barangays')
@@ -192,32 +186,26 @@ export default function ReportHistoryPage() {
   // Memoized Filtering Logic (Slightly modified to exclude pagination)
   const filteredReports = useMemo(() => {
     return internalReports.filter(report => {
-      // 1. Incident Type Filter
       if (selectedIncidentType !== 'all' && report.incident_type_id !== selectedIncidentType) {
         return false;
       }
 
-      // 2. Barangay Filter
       if (selectedBarangay !== 'all' && report.barangay_id !== selectedBarangay) {
         return false;
       }
-
-      // 3. ER Team Filter
       if (selectedErTeam !== 'all' && report.er_team_id !== selectedErTeam) {
         return false;
       }
 
-      // 4. Search Term Filter (Checks report ID and Prepared By)
       const term = searchTerm.toLowerCase().trim();
       if (!term) {
-        return true; // No search term
+        return true;
       }
       
       const preparedByMatch = report.prepared_by.toLowerCase().includes(term);
       const reportIdMatch = String(report.id).includes(term);
       const originalIdMatch = report.original_report_id?.toLowerCase().includes(term) ?? false;
       
-      // Look up names for a more comprehensive search
       const barangayName = barangays.find(b => b.id === report.barangay_id)?.name.toLowerCase() ?? '';
       const incidentTypeName = incidentTypes.find(it => it.id === report.incident_type_id)?.name.toLowerCase() ?? '';
       const erTeamName = erTeams.find(et => et.id === report.er_team_id)?.name.toLowerCase() ?? '';
@@ -228,12 +216,10 @@ export default function ReportHistoryPage() {
     });
   }, [internalReports, selectedIncidentType, selectedBarangay, selectedErTeam, searchTerm, barangays, incidentTypes, erTeams]);
   
-  // --- New Pagination Logic ---
   const totalPages = Math.ceil(filteredReports.length / REPORTS_PER_PAGE);
   const startIndex = (currentPage - 1) * REPORTS_PER_PAGE;
   const endIndex = startIndex + REPORTS_PER_PAGE;
   const paginatedReports = filteredReports.slice(startIndex, endIndex);
-  // ----------------------------
 
 
   if (loading) {
@@ -256,12 +242,10 @@ export default function ReportHistoryPage() {
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
       <h1 className="text-3xl font-bold text-gray-800 mb-8">Admin Report History</h1>
       <ReportHistoryTable
-        // Pass the paginated reports
         internalReports={paginatedReports} 
         barangays={barangays}
         incidentTypes={incidentTypes}
         erTeams={erTeams}
-        // Props for Search and Filters (No Change)
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
         selectedIncidentType={selectedIncidentType}
@@ -270,12 +254,10 @@ export default function ReportHistoryPage() {
         setSelectedBarangay={setSelectedBarangay}
         selectedErTeam={selectedErTeam}
         setSelectedErTeam={setSelectedErTeam}
-        // --- New Props for Pagination ---
         currentPage={currentPage}
         setCurrentPage={setCurrentPage}
         totalPages={totalPages}
         totalReports={filteredReports.length}
-        // --------------------------------
       />
     </div>
   );

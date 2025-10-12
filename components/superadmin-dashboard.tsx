@@ -49,6 +49,13 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
   const [banReason, setBanReason] = useState<string>('')
   const [isSubmittingBan, setIsSubmittingBan] = useState(false)
   const [banError, setBanError] = useState<string | null>(null)
+
+  // Unban modal state
+  const [showUnbanModal, setShowUnbanModal] = useState(false)
+  const [unbanTarget, setUnbanTarget] = useState<UserWithDisplayInfo | null>(null)
+  const [unbanReason, setUnbanReason] = useState<string>('')
+  const [isSubmittingUnban, setIsSubmittingUnban] = useState(false)
+  const [unbanError, setUnbanError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [roleFilter, setRoleFilter] = useState<'all' | User['user_type']>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'banned'>('all')
@@ -190,19 +197,58 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
     }
   }
 
-  const handleUnban = async (user: UserWithDisplayInfo) => {
+  const openUnbanDialog = (user: UserWithDisplayInfo) => {
+    setUnbanTarget(user)
+    setUnbanReason('')
+    setUnbanError(null)
+    setShowUnbanModal(true)
+  }
+
+  const handleUnban = async () => {
+    if (!unbanTarget) return
+
+    setIsSubmittingUnban(true)
+    setUnbanError(null)
     try {
-      await userQueries.updateUserBanStatus(user.id, false, undefined, undefined)
+      // 1. Lift the ban
+      await userQueries.updateUserBanStatus(unbanTarget.id, false, undefined, undefined)
+
+      // 2. Notify the user via in-app notification
       try {
         await supabase.from('user_notifications').insert({
-          user_id: user.id,
+          user_id: unbanTarget.id,
           emergency_report_id: null,
-          message: 'Your account ban has been lifted. You may now use the app again.',
+          message: `Your account ban has been lifted. Message from admin: ${unbanReason || 'You may now use the app again.'}`,
         })
-      } catch {}
-    } catch (e) {
-      console.error('Unban failed:', e)
-      setError('Failed to unban user.')
+      } catch (e) { console.warn('In-app unban notification failed', e) }
+
+      // 3. Notify the user via email
+      try {
+        await fetch('/api/send-unban-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: unbanTarget.email,
+            name: `${unbanTarget.firstName} ${unbanTarget.lastName}`.trim(),
+            reason: unbanReason || 'Your account access has been restored.',
+          }),
+        })
+      } catch (e) { console.warn('Unban email failed to send', e) }
+
+      // 4. Create an admin notification to trigger the overlay
+      try {
+        await supabase.from('admin_notifications').insert({
+          type: 'user_unbanned',
+          message: `User ${unbanTarget.firstName} ${unbanTarget.lastName} has been unbanned.`,
+        })
+      } catch (e) { console.warn('Admin unban overlay notification failed', e) }
+
+      setShowUnbanModal(false)
+      setUnbanTarget(null)
+    } catch (e: any) {
+      setUnbanError(e?.message || 'Failed to unban user.')
+    } finally {
+      setIsSubmittingUnban(false)
     }
   }
 
@@ -427,7 +473,7 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
                       <div className="flex justify-end gap-2">
                         {user.user_type !== 'superadmin' && (
                           user.is_banned ? (
-                            <Button variant="outline" size="sm" onClick={() => handleUnban(user)}>Unban</Button>
+                            <Button variant="outline" size="sm" onClick={() => openUnbanDialog(user)}>Unban</Button>
                           ) : (
                             <Button variant="destructive" size="sm" onClick={() => openBanDialog(user)}>Ban</Button>
                           )
@@ -512,6 +558,40 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
               <Button variant="outline" onClick={() => setShowBanModal(false)} disabled={isSubmittingBan}>Cancel</Button>
               <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleSubmitBan} disabled={isSubmittingBan || !banReason.trim()}>
                 {isSubmittingBan ? 'Banning...' : 'Ban User'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Unban Dialog */}
+      <Dialog open={showUnbanModal} onOpenChange={setShowUnbanModal}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Unban User</DialogTitle>
+            <DialogDescription>
+              Provide a brief message for the user regarding the unban. This will be sent via email.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="text-sm text-gray-700">
+              User: {unbanTarget ? `${unbanTarget.firstName} ${unbanTarget.lastName} (${unbanTarget.email})` : ''}
+            </div>
+            <div>
+              <label className="text-sm font-medium">Message / Reason for Unbanning</label>
+              <Textarea 
+                rows={4} 
+                value={unbanReason} 
+                onChange={(e) => setUnbanReason(e.target.value)} 
+                placeholder="Example: Your access has been restored after a review. Please adhere to the community guidelines."
+                className="mt-1"
+              />
+            </div>
+            {unbanError && <div className="text-sm text-red-600">{unbanError}</div>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowUnbanModal(false)} disabled={isSubmittingUnban}>Cancel</Button>
+              <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={handleUnban} disabled={isSubmittingUnban || !unbanReason.trim()}>
+                {isSubmittingUnban ? 'Unbanning...' : 'Confirm Unban'}
               </Button>
             </div>
           </div>

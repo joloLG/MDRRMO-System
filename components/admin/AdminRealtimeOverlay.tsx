@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useRouter } from "next/navigation"
 import { Flame, Car } from "lucide-react"
+import { getAlertSoundSignedUrl, clearAlertSoundCache } from '@/lib/alertSounds'
 
 interface AdminNotificationRow {
   id: string
@@ -25,9 +26,10 @@ export default function AdminRealtimeOverlay() {
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [adminSoundPath, setAdminSoundPath] = useState<string | null>(null)
 
   useEffect(() => {
-    const channel = supabase
+    const notifChannel = supabase
       .channel("admin-overlay-new-report")
       .on(
         "postgres_changes",
@@ -41,8 +43,39 @@ export default function AdminRealtimeOverlay() {
       )
       .subscribe()
 
+    const loadAdminSound = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('alert_settings')
+          .select('admin_incident_sound_path, active_file_path')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+        if (!error && data && data.length > 0) {
+          const row = data[0] as any
+          setAdminSoundPath(prev => {
+            const next = row.admin_incident_sound_path || row.active_file_path || null
+            if (prev && prev !== next) clearAlertSoundCache(prev)
+            return next
+          })
+        } else {
+          setAdminSoundPath(null)
+        }
+      } catch {
+        setAdminSoundPath(null)
+      }
+    }
+    void loadAdminSound()
+
+    const settingsChannel = supabase
+      .channel('admin-overlay-alert-settings')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_settings' }, () => {
+        void loadAdminSound()
+      })
+      .subscribe()
+
     return () => {
-      try { supabase.removeChannel(channel) } catch {}
+      try { supabase.removeChannel(notifChannel) } catch {}
+      try { supabase.removeChannel(settingsChannel) } catch {}
       if (dismissTimer.current) clearTimeout(dismissTimer.current)
       stopSound()
     }
@@ -86,7 +119,7 @@ export default function AdminRealtimeOverlay() {
     if (dismissTimer.current) clearTimeout(dismissTimer.current)
     dismissTimer.current = setTimeout(() => {
       hideOverlay()
-    }, 5000) // auto-dismiss after ~5s
+    }, 5000)
   }
 
   const hideOverlay = () => {
@@ -94,15 +127,27 @@ export default function AdminRealtimeOverlay() {
     stopSound()
   }
 
-  const startSound = () => {
+  const startSound = async () => {
     try {
       const enabled = typeof window !== 'undefined' ? localStorage.getItem('mdrrmo_admin_sound_enabled') === 'true' : true
       if (!enabled) return
       if (!audioRef.current) {
-        audioRef.current = new Audio("/sounds/alert.mp3")
+        audioRef.current = new Audio()
         audioRef.current.loop = true
         audioRef.current.volume = 1.0
       }
+
+      let url: string | null = null
+      if (adminSoundPath) {
+        const signed = await getAlertSoundSignedUrl(adminSoundPath, 120)
+        if (signed) {
+          url = signed
+        } else {
+          console.warn('[AdminAlertSound] Signed URL unavailable', { path: adminSoundPath })
+        }
+      }
+
+      audioRef.current.src = url || "/sounds/alert.mp3"
       audioRef.current.currentTime = 0
       void audioRef.current.play().catch(() => {})
     } catch {}
