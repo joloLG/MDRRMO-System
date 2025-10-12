@@ -478,6 +478,30 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   }, [creditConsumptionTimes]);
 
+  useEffect(() => {
+    if (activeCooldowns.length === 0) {
+      setCooldownRemaining(0);
+      setCooldownActive(false);
+      return;
+    }
+
+    const tick = () => {
+      const now = Date.now();
+      const nextExpiry = Math.min(...activeCooldowns);
+      const msRemaining = Math.max(0, nextExpiry - now);
+      const secondsRemaining = Math.ceil(msRemaining / 1000);
+      setCooldownRemaining(secondsRemaining);
+      setCooldownActive(secondsRemaining > 0);
+      if (msRemaining <= 0) {
+        reconcileCooldownsAndCredits();
+      }
+    };
+
+    tick();
+    const intervalId = setInterval(tick, 1000);
+    return () => clearInterval(intervalId);
+  }, [activeCooldowns, reconcileCooldownsAndCredits]);
+
   // Realtime channel refs
   const notificationsChannelRef = useRef<RealtimeChannel | null>(null);
   const userReportsChannelRef = useRef<RealtimeChannel | null>(null);
