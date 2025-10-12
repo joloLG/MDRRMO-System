@@ -114,9 +114,14 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   // Alert sound management state
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('mdrrmo_admin_sound_enabled') === 'true';
+      const stored = localStorage.getItem('mdrrmo_admin_sound_enabled');
+      if (stored === null) {
+        localStorage.setItem('mdrrmo_admin_sound_enabled', 'true');
+        return true;
+      }
+      return stored !== 'false';
     }
-    return false;
+    return true;
   });
   const [activeAlertPath, setActiveAlertPath] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
