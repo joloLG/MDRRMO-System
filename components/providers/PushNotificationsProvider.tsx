@@ -8,6 +8,8 @@ import { getAlertSoundSignedUrl, clearAlertSoundCache } from '@/lib/alertSounds'
 import { UserBroadcastOverlay } from '@/components/UserBroadcastOverlay';
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+const BROADCAST_OVERLAY_DURATION_MS = 15_000;
+const BROADCAST_SOUND_VARIANT: 'earthquake' = 'earthquake';
 
 interface PushNotificationsContextType {
   requestPermission: () => Promise<void>;
@@ -205,7 +207,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
     setActiveBroadcastAlert(null);
   }, []);
 
-  const showBroadcastAlert = useCallback(async (alert: BroadcastAlert, autoDismissMs = 1000 * 30) => {
+  const showBroadcastAlert = useCallback(async (alert: BroadcastAlert, autoDismissMs = BROADCAST_OVERLAY_DURATION_MS) => {
     setActiveBroadcastAlert(alert);
     if (alertOverlayDismissTimer.current) {
       clearTimeout(alertOverlayDismissTimer.current);
@@ -213,7 +215,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
     alertOverlayDismissTimer.current = setTimeout(() => {
       dismissBroadcastAlert();
     }, autoDismissMs);
-    await playAlertSound(alert.type);
+    await playAlertSound(BROADCAST_SOUND_VARIANT);
   }, [dismissBroadcastAlert, playAlertSound]);
 
   const setupRealtime = useCallback(() => {
@@ -232,7 +234,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
             body: payload?.new?.body || '',
             createdAt: payload?.new?.created_at || null,
           };
-          void showBroadcastAlert(alert, 45_000);
+          void showBroadcastAlert(alert);
         }
       })
       .subscribe();
@@ -374,7 +376,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
                     body: notification?.body || '',
                     createdAt: new Date().toISOString(),
                   };
-                  void showBroadcastAlert(alert, 45_000);
+                  void showBroadcastAlert(alert);
                 } else if (type === 'notification') {
                   void playAlertSound('notification');
                 }
@@ -396,7 +398,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
                     body: notification?.notification?.body || '',
                     createdAt: new Date().toISOString(),
                   };
-                  void showBroadcastAlert(alert, 45_000);
+                  void showBroadcastAlert(alert);
                 }
                 const url = data?.url || data?.link;
                 if (typeof url === 'string' && url.length > 0) {
@@ -459,7 +461,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
         <UserBroadcastOverlay
           alert={activeBroadcastAlert}
           onDismiss={dismissBroadcastAlert}
-          onPlaySound={() => { if (activeBroadcastAlert) { void playAlertSound(activeBroadcastAlert.type); } }}
+          onPlaySound={() => { if (activeBroadcastAlert) { void playAlertSound(BROADCAST_SOUND_VARIANT); } }}
         />
       )}
       {children}
