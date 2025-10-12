@@ -27,6 +27,7 @@ export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps)
 
   const [showIosA2HS, setShowIosA2HS] = React.useState(false);
   const [iosDialogOpen, setIosDialogOpen] = React.useState(false);
+  const [showAndroidDownload, setShowAndroidDownload] = React.useState(false);
 
   const handleOverlayClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
@@ -52,6 +53,9 @@ export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps)
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
     if (isIosDevice && !isStandalone) {
       setShowIosA2HS(true);
+    }
+    if (/android/.test(ua) && !isStandalone) {
+      setShowAndroidDownload(true);
     }
   }, []);
 
@@ -125,6 +129,16 @@ export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps)
               >
                 <Download className="mr-3 h-5 w-5 flex-shrink-0" />
                 <span className="truncate">ADD TO HOME</span>
+              </Button>
+            )}
+            {showAndroidDownload && (
+              <Button
+                variant="ghost"
+                className="w-full justify-start text-white bg-purple-600 hover:bg-purple-700 hover:text-white"
+                onClick={() => window.open('https://github.com/joloLG/MDRRMO-System/releases/tag/MDRRMO-App-V6', '_blank', 'noopener,noreferrer')}
+              >
+                <Download className="mr-3 h-5 w-5 flex-shrink-0" />
+                <span className="truncate">Download App</span>
               </Button>
             )}
             {menuItems.map((item) => {
