@@ -99,8 +99,8 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
   }, [resendTimer])
 
   const handleSendOtp = async () => {
-    if (formData.mobileNumber.length !== 10) {
-      setMobileNumberError('Please complete the mobile number (10 digits required).')
+    if (!/^09\d{9}$/.test(formData.mobileNumber)) {
+      setMobileNumberError('Please provide a valid mobile number starting with 09 (11 digits).')
       setOtpError("Please provide a valid mobile number before requesting a code.")
       return
     }
@@ -200,9 +200,9 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
     }
 
     // Mobile number validation
-    if (formData.mobileNumber.length !== 10) {
-      setError("Please provide a valid 10-digit mobile number.");
-      setMobileNumberError("A 10-digit mobile number is required.");
+    if (!/^09\d{9}$/.test(formData.mobileNumber)) {
+      setError("Please provide a valid mobile number starting with 09 (11 digits).");
+      setMobileNumberError("A valid PH mobile number is required.");
       return;
     }
 
@@ -257,7 +257,7 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
           email: formData.email,
           username: formData.username,
           birthday: formData.birthday || null,
-          mobileNumber: `63${formData.mobileNumber}`,
+          mobileNumber: formData.mobileNumber,
         })
 
         if (profileError) {
@@ -418,32 +418,29 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
             <Label htmlFor="mobileNumber" className="text-gray-700 font-medium">
               Mobile Number *
             </Label>
-            <div className="flex items-center">
-              <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm h-10">
-                63
-              </span>
-              <Input
-                id="mobileNumber"
-                type="tel"
-                value={formData.mobileNumber}
-                onChange={(e) => {
-                  const value = e.target.value.replace(/\D/g, ''); // Remove non-digits
-                  if (value.length <= 10) {
-                    handleInputChange("mobileNumber", value);
-                    if (value.length < 10) {
-                      setMobileNumberError('Please complete the mobile number (10 digits required).');
-                    } else {
-                      setMobileNumberError(null);
-                    }
+            <Input
+              id="mobileNumber"
+              type="tel"
+              value={formData.mobileNumber}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, ''); // Remove non-digits
+                if (value.length <= 11) {
+                  handleInputChange("mobileNumber", value);
+                  if (!/^09\d{0,9}$/.test(value)) {
+                    setMobileNumberError('Please enter a valid PH mobile number starting with 09.');
+                  } else if (value.length < 11) {
+                    setMobileNumberError('Please complete the mobile number (11 digits required).');
+                  } else {
+                    setMobileNumberError(null);
                   }
-                }}
-                maxLength={10}
-                className={`rounded-l-none border-orange-200 focus:border-orange-500 ${mobileNumberError ? 'border-red-500' : ''}`}
-                placeholder="xxxxxxxxxx"
-                required
-                disabled={isLoading}
-              />
-            </div>
+                }
+              }}
+              maxLength={11}
+              className={`border-orange-200 focus:border-orange-500 ${mobileNumberError ? 'border-red-500' : ''}`}
+              placeholder="09XXXXXXXXX"
+              required
+              disabled={isLoading}
+            />
             {mobileNumberError && <p className="text-sm text-red-500 mt-1">{mobileNumberError}</p>}
             <div className="mt-3 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -459,7 +456,7 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
                 <Button
                   type="button"
                   onClick={handleSendOtp}
-                  disabled={isLoading || isSendingOtp || resendTimer > 0 || formData.mobileNumber.length !== 10 || isOtpVerified}
+                  disabled={isLoading || isSendingOtp || resendTimer > 0 || formData.mobileNumber.length !== 11 || isOtpVerified}
                   className="bg-orange-500 hover:bg-orange-600 text-white"
                 >
                   {isSendingOtp ? "Sending..." : resendTimer > 0 ? `Resend in ${resendTimer}s` : isOtpVerified ? "Verified" : "Send OTP"}

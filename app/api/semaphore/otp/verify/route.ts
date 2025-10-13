@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import crypto from "node:crypto";
+export const runtime = "nodejs";
 
 const OTP_COOKIE_NAME = "semaphoreOtp";
 const OTP_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes

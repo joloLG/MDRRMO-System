@@ -83,13 +83,16 @@ const INCIDENT_TYPES = [
 const formatMobileNumberForInput = (value: string | null | undefined) => {
   if (!value) return "";
   const digits = String(value).replace(/\D/g, "");
-  let result = digits;
-  if (digits.startsWith("63")) {
-    result = digits.slice(2);
-  } else if (digits.startsWith("0") && digits.length > 1) {
-    result = digits.slice(1);
+  if (digits.startsWith("63") && digits.length >= 12) {
+    return `0${digits.slice(2, 12)}`;
   }
-  return result.slice(0, 10);
+  if (digits.startsWith("0") && digits.length >= 11) {
+    return digits.slice(0, 11);
+  }
+  if (digits.startsWith("9") && digits.length >= 10) {
+    return `0${digits.slice(0, 10)}`;
+  }
+  return digits.slice(0, 11);
 };
 
 export function Dashboard({ onLogout, userData }: DashboardProps) {
@@ -368,10 +371,20 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     setIsProfileOtpVerifying(false);
   };
 
-  const formattedCurrentMobile = useMemo(
-    () => formatMobileNumberForInput(currentUser?.mobileNumber),
-    [currentUser?.mobileNumber]
-  );
+  const formattedCurrentMobile = useMemo(() => {
+    if (!currentUser?.mobileNumber) return '';
+    const raw = String(currentUser.mobileNumber).replace(/\D/g, '');
+    if (raw.startsWith('63') && raw.length === 12) {
+      return `0${raw.slice(2)}`;
+    }
+    if (raw.startsWith('0') && raw.length === 11) {
+      return raw;
+    }
+    if (raw.startsWith('9') && raw.length === 10) {
+      return `0${raw}`;
+    }
+    return raw;
+  }, [currentUser?.mobileNumber]);
 
   const mobileNumberHasChanged = useMemo(() => {
     if (!formattedCurrentMobile) {
@@ -380,13 +393,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     return editingMobileNumber !== formattedCurrentMobile;
   }, [formattedCurrentMobile, editingMobileNumber]);
 
-  const profileMobileDisplay = useMemo(() => {
-    if (!formattedCurrentMobile) return '';
-    const prefixed = formattedCurrentMobile.startsWith('0')
-      ? formattedCurrentMobile
-      : `0${formattedCurrentMobile}`;
-    return prefixed.slice(0, 11);
-  }, [formattedCurrentMobile]);
+  const profileMobileDisplay = useMemo(() => formattedCurrentMobile, [formattedCurrentMobile]);
 
   useEffect(() => {
     if (profileOtpResendTimer <= 0) return;
@@ -1476,8 +1483,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     setProfileEditError(null);
 
     // Validate mobile number
-    if (editingMobileNumber.length !== 10) {
-      setMobileNumberError('Please complete the mobile number (10 digits required).');
+    if (!/^09\d{9}$/.test(editingMobileNumber)) {
+      setMobileNumberError('Please provide a valid mobile number starting with 09 (11 digits).');
       return;
     }
 
@@ -1488,7 +1495,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
 
     try {
-      const fullMobileNumber = `63${editingMobileNumber}`;
+      const digits = editingMobileNumber.replace(/\D/g, '');
+      const fullMobileNumber = digits.startsWith('09') ? `63${digits.slice(1)}` : digits;
       const { data, error } = await supabase
         .from('users')
         .update({
@@ -2129,32 +2137,29 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
               </div>
               <div>
                 <label htmlFor="mobileNumber" className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label>
-                  <div className="flex items-center">
-                    <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm h-10">
-                      63
-                    </span>
-                    <Input 
-                      id="mobileNumber" 
-                      type="tel" 
-                      value={editingMobileNumber} 
-                      onChange={(e) => {
-                        const value = e.target.value.replace(/\D/g, ''); // Remove non-digits
-                        if (value.length <= 10) {
-                          const hasChanged = formattedCurrentMobile ? value !== formattedCurrentMobile : value.length > 0;
-                          setEditingMobileNumber(value);
-                          if (value.length < 10) {
-                            setMobileNumberError('Please complete the mobile number (10 digits required).');
-                          } else {
-                            setMobileNumberError(null);
-                          }
-                          resetProfileOtpProgress(!hasChanged);
+                  <Input 
+                    id="mobileNumber" 
+                    type="tel" 
+                    value={editingMobileNumber} 
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, ''); // Remove non-digits
+                      if (value.length <= 11) {
+                        const hasChanged = formattedCurrentMobile ? value !== formattedCurrentMobile : value.length > 0;
+                        setEditingMobileNumber(value);
+                        if (!/^09\d{0,9}$/.test(value)) {
+                          setMobileNumberError('Please enter a valid PH mobile number starting with 09.');
+                        } else if (value.length < 11) {
+                          setMobileNumberError('Please complete the mobile number (11 digits required).');
+                        } else {
+                          setMobileNumberError(null);
                         }
-                      }}
-                      maxLength={10}
-                      className={`rounded-l-none ${mobileNumberError ? 'border-red-500' : ''}`}
-                      placeholder="xxxxxxxxxx"
-                    />
-                  </div>
+                        resetProfileOtpProgress(!hasChanged);
+                      }
+                    }}
+                    maxLength={11}
+                    className={`${mobileNumberError ? 'border-red-500' : ''}`}
+                    placeholder="09XXXXXXXXX"
+                  />
                   {mobileNumberError && <p className="mt-2 text-sm text-red-600">{mobileNumberError}</p>}
                   <p className="mt-2 text-sm text-gray-600">Current saved number: {profileMobileDisplay || 'Not set'}</p>
                   {mobileNumberHasChanged && (

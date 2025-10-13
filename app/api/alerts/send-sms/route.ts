@@ -1,18 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+export const runtime = 'nodejs'
 
 const SEMAPHORE_SMS_URL = 'https://api.semaphore.co/api/v4/messages'
 
 const getApiKey = () => {
-  const apiKey = process.env.SEMAPHORE_API_KEY
+  const apiKey =
+    process.env.SEMAPHORE_API_KEY ||
+    process.env.NEXT_PUBLIC_SEMAPHORE_API_KEY ||
+    process.env.SEMAPHORE_APIKEY ||
+    process.env.SEMAPHORE_KEY
   if (!apiKey) {
     throw new Error('Semaphore API key is not configured')
   }
   return apiKey
 }
 
-const getSenderName = () => process.env.SEMAPHORE_SENDER_NAME
+const getSenderName = () => process.env.SEMAPHORE_SENDER_NAME || process.env.NEXT_PUBLIC_SEMAPHORE_SENDER_NAME
 
 const normalizeMobileNumber = (value: string) => {
   const digits = value.replace(/\D/g, '')
@@ -107,10 +112,54 @@ export async function POST(req: NextRequest) {
       body: params.toString()
     })
 
-    const data = await response.json().catch(() => null)
+    const raw = await response.text()
+    let data: any = null
+    try {
+      data = JSON.parse(raw)
+    } catch {}
 
     if (!response.ok) {
-      const errorMessage = Array.isArray(data) && data[0]?.message ? data[0].message : data?.error || 'Failed to send SMS'
+      const rawLower = (raw || '').toLowerCase()
+      const senderInvalid = (
+        (Array.isArray(data) && data[0] && ("senderName" in data[0]) && String(data[0].senderName).toLowerCase().includes('not valid')) ||
+        (rawLower.includes('sendername') && rawLower.includes('not valid'))
+      )
+
+      // Retry without sendername if Semaphore rejects it
+      if (senderInvalid && getSenderName()) {
+        const retryParams = new URLSearchParams()
+        retryParams.set('apikey', getApiKey())
+        retryParams.set('number', normalizedNumber)
+        retryParams.set('message', message)
+
+        const retryRes = await fetch(SEMAPHORE_SMS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: retryParams.toString()
+        })
+
+        const retryRaw = await retryRes.text()
+        let retryData: any = null
+        try { retryData = JSON.parse(retryRaw) } catch {}
+
+        if (!retryRes.ok) {
+          const retryErr = Array.isArray(retryData) && retryData[0]?.message ? retryData[0].message : (retryData?.error || retryRaw || 'Failed to send SMS')
+          return NextResponse.json({ error: retryErr }, { status: retryRes.status })
+        }
+
+        if (!Array.isArray(retryData) || retryData.length === 0) {
+          return NextResponse.json({ error: 'Unexpected response from Semaphore' }, { status: 502 })
+        }
+
+        const retryResult = retryData[0]
+        if (retryResult.status && typeof retryResult.status === 'string' && retryResult.status.toLowerCase() === 'failed') {
+          return NextResponse.json({ error: retryResult.message || 'Semaphore rejected the SMS' }, { status: 400 })
+        }
+
+        return NextResponse.json({ ok: true, sms: retryResult })
+      }
+
+      const errorMessage = Array.isArray(data) && data[0]?.message ? data[0].message : (data?.error || raw || 'Failed to send SMS')
       return NextResponse.json({ error: errorMessage }, { status: response.status })
     }
 
