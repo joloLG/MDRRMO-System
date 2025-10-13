@@ -77,8 +77,57 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
   const [userTsunamiSoundPath, setUserTsunamiSoundPath] = useState<string | null>(null);
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const nativeListenersRef = useRef<PluginListenerHandle[]>([]);
+  const [pushEligibility, setPushEligibility] = useState<'unknown' | 'enabled' | 'disabled'>('unknown');
+  const pushEnabled = pushEligibility === 'enabled';
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const resolveEligibility = async (userId?: string | null) => {
+      if (!userId) {
+        if (isMounted) setPushEligibility('disabled');
+        return;
+      }
+      try {
+        const { data: profile, error } = await supabase
+          .from('users')
+          .select('user_type')
+          .eq('id', userId)
+          .single();
+        if (!isMounted) return;
+        if (error || !profile || profile.user_type !== 'user') {
+          setPushEligibility('disabled');
+        } else {
+          setPushEligibility('enabled');
+        }
+      } catch {
+        if (isMounted) setPushEligibility('disabled');
+      }
+    };
+
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        void resolveEligibility(data?.session?.user?.id);
+      })
+      .catch(() => {
+        if (isMounted) setPushEligibility('disabled');
+      });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_, session) => {
+      void resolveEligibility(session?.user?.id);
+    });
+
+    return () => {
+      isMounted = false;
+      try { authListener?.subscription?.unsubscribe?.(); } catch {}
+    };
+  }, []);
 
   const registerForPushNotifications = useCallback(async () => {
+    if (!pushEnabled) {
+      return;
+    }
     if (Capacitor.isNativePlatform()) {
       await PushNotifications.register();
     } else if ('serviceWorker' in navigator && 'PushManager' in window) {
@@ -99,9 +148,12 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
       });
       await saveSubscription(subscription);
     }
-  }, []);
+  }, [pushEnabled]);
 
   const requestPermission = useCallback(async () => {
+    if (!pushEnabled) {
+      return;
+    }
     try {
       if (Capacitor.isNativePlatform()) {
         const result = await PushNotifications.requestPermissions();
@@ -119,9 +171,12 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
     } catch (error) {
       console.error('Push notification permission error.', error);
     }
-  }, [registerForPushNotifications]);
+  }, [registerForPushNotifications, pushEnabled]);
 
   const loadUserAlertSettings = useCallback(async () => {
+    if (!pushEnabled) {
+      return;
+    }
     try {
       const { data, error } = await supabase
         .from('alert_settings')
@@ -156,9 +211,12 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
     } catch (error) {
       console.warn('[PushProvider] Failed to load user alert settings', error);
     }
-  }, []);
+  }, [pushEnabled]);
 
   const playAlertSound = useCallback(async (type: 'notification' | 'earthquake' | 'tsunami' = 'notification') => {
+    if (!pushEnabled) {
+      return;
+    }
     try {
       if (!userAlertAudioRef.current) {
         userAlertAudioRef.current = new Audio();
@@ -197,7 +255,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
     } catch (error) {
       console.warn('[PushProvider] playAlertSound error', error);
     }
-  }, [loadUserAlertSettings, userNotificationSoundPath, userEarthquakeSoundPath, userTsunamiSoundPath]);
+  }, [loadUserAlertSettings, pushEnabled, userNotificationSoundPath, userEarthquakeSoundPath, userTsunamiSoundPath]);
 
   const dismissBroadcastAlert = useCallback(() => {
     if (alertOverlayDismissTimer.current) {
@@ -208,6 +266,9 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
   }, []);
 
   const showBroadcastAlert = useCallback(async (alert: BroadcastAlert, autoDismissMs = BROADCAST_OVERLAY_DURATION_MS) => {
+    if (!pushEnabled) {
+      return;
+    }
     setActiveBroadcastAlert(alert);
     if (alertOverlayDismissTimer.current) {
       clearTimeout(alertOverlayDismissTimer.current);
@@ -216,9 +277,12 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
       dismissBroadcastAlert();
     }, autoDismissMs);
     await playAlertSound(BROADCAST_SOUND_VARIANT);
-  }, [dismissBroadcastAlert, playAlertSound]);
+  }, [dismissBroadcastAlert, playAlertSound, pushEnabled]);
 
   const setupRealtime = useCallback(() => {
+    if (!pushEnabled) {
+      return;
+    }
     if (realtimeChannelRef.current) {
       return;
     }
@@ -255,7 +319,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
       } catch {}
       realtimeChannelRef.current = null;
     };
-  }, [loadUserAlertSettings, showBroadcastAlert]);
+  }, [loadUserAlertSettings, pushEnabled, showBroadcastAlert]);
 
   const clearRealtime = useCallback(() => {
     if (realtimeChannelRef.current) {
@@ -265,15 +329,28 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
   }, []);
 
   useEffect(() => {
+    if (!pushEnabled) {
+      clearRealtime();
+      return;
+    }
     void loadUserAlertSettings();
     const cleanup = setupRealtime();
     return () => {
       clearRealtime();
       if (cleanup) cleanup();
     };
-  }, [clearRealtime, loadUserAlertSettings, setupRealtime]);
+  }, [clearRealtime, loadUserAlertSettings, pushEnabled, setupRealtime]);
 
   useEffect(() => {
+    if (!pushEnabled) {
+      dismissBroadcastAlert();
+    }
+  }, [dismissBroadcastAlert, pushEnabled]);
+
+  useEffect(() => {
+    if (!pushEnabled) {
+      return;
+    }
     let gestureHandler: ((e?: any) => void) | null = null;
 
     const checkPermissionOnly = async () => {
@@ -431,7 +508,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
         });
       }
     };
-  }, [permissionStatus, registerForPushNotifications, showBroadcastAlert, playAlertSound]);
+  }, [permissionStatus, pushEnabled, registerForPushNotifications, showBroadcastAlert, playAlertSound]);
 
   useEffect(() => {
     return () => {
