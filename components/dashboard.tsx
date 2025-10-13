@@ -490,8 +490,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       const nextExpiry = Math.min(...activeCooldowns);
       const msRemaining = Math.max(0, nextExpiry - now);
       const secondsRemaining = Math.ceil(msRemaining / 1000);
-      setCooldownRemaining(secondsRemaining);
-      setCooldownActive(secondsRemaining > 0);
+      setCooldownRemaining(secondsRemaining > 0 ? secondsRemaining : 0);
+      setCooldownActive(reportCredits === 0 && secondsRemaining > 0);
       if (msRemaining <= 0) {
         reconcileCooldownsAndCredits();
       }
@@ -500,7 +500,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     tick();
     const intervalId = setInterval(tick, 1000);
     return () => clearInterval(intervalId);
-  }, [activeCooldowns, reconcileCooldownsAndCredits]);
+  }, [activeCooldowns, reconcileCooldownsAndCredits, reportCredits]);
 
   // Realtime channel refs
   const notificationsChannelRef = useRef<RealtimeChannel | null>(null);
