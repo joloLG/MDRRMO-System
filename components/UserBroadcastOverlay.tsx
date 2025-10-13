@@ -21,13 +21,13 @@ const typeStyles: Record<BroadcastAlertData["type"], { gradient: string; icon: R
   earthquake: {
     gradient: "from-red-600 via-red-500 to-orange-400",
     icon: <AlertTriangle className="h-9 w-9 text-white" />,
-    label: "Earthquake Alert",
+    label: "Earthquake Alert!",
     emphasis: "text-red-600",
   },
   tsunami: {
     gradient: "from-blue-600 via-sky-500 to-cyan-400",
     icon: <Waves className="h-9 w-9 text-white" />,
-    label: "Tsunami Alert",
+    label: "Tsunami Alert!",
     emphasis: "text-blue-600",
   },
 }

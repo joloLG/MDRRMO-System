@@ -629,7 +629,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const confirmBroadcastAlert = useCallback(async () => {
     if (!pendingBroadcastType) return
     const label = pendingBroadcastType === 'earthquake' ? 'EARTHQUAKE ALERT' : 'TSUNAMI ALERT'
-    const typeToSend: 'earthquake' = 'earthquake'
+    const typeToSend = pendingBroadcastType
     const trimmed = broadcastMessage.trim()
     if (!trimmed) {
       setBroadcastValidationError('Message is required.')
