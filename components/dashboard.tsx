@@ -854,29 +854,22 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   
   // Effect to initialize cooldowns from credit consumption times
   useEffect(() => {
-    if (creditConsumptionTimes.length > 0) {
-      const now = Date.now();
-      const tenMinutes = 10 * 60 * 1000;
-      
-      // Create cooldowns for each consumption time
-      const newCooldowns = creditConsumptionTimes
-        .filter(timestamp => (now - timestamp) < tenMinutes)
-        .map(timestamp => timestamp + tenMinutes);
-      
-      setActiveCooldowns(newCooldowns);
-      if (newCooldowns.length > 0) {
-        const nextMs = Math.max(0, Math.min(...newCooldowns) - now);
-        setCooldownRemaining(Math.ceil(nextMs / 1000));
-        setCooldownActive(reportCredits === 0);
-      } else {
-        setCooldownRemaining(0);
-        setCooldownActive(false);
-      }
+    const now = Date.now();
+    const tenMinutes = 10 * 60 * 1000;
+    const newCooldowns = creditConsumptionTimes
+      .filter(timestamp => (now - timestamp) < tenMinutes)
+      .map(timestamp => timestamp + tenMinutes);
+
+    setActiveCooldowns(newCooldowns);
+
+    if (newCooldowns.length > 0) {
+      const nextMs = Math.max(0, Math.min(...newCooldowns) - now);
+      setCooldownRemaining(Math.ceil(nextMs / 1000));
     } else {
-      setActiveCooldowns([]);
       setCooldownRemaining(0);
-      setCooldownActive(false);
     }
+
+    setCooldownActive(reportCredits === 0 && newCooldowns.length > 0);
   }, [creditConsumptionTimes, reportCredits]);
 
   // Effect to persist report credits, consumption times to user-specific localStorage

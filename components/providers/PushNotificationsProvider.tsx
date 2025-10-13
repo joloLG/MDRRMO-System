@@ -77,15 +77,16 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
   const [userTsunamiSoundPath, setUserTsunamiSoundPath] = useState<string | null>(null);
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const nativeListenersRef = useRef<PluginListenerHandle[]>([]);
-  const [pushEligibility, setPushEligibility] = useState<'unknown' | 'enabled' | 'disabled'>('unknown');
-  const pushEnabled = pushEligibility === 'enabled';
+  const [pushEligibility, setPushEligibility] = useState<'pending' | 'enabled' | 'disabled'>('pending');
+  const overlayAllowed = pushEligibility !== 'disabled';
+  const pushPermissionAllowed = pushEligibility === 'enabled';
 
   useEffect(() => {
     let isMounted = true;
 
     const resolveEligibility = async (userId?: string | null) => {
       if (!userId) {
-        if (isMounted) setPushEligibility('disabled');
+        if (isMounted) setPushEligibility('pending');
         return;
       }
       try {
@@ -101,7 +102,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
           setPushEligibility('enabled');
         }
       } catch {
-        if (isMounted) setPushEligibility('disabled');
+        if (isMounted) setPushEligibility('pending');
       }
     };
 
@@ -125,7 +126,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
   }, []);
 
   const registerForPushNotifications = useCallback(async () => {
-    if (!pushEnabled) {
+    if (!pushPermissionAllowed) {
       return;
     }
     if (Capacitor.isNativePlatform()) {
@@ -148,10 +149,10 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
       });
       await saveSubscription(subscription);
     }
-  }, [pushEnabled]);
+  }, [pushPermissionAllowed]);
 
   const requestPermission = useCallback(async () => {
-    if (!pushEnabled) {
+    if (!pushPermissionAllowed) {
       return;
     }
     try {
@@ -171,10 +172,10 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
     } catch (error) {
       console.error('Push notification permission error.', error);
     }
-  }, [registerForPushNotifications, pushEnabled]);
+  }, [pushPermissionAllowed, registerForPushNotifications]);
 
   const loadUserAlertSettings = useCallback(async () => {
-    if (!pushEnabled) {
+    if (!overlayAllowed) {
       return;
     }
     try {
@@ -211,10 +212,10 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
     } catch (error) {
       console.warn('[PushProvider] Failed to load user alert settings', error);
     }
-  }, [pushEnabled]);
+  }, [overlayAllowed]);
 
   const playAlertSound = useCallback(async (type: 'notification' | 'earthquake' | 'tsunami' = 'notification') => {
-    if (!pushEnabled) {
+    if (!overlayAllowed) {
       return;
     }
     try {
@@ -255,7 +256,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
     } catch (error) {
       console.warn('[PushProvider] playAlertSound error', error);
     }
-  }, [loadUserAlertSettings, pushEnabled, userNotificationSoundPath, userEarthquakeSoundPath, userTsunamiSoundPath]);
+  }, [loadUserAlertSettings, overlayAllowed, userNotificationSoundPath, userEarthquakeSoundPath, userTsunamiSoundPath]);
 
   const dismissBroadcastAlert = useCallback(() => {
     if (alertOverlayDismissTimer.current) {
@@ -266,7 +267,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
   }, []);
 
   const showBroadcastAlert = useCallback(async (alert: BroadcastAlert, autoDismissMs = BROADCAST_OVERLAY_DURATION_MS) => {
-    if (!pushEnabled) {
+    if (!overlayAllowed) {
       return;
     }
     setActiveBroadcastAlert(alert);
@@ -277,10 +278,10 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
       dismissBroadcastAlert();
     }, autoDismissMs);
     await playAlertSound(BROADCAST_SOUND_VARIANT);
-  }, [dismissBroadcastAlert, playAlertSound, pushEnabled]);
+  }, [dismissBroadcastAlert, overlayAllowed, playAlertSound]);
 
   const setupRealtime = useCallback(() => {
-    if (!pushEnabled) {
+    if (!overlayAllowed) {
       return;
     }
     if (realtimeChannelRef.current) {
@@ -319,7 +320,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
       } catch {}
       realtimeChannelRef.current = null;
     };
-  }, [loadUserAlertSettings, pushEnabled, showBroadcastAlert]);
+  }, [loadUserAlertSettings, overlayAllowed, showBroadcastAlert]);
 
   const clearRealtime = useCallback(() => {
     if (realtimeChannelRef.current) {
@@ -329,7 +330,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
   }, []);
 
   useEffect(() => {
-    if (!pushEnabled) {
+    if (!overlayAllowed) {
       clearRealtime();
       return;
     }
@@ -339,16 +340,16 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
       clearRealtime();
       if (cleanup) cleanup();
     };
-  }, [clearRealtime, loadUserAlertSettings, pushEnabled, setupRealtime]);
+  }, [clearRealtime, loadUserAlertSettings, overlayAllowed, setupRealtime]);
 
   useEffect(() => {
-    if (!pushEnabled) {
+    if (!overlayAllowed) {
       dismissBroadcastAlert();
     }
-  }, [dismissBroadcastAlert, pushEnabled]);
+  }, [dismissBroadcastAlert, overlayAllowed]);
 
   useEffect(() => {
-    if (!pushEnabled) {
+    if (!overlayAllowed) {
       return;
     }
     let gestureHandler: ((e?: any) => void) | null = null;
@@ -508,7 +509,7 @@ export const PushNotificationsProvider = ({ children }: { children: React.ReactN
         });
       }
     };
-  }, [permissionStatus, pushEnabled, registerForPushNotifications, showBroadcastAlert, playAlertSound]);
+  }, [overlayAllowed, permissionStatus, registerForPushNotifications, showBroadcastAlert, playAlertSound]);
 
   useEffect(() => {
     return () => {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -38,6 +38,14 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [ageVerified, setAgeVerified] = useState(false)
   const [mobileNumberError, setMobileNumberError] = useState<string | null>(null);
+  const [otpMessageId, setOtpMessageId] = useState<string | null>(null)
+  const [otpCode, setOtpCode] = useState("")
+  const [isSendingOtp, setIsSendingOtp] = useState(false)
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false)
+  const [isOtpVerified, setIsOtpVerified] = useState(false)
+  const [otpError, setOtpError] = useState("")
+  const [otpSuccess, setOtpSuccess] = useState("")
+  const [resendTimer, setResendTimer] = useState(0)
 
   // Derived validations for password and confirmation
   const password = formData.password
@@ -56,8 +64,16 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
-    setError("") // Clear error on input change
-    setSuccess("") // Clear success on input change
+    setError("")
+    setSuccess("")
+    if (field === "mobileNumber") {
+      setOtpMessageId(null)
+      setOtpCode("")
+      setIsOtpVerified(false)
+      setOtpError("")
+      setOtpSuccess("")
+      setResendTimer(0)
+    }
   }
 
   const calculateAge = (birthDate: string) => {
@@ -71,6 +87,82 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
     }
     return age;
   };
+
+  useEffect(() => {
+    if (resendTimer <= 0) {
+      return
+    }
+    const timer = setInterval(() => {
+      setResendTimer((prev) => (prev > 0 ? prev - 1 : 0))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [resendTimer])
+
+  const handleSendOtp = async () => {
+    if (formData.mobileNumber.length !== 10) {
+      setMobileNumberError('Please complete the mobile number (10 digits required).')
+      setOtpError("Please provide a valid mobile number before requesting a code.")
+      return
+    }
+    setIsSendingOtp(true)
+    setOtpError("")
+    setOtpSuccess("")
+    setIsOtpVerified(false)
+    try {
+      const response = await fetch("/api/semaphore/otp/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ mobileNumber: formData.mobileNumber }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to send verification code.")
+      }
+      setOtpMessageId(data.messageId || null)
+      setOtpSuccess("Verification code sent to your mobile number.")
+      setResendTimer(60)
+    } catch (err: any) {
+      setOtpError(err?.message || "Failed to send verification code.")
+    } finally {
+      setIsSendingOtp(false)
+    }
+  }
+
+  const handleVerifyOtp = async () => {
+    if (!otpMessageId) {
+      setOtpError("Please request a verification code first.")
+      return
+    }
+    if (!otpCode.trim()) {
+      setOtpError("Please enter the verification code.")
+      return
+    }
+    setIsVerifyingOtp(true)
+    setOtpError("")
+    setOtpSuccess("")
+    try {
+      const response = await fetch("/api/semaphore/otp/verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ messageId: otpMessageId, code: otpCode }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || "Verification failed.")
+      }
+      setIsOtpVerified(true)
+      setOtpSuccess("Mobile number verified.")
+    } catch (err: any) {
+      setIsOtpVerified(false)
+      setOtpError(err?.message || "Verification failed.")
+    } finally {
+      setIsVerifyingOtp(false)
+    }
+  }
 
   const handleRegister = async () => {
     // Basic validation for required fields
@@ -134,6 +226,11 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
       return
     }
 
+    if (!isOtpVerified) {
+      setError("Please verify your mobile number before registering.")
+      return
+    }
+
     setIsLoading(true)
     setError("")
     setSuccess("")
@@ -170,6 +267,12 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
 
         setShowSuccessModal(true)
         setSuccess("Successfully sent to your email, check your email to verify the account")
+        setOtpCode("")
+        setOtpMessageId(null)
+        setIsOtpVerified(false)
+        setOtpSuccess("")
+        setOtpError("")
+        setResendTimer(0)
       }
     } catch (err) {
       console.error("Registration error:", err)
@@ -342,6 +445,37 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
               />
             </div>
             {mobileNumberError && <p className="text-sm text-red-500 mt-1">{mobileNumberError}</p>}
+            <div className="mt-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  id="otpCode"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                  maxLength={6}
+                  placeholder="Enter code"
+                  disabled={isLoading || isOtpVerified}
+                  className="w-28 sm:w-32 border-orange-200 focus:border-orange-500"
+                />
+                <Button
+                  type="button"
+                  onClick={handleSendOtp}
+                  disabled={isLoading || isSendingOtp || resendTimer > 0 || formData.mobileNumber.length !== 10 || isOtpVerified}
+                  className="bg-orange-500 hover:bg-orange-600 text-white"
+                >
+                  {isSendingOtp ? "Sending..." : resendTimer > 0 ? `Resend in ${resendTimer}s` : isOtpVerified ? "Verified" : "Send OTP"}
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleVerifyOtp}
+                  disabled={isLoading || isVerifyingOtp || !otpMessageId || !otpCode.trim() || isOtpVerified}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {isVerifyingOtp ? "Verifying..." : "Verify"}
+                </Button>
+              </div>
+              {otpError && <p className="text-sm text-red-500">{otpError}</p>}
+              {otpSuccess && <p className="text-sm text-green-600">{otpSuccess}</p>}
+            </div>
           </div>
 
           <div>
@@ -454,9 +588,9 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
 
           <Button
             onClick={handleRegister}
-            disabled={isLoading || !ageVerified || !acceptedTerms || passwordInvalid || passwordsMismatch}
+            disabled={isLoading || !ageVerified || !acceptedTerms || passwordInvalid || passwordsMismatch || !isOtpVerified}
             className={`w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded transition-colors ${
-              (!ageVerified || !acceptedTerms || passwordInvalid || passwordsMismatch) ? 'opacity-50 cursor-not-allowed' : ''
+              (!ageVerified || !acceptedTerms || passwordInvalid || passwordsMismatch || !isOtpVerified) ? 'opacity-50 cursor-not-allowed' : ''
             }`}
           >
             {isLoading ? "Registering..." : "Register"}
