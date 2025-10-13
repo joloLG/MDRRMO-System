@@ -80,6 +80,18 @@ const INCIDENT_TYPES = [
   { type: 'Others', icon: (props: any) => <HelpCircle className="text-orange-500" {...props} /> },
 ];
 
+const formatMobileNumberForInput = (value: string | null | undefined) => {
+  if (!value) return "";
+  const digits = String(value).replace(/\D/g, "");
+  let result = digits;
+  if (digits.startsWith("63")) {
+    result = digits.slice(2);
+  } else if (digits.startsWith("0") && digits.length > 1) {
+    result = digits.slice(1);
+  }
+  return result.slice(0, 10);
+};
+
 export function Dashboard({ onLogout, userData }: DashboardProps) {
   const router = useRouter();
   const { playAlertSound, showBroadcastAlert } = usePushNotifications();
@@ -336,6 +348,53 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [profileEditSuccess, setProfileEditSuccess] = useState<string | null>(null);
   const [profileEditError, setProfileEditError] = useState<string | null>(null);
   const [mobileNumberError, setMobileNumberError] = useState<string | null>(null);
+  const [profileOtpMessageId, setProfileOtpMessageId] = useState<string | null>(null);
+  const [profileOtpCode, setProfileOtpCode] = useState<string>('');
+  const [profileOtpError, setProfileOtpError] = useState<string | null>(null);
+  const [profileOtpSuccess, setProfileOtpSuccess] = useState<string | null>(null);
+  const [isProfileOtpSending, setIsProfileOtpSending] = useState<boolean>(false);
+  const [isProfileOtpVerifying, setIsProfileOtpVerifying] = useState<boolean>(false);
+  const [isProfileOtpVerified, setIsProfileOtpVerified] = useState<boolean>(false);
+  const [profileOtpResendTimer, setProfileOtpResendTimer] = useState<number>(0);
+
+  const resetProfileOtpProgress = (verified: boolean) => {
+    setIsProfileOtpVerified(verified);
+    setProfileOtpMessageId(null);
+    setProfileOtpCode('');
+    setProfileOtpError(null);
+    setProfileOtpSuccess(null);
+    setProfileOtpResendTimer(0);
+    setIsProfileOtpSending(false);
+    setIsProfileOtpVerifying(false);
+  };
+
+  const formattedCurrentMobile = useMemo(
+    () => formatMobileNumberForInput(currentUser?.mobileNumber),
+    [currentUser?.mobileNumber]
+  );
+
+  const mobileNumberHasChanged = useMemo(() => {
+    if (!formattedCurrentMobile) {
+      return editingMobileNumber.length > 0;
+    }
+    return editingMobileNumber !== formattedCurrentMobile;
+  }, [formattedCurrentMobile, editingMobileNumber]);
+
+  const profileMobileDisplay = useMemo(() => {
+    if (!formattedCurrentMobile) return '';
+    const prefixed = formattedCurrentMobile.startsWith('0')
+      ? formattedCurrentMobile
+      : `0${formattedCurrentMobile}`;
+    return prefixed.slice(0, 11);
+  }, [formattedCurrentMobile]);
+
+  useEffect(() => {
+    if (profileOtpResendTimer <= 0) return;
+    const timer = setInterval(() => {
+      setProfileOtpResendTimer(prev => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [profileOtpResendTimer]);
 
   // Ban gate: if user is banned (permanent or until future), block app usage and show notice
   const isUserBanned = useMemo(() => {
@@ -791,7 +850,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         return;
       }
       setCurrentUser(userProfile);
-      setEditingMobileNumber(userProfile.mobileNumber || '');
+      setEditingMobileNumber(formatMobileNumberForInput(userProfile.mobileNumber));
       setEditingUsername(userProfile.username || '');
 
       await refreshUserData(userId);
@@ -912,7 +971,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
       setCurrentUser(userProfile);
       setStoreCurrentUser(userProfile);
-      setEditingMobileNumber(userProfile.mobileNumber || '');
+      setEditingMobileNumber(formatMobileNumberForInput(userProfile.mobileNumber));
       setEditingUsername(userProfile.username || '');
 
       // 2. Initial data fetch
@@ -1319,6 +1378,94 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   };
 
+  const sendProfileOtp = async () => {
+    if (!mobileNumberHasChanged) {
+      setProfileOtpError("Mobile number has not changed.");
+      setProfileOtpSuccess(null);
+      return;
+    }
+    if (editingMobileNumber.length !== 10) {
+      setMobileNumberError('Please complete the mobile number (10 digits required).');
+      setProfileOtpError("Please provide a valid mobile number before requesting a code.");
+      setProfileOtpSuccess(null);
+      return;
+    }
+
+    setIsProfileOtpSending(true);
+    setProfileOtpError(null);
+    setProfileOtpSuccess(null);
+    setProfileOtpCode('');
+
+    try {
+      const response = await fetch("/api/semaphore/otp/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ mobileNumber: editingMobileNumber }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to send verification code.");
+      }
+
+      if (!data?.messageId) {
+        throw new Error("Semaphore did not return a verification reference.");
+      }
+
+      setProfileOtpMessageId(data.messageId);
+      setProfileOtpSuccess("Verification code sent to your mobile number.");
+      setIsProfileOtpVerified(false);
+      setProfileOtpResendTimer(60);
+    } catch (error: any) {
+      setProfileOtpError(error?.message || "Failed to send verification code.");
+    } finally {
+      setIsProfileOtpSending(false);
+    }
+  };
+
+  const verifyProfileOtp = async () => {
+    if (!profileOtpMessageId) {
+      setProfileOtpError("Please request a verification code first.");
+      return;
+    }
+
+    if (!profileOtpCode.trim()) {
+      setProfileOtpError("Please enter the verification code.");
+      return;
+    }
+
+    setIsProfileOtpVerifying(true);
+    setProfileOtpError(null);
+    setProfileOtpSuccess(null);
+
+    try {
+      const response = await fetch("/api/semaphore/otp/verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ messageId: profileOtpMessageId, code: profileOtpCode }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Verification failed.");
+      }
+
+      setIsProfileOtpVerified(true);
+      setProfileOtpSuccess("Mobile number verified.");
+    } catch (error: any) {
+      setIsProfileOtpVerified(false);
+      setProfileOtpError(error?.message || "Verification failed.");
+    } finally {
+      setIsProfileOtpVerifying(false);
+    }
+  };
+
   // Handle Profile Update
   const handleProfileUpdate = async () => {
     if (!currentUser) {
@@ -1331,6 +1478,12 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     // Validate mobile number
     if (editingMobileNumber.length !== 10) {
       setMobileNumberError('Please complete the mobile number (10 digits required).');
+      return;
+    }
+
+    if (mobileNumberHasChanged && !isProfileOtpVerified) {
+      setProfileEditError("Please verify the new mobile number before updating.");
+      setProfileOtpError("Please verify the new mobile number before updating.");
       return;
     }
 
@@ -1351,6 +1504,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       }
 
       setCurrentUser(data);
+      setEditingMobileNumber(formatMobileNumberForInput(data.mobileNumber));
       setProfileEditSuccess("Profile updated successfully!");
     } catch (error: any) {
       console.error("Error updating profile:", error);
@@ -1986,12 +2140,14 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                       onChange={(e) => {
                         const value = e.target.value.replace(/\D/g, ''); // Remove non-digits
                         if (value.length <= 10) {
+                          const hasChanged = formattedCurrentMobile ? value !== formattedCurrentMobile : value.length > 0;
                           setEditingMobileNumber(value);
                           if (value.length < 10) {
                             setMobileNumberError('Please complete the mobile number (10 digits required).');
                           } else {
                             setMobileNumberError(null);
                           }
+                          resetProfileOtpProgress(!hasChanged);
                         }
                       }}
                       maxLength={10}
@@ -2000,6 +2156,46 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                     />
                   </div>
                   {mobileNumberError && <p className="mt-2 text-sm text-red-600">{mobileNumberError}</p>}
+                  <p className="mt-2 text-sm text-gray-600">Current saved number: {profileMobileDisplay || 'Not set'}</p>
+                  {mobileNumberHasChanged && (
+                    <div className="mt-3 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                          id="profileOtpCode"
+                          value={profileOtpCode}
+                          onChange={(e) => setProfileOtpCode(e.target.value.replace(/\D/g, ''))}
+                          maxLength={6}
+                          placeholder="Enter code"
+                          disabled={isProfileOtpVerified}
+                          className="w-28 sm:w-32"
+                        />
+                        <Button
+                          type="button"
+                          onClick={sendProfileOtp}
+                          disabled={isProfileOtpSending || profileOtpResendTimer > 0 || isProfileOtpVerified}
+                          className="bg-orange-500 hover:bg-orange-600 text-white"
+                        >
+                          {isProfileOtpSending
+                            ? 'Sending...'
+                            : profileOtpResendTimer > 0
+                              ? `Resend in ${profileOtpResendTimer}s`
+                              : isProfileOtpVerified
+                                ? 'Verified'
+                                : 'Send OTP'}
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={verifyProfileOtp}
+                          disabled={isProfileOtpVerifying || !profileOtpMessageId || !profileOtpCode.trim() || isProfileOtpVerified}
+                          className="bg-green-600 hover:bg-green-700 text-white"
+                        >
+                          {isProfileOtpVerifying ? 'Verifying...' : 'Verify'}
+                        </Button>
+                      </div>
+                      {profileOtpError && <p className="text-sm text-red-600">{profileOtpError}</p>}
+                      {profileOtpSuccess && <p className="text-sm text-green-600">{profileOtpSuccess}</p>}
+                    </div>
+                  )}
               </div>
               <Button onClick={handleProfileUpdate} disabled={!!mobileNumberError} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-2 px-4 rounded-lg">
                 <Edit className="mr-2 h-4 w-4" /> Update Profile

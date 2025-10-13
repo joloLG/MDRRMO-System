@@ -819,6 +819,29 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         console.error('Error sending user notification:', notificationError);
       }
 
+      const reporterNameParts = [selectedReport.firstName, selectedReport.lastName].filter(Boolean);
+      const reporterName = reporterNameParts.length > 0 ? reporterNameParts.join(' ') : 'Citizen';
+      const locationSummary = (selectedReport.location_address || '').trim() || 'your reported location';
+      const smsMessage = `Hello ${reporterName}, Team ${teamName} is now responding to your ${selectedReport.emergency_type} report at ${locationSummary}. Please stay safe.`;
+
+      void fetch('/api/alerts/send-sms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          reportId: selectedReport.id,
+          message: smsMessage,
+        }),
+      }).then(async (res) => {
+        if (!res.ok) {
+          const payload = await res.json().catch(() => null);
+          console.warn('Failed to send SMS notification', payload);
+        }
+      }).catch((err) => {
+        console.error('Semaphore SMS request error', err);
+      });
+
       // De-duplicate across accounts: within 50m and ±30 minutes, same type
       await dedupeNearbyReports(updatedReport as Report);
 
