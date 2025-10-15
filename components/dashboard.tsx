@@ -6,14 +6,16 @@ import type { PluginListenerHandle } from "@capacitor/core"
 import { App } from "@capacitor/app"
 import { Geolocation } from "@capacitor/geolocation"
   import { Button } from "@/components/ui/button"
-  import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding, MapPin, RefreshCcw, Megaphone } from "lucide-react" // Added Swords for Armed Conflict
+  import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding, MapPin, RefreshCcw, Megaphone, Star, Loader2, Wand2 } from "lucide-react" // Added Swords for Armed Conflict
   import { UserSidebar } from "./user_sidebar"
   import { LocationPermissionModal } from "./location-permission-modal"
-import { supabase } from "@/lib/supabase"
-import type { RealtimeChannel } from "@supabase/supabase-js"
-import { Input } from "@/components/ui/input"
+  import { supabase } from "@/lib/supabase"
+  import type { RealtimeChannel } from "@supabase/supabase-js"
+  import { Input } from "@/components/ui/input"
   import { Textarea } from "@/components/ui/textarea"
   import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+  import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
   import { formatDistanceToNowStrict, parseISO } from 'date-fns';
   import { FeedbackHistory } from "@/components/feedback-history"
 import { ReportDetailModal } from "@/components/ReportDetailModal"
@@ -445,6 +447,13 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [feedbackText, setFeedbackText] = useState<string>('');
   const [feedbackSentMessage, setFeedbackSentMessage] = useState<string | null>(null);
   const [feedbackErrorMessage, setFeedbackErrorMessage] = useState<string | null>(null);
+  const [feedbackCategory, setFeedbackCategory] = useState<'bug' | 'feature' | 'question' | 'other'>('bug');
+  const [feedbackRating, setFeedbackRating] = useState<number>(0);
+  const [isSendingFeedback, setIsSendingFeedback] = useState<boolean>(false);
+  const FEEDBACK_MAX = 500;
+  const FEEDBACK_MIN = 10;
+  const feedbackCharsLeft = useMemo(() => FEEDBACK_MAX - feedbackText.length, [feedbackText]);
+  const feedbackTooShort = useMemo(() => feedbackText.trim().length < FEEDBACK_MIN, [feedbackText]);
 
   // States for fetched data for new sections
   const [userReports, setUserReports] = useState<Report[]>([]);
@@ -1583,32 +1592,50 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
   // Handle Send Feedback
   const handleSendFeedback = async () => {
-    if (!currentUser || !feedbackText.trim()) {
-      setFeedbackErrorMessage("Feedback cannot be empty.");
+    if (!currentUser) return;
+    const trimmed = feedbackText.trim();
+    if (!trimmed) {
+      setFeedbackErrorMessage('Feedback cannot be empty.');
       return;
     }
+    if (trimmed.length < FEEDBACK_MIN) {
+      setFeedbackErrorMessage(`Please provide at least ${FEEDBACK_MIN} characters.`);
+      return;
+    }
+    if (trimmed.length > FEEDBACK_MAX) {
+      setFeedbackErrorMessage(`Maximum ${FEEDBACK_MAX} characters allowed.`);
+      return;
+    }
+
+    setIsSendingFeedback(true);
     setFeedbackSentMessage(null);
     setFeedbackErrorMessage(null);
 
     try {
+      const finalText = trimmed;
+
       const { error } = await supabase
         .from('user_feedback')
         .insert({
           user_id: currentUser.id,
-          feedback_text: feedbackText,
+          feedback_text: finalText,
+          category: feedbackCategory as any,
+          rating: feedbackRating || null,
           created_at: new Date().toISOString(),
           is_read: false,
         });
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       setFeedbackText('');
-      setFeedbackSentMessage("Feedback sent successfully!");
+      setFeedbackRating(0);
+      setFeedbackCategory('bug');
+      setFeedbackSentMessage('Feedback sent successfully!');
     } catch (error: any) {
-      console.error("Error sending feedback:", error);
-      setFeedbackErrorMessage(`Failed to send feedback: ${error.message || 'Unknown error'}. Please check your Supabase RLS policies for 'user_feedback' INSERT operation.`);
+      console.error('Error sending feedback:', error);
+      setFeedbackErrorMessage(`Failed to send feedback: ${error?.message || 'Unknown error'}.`);
+    } finally {
+      setIsSendingFeedback(false);
     }
   };
 
@@ -2285,28 +2312,87 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         )}
 
         {currentView === 'sendFeedback' && currentUser && (
-          <Card className="w-full max-w-md bg-white/90 backdrop-blur-sm shadow-lg rounded-lg p-4 sm:p-6">
+          <Card className="w-full max-w-xl bg-white/90 backdrop-blur-sm shadow-lg rounded-lg p-4 sm:p-6">
             <CardHeader>
               <CardTitle className="text-xl sm:text-2xl font-bold text-gray-800">Send Feedback</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {feedbackSentMessage && (
+                <Alert className="border-green-300 bg-green-50">
+                  <AlertTitle className="text-green-700">Success</AlertTitle>
+                  <AlertDescription className="text-green-700">{feedbackSentMessage}</AlertDescription>
+                </Alert>
+              )}
+              {feedbackErrorMessage && (
+                <Alert variant="destructive">
+                  <AlertTitle>Error</AlertTitle>
+                  <AlertDescription>{feedbackErrorMessage}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <Select value={feedbackCategory} onValueChange={(v: any) => setFeedbackCategory(v)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bug">Bug</SelectItem>
+                      <SelectItem value="feature">Feature Request</SelectItem>
+                      <SelectItem value="question">Question</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Rating (optional)</label>
+                  <div className="flex items-center gap-1">
+                    {[1,2,3,4,5].map(n => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setFeedbackRating(n === feedbackRating ? 0 : n)}
+                        className="p-1"
+                        aria-label={`rate ${n}`}
+                      >
+                        <Star className={n <= feedbackRating ? 'w-6 h-6 fill-yellow-400 stroke-yellow-500' : 'w-6 h-6 text-gray-300'} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
               <div>
-                <label htmlFor="feedback" className="block text-sm font-medium text-gray-700 mb-1">Your Feedback</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="feedback" className="block text-sm font-medium text-gray-700">Your Feedback</label>
+                  <span className={`text-xs ${feedbackText.length > FEEDBACK_MAX || feedbackTooShort ? 'text-red-600' : 'text-gray-500'}`}>{feedbackText.length}/{FEEDBACK_MAX}</span>
+                </div>
                 <Textarea
                   id="feedback"
                   value={feedbackText}
-                  onChange={(e) => setFeedbackText(e.target.value)}
-                  rows={5}
-                  placeholder="Type your feedback here..."
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  onChange={(e) => setFeedbackText(e.target.value.slice(0, FEEDBACK_MAX))}
+                  rows={6}
+                  placeholder="Describe the issue or request in detail..."
+                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${feedbackTooShort ? 'focus:ring-red-500 border-red-300' : 'focus:ring-orange-500 border-gray-200'}`}
                 />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setFeedbackText(prev => (prev ? `${prev}\n` : '') + 'Bug: Steps to reproduce... Expected vs actual behavior...')}>
+                    <Wand2 className="h-4 w-4 mr-1" /> Bug template
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setFeedbackText(prev => (prev ? `${prev}\n` : '') + 'Feature Request: I would like to... Because...')}>
+                    <Wand2 className="h-4 w-4 mr-1" /> Feature template
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setFeedbackText(prev => (prev ? `${prev}\n` : '') + 'Question: ...')}>
+                    <Wand2 className="h-4 w-4 mr-1" /> Question template
+                  </Button>
+                </div>
               </div>
-              <Button onClick={handleSendFeedback} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg">
-                <Send className="mr-2 h-4 w-4" /> Send Feedback
+
+              <Button onClick={handleSendFeedback} disabled={isSendingFeedback || feedbackTooShort || !feedbackText.trim()} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg disabled:opacity-50">
+                {isSendingFeedback ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...</>) : (<><Send className="mr-2 h-4 w-4" /> Send Feedback</>)}
               </Button>
-              {feedbackSentMessage && <p className="text-green-600 text-sm mt-2 text-center">{feedbackSentMessage}</p>}
-              {feedbackErrorMessage && <p className="text-red-600 text-sm mt-2 text-center">{feedbackErrorMessage}</p>}
-              {/* Feedback History section below the send form */}
+
               <div className="mt-8">
                 <FeedbackHistory userId={currentUser.id} />
               </div>

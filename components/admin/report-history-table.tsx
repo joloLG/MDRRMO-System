@@ -251,7 +251,7 @@ export function ReportHistoryTable({
                   <SelectTrigger>
                     <SelectValue placeholder="All Barangays" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-64">
                     <SelectItem value="all">All Barangays</SelectItem>
                     {barangays.map((barangay) => (
                       <SelectItem key={barangay.id} value={String(barangay.id)}>
@@ -378,7 +378,7 @@ export function ReportHistoryTable({
             <SelectTrigger className="w-full md:w-[150px]">
               <SelectValue placeholder="Filter by Barangay" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-64">
               <SelectItem value="all">All Barangays</SelectItem>
               {barangays.map((barangay) => (
                 <SelectItem key={barangay.id} value={String(barangay.id)}>

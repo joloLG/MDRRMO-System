@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 interface FeedbackReply {
   id: string;
   feedback_id: string;
@@ -10,7 +10,10 @@ interface FeedbackReply {
 }
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Mail, ArrowLeft } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Mail, ArrowLeft, Star, RefreshCw, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 
@@ -23,6 +26,8 @@ interface UserFeedback {
   is_read: boolean;
   userName?: string;
   userEmail?: string;
+  category?: string | null;
+  rating?: number | null;
 }
 
 export function FeedbackViewer() {
@@ -60,6 +65,8 @@ export function FeedbackViewer() {
           is_read: item.is_read,
           userName: item.users?.firstName ? `${item.users.firstName} ${item.users.lastName || ''}`.trim() : 'Unknown User',
           userEmail: item.users?.email || 'N/A',
+          category: item.category || null,
+          rating: typeof item.rating === 'number' ? item.rating : (item.rating == null ? null : Number(item.rating)),
         }));
         setUserFeedbacks(feedbacksWithUsers);
         setUnreadFeedbackCount(feedbacksWithUsers.filter(f => !f.is_read).length);
@@ -89,6 +96,43 @@ export function FeedbackViewer() {
       // Ignore for now
     }
   }, []);
+
+  // Filters and search
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'bug' | 'feature' | 'question' | 'other'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'unread' | 'read'>('all');
+  const [query, setQuery] = useState<string>('');
+
+  const filteredFeedbacks = useMemo(() => {
+    let list = [...userFeedbacks];
+    if (categoryFilter !== 'all') list = list.filter(f => (f.category || 'bug') === categoryFilter);
+    if (statusFilter !== 'all') list = list.filter(f => statusFilter === 'unread' ? !f.is_read : f.is_read);
+    if (query.trim()) {
+      const q = query.trim().toLowerCase();
+      list = list.filter(f =>
+        (f.userName || '').toLowerCase().includes(q) ||
+        (f.userEmail || '').toLowerCase().includes(q) ||
+        (f.feedback_text || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [userFeedbacks, categoryFilter, statusFilter, query]);
+
+  // Device info was removed; no UI/state needed
+
+  // Toggle read state
+  const handleToggleRead = useCallback(async (feedbackId: string, curr: boolean) => {
+    setError(null);
+    try {
+      const { error } = await supabase
+        .from('user_feedback')
+        .update({ is_read: !curr })
+        .eq('id', feedbackId);
+      if (error) throw error;
+      fetchUserFeedbacks();
+    } catch (err: any) {
+      setError(err.message || 'Failed to update read state.');
+    }
+  }, [fetchUserFeedbacks]);
 
   useEffect(() => {
     fetchUserFeedbacks();
@@ -200,26 +244,73 @@ export function FeedbackViewer() {
             <Mail className="mr-3" /> User Feedback
           </CardTitle>
         </div>
+        <div className="flex items-center gap-2">
+          <Badge className="bg-white/20 text-white">Unread: {unreadFeedbackCount}</Badge>
+          <Button variant="ghost" className="text-white" onClick={fetchUserFeedbacks}>
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="p-6">
-        <p className="text-gray-700 mb-4">Review feedback submitted by users. Unread feedback is highlighted.</p>
+        <div className="mb-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="md:col-span-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by user or text..." className="pl-9" />
+            </div>
+          </div>
+          <div>
+            <Select value={categoryFilter} onValueChange={(v: any) => setCategoryFilter(v)}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="Category" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                <SelectItem value="bug">Bug</SelectItem>
+                <SelectItem value="feature">Feature</SelectItem>
+                <SelectItem value="question">Question</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="unread">Unread</SelectItem>
+                <SelectItem value="read">Read</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         {error && <p className="text-red-600 text-sm mb-4 text-center">{error}</p>}
-        {userFeedbacks.length === 0 ? (
+        {filteredFeedbacks.length === 0 ? (
           <p className="text-gray-600 text-center py-4">No user feedback received yet.</p>
         ) : (
           <div className="space-y-4">
-            {userFeedbacks.map((feedback) => (
+            {filteredFeedbacks.map((feedback) => (
               <div key={feedback.id} className={`p-4 border rounded-lg shadow-sm ${feedback.is_read ? 'bg-gray-50' : 'bg-red-50 border-red-200'}`}>
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     <p className="font-semibold text-gray-900">From: {feedback.userName} ({feedback.userEmail})</p>
                     <p className="text-xs text-gray-500">{new Date(feedback.created_at).toLocaleString()}</p>
+                    <div className="mt-1 flex items-center gap-2">
+                      {feedback.category && (
+                        <Badge className="bg-orange-100 text-orange-800 border border-orange-300 capitalize">{feedback.category}</Badge>
+                      )}
+                      {typeof feedback.rating === 'number' && feedback.rating > 0 && (
+                        <span className="flex items-center">
+                          {[1,2,3,4,5].map(n => (
+                            <Star key={n} className={n <= (feedback.rating || 0) ? 'w-4 h-4 fill-yellow-400 stroke-yellow-500' : 'w-4 h-4 text-gray-300'} />
+                          ))}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  {!feedback.is_read && (
-                    <Button size="sm" onClick={() => handleMarkFeedbackAsRead(feedback.id)} className="bg-blue-600 hover:bg-blue-700 text-white">
-                      Mark as Read
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => handleToggleRead(feedback.id, feedback.is_read)}>
+                      {feedback.is_read ? 'Mark Unread' : 'Mark Read'}
                     </Button>
-                  )}
+                  </div>
                 </div>
                 <p className="text-gray-800 whitespace-pre-wrap">{feedback.feedback_text}</p>
                 <div className="mt-3 ml-4 border-l-2 border-gray-200 pl-4">
