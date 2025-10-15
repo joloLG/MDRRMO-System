@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
-import { Bell, BellOff, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon, FireExtinguisher, HeartPulse, Car, CloudRain, Swords, HelpCircle, PersonStanding, Navigation } from "lucide-react"
+import { Bell, BellOff, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon, FireExtinguisher, HeartPulse, Car, CloudRain, Swords, HelpCircle, PersonStanding, Navigation, Clock } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Calendar } from "@/components/ui/calendar"
@@ -222,6 +222,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [resolvedFilterDate, setResolvedFilterDate] = useState<Date | undefined>(new Date());
   const [showActiveModal, setShowActiveModal] = useState(false);
   const [showRespondedModal, setShowRespondedModal] = useState(false);
+  const [hasCustomResolvedDate, setHasCustomResolvedDate] = useState<boolean>(false);
 
   // Set admin user data from props
   useEffect(() => {
@@ -950,6 +951,34 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     return () => clearInterval(interval);
   }, []);
 
+  // Philippine time and date (Asia/Manila)
+  const phDateFormatter = React.useMemo(() => new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'Asia/Manila',
+    weekday: 'long',
+    month: 'long',
+    day: '2-digit',
+    year: 'numeric',
+  }), []);
+  const phTimeFormatter = React.useMemo(() => new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'Asia/Manila',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  }), []);
+  const [phDate, setPhDate] = useState<string>(phDateFormatter.format(new Date()));
+  const [phTime, setPhTime] = useState<string>(phTimeFormatter.format(new Date()));
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      setPhDate(phDateFormatter.format(now));
+      setPhTime(phTimeFormatter.format(now));
+    };
+    const id = setInterval(tick, 1000);
+    tick();
+    return () => clearInterval(id);
+  }, [phDateFormatter, phTimeFormatter]);
+
   if (error) {
     return (
       <div className="flex justify-center items-center h-screen text-red-500 font-sans">
@@ -1002,6 +1031,13 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
               </div>
             )}
           </div>
+        </div>
+        <div className="flex-1 flex flex-col items-center mx-2">
+          <div className="mt-0 flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 shadow-sm">
+            <Clock className="h-4 w-4 text-gray-600" />
+            <span className="font-mono tabular-nums whitespace-nowrap text-lg sm:text-2xl md:text-3xl font-bold text-gray-900 leading-none">{phTime}</span>
+          </div>
+          <div className="mt-1 text-sm sm:text-base md:text-lg font-semibold text-gray-700">{phDate}</div>
         </div>
         <div className="flex items-center space-x-2 sm:space-x-4 ml-auto">
           <div className="hidden md:flex items-center gap-2 mr-2">
@@ -1105,7 +1141,11 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                     <Calendar
                       mode="single"
                       selected={resolvedFilterDate}
-                      onSelect={setResolvedFilterDate}
+                      onSelect={(d) => {
+                        const selected = d ?? new Date();
+                        setResolvedFilterDate(selected);
+                        setHasCustomResolvedDate(!isSameDay(selected, new Date()));
+                      }}
                       initialFocus
                     />
                   </PopoverContent>
@@ -1113,9 +1153,9 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
               </CardHeader>
               <CardContent>
                 <p className="text-4xl font-bold text-green-600">{filteredResolvedCount}</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {resolvedFilterDate ? `for ${format(resolvedFilterDate, "PPP")}` : "Select a date"}
-                </p>
+                {!hasCustomResolvedDate && (
+                  <p className="text-xs text-gray-500 mt-1">LATEST RESOLVED</p>
+                )}
               </CardContent>
             </Card>
         </div>

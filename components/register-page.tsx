@@ -17,6 +17,7 @@ interface RegisterPageProps {
 }
 
 export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPageProps) {
+  const OTP_ENABLED = false
   const [formData, setFormData] = useState({
     firstName: "",
     middleName: "",
@@ -226,7 +227,7 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
       return
     }
 
-    if (!isOtpVerified) {
+    if (OTP_ENABLED && !isOtpVerified) {
       setError("Please verify your mobile number before registering.")
       return
     }
@@ -442,7 +443,7 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
               disabled={isLoading}
             />
             {mobileNumberError && <p className="text-sm text-red-500 mt-1">{mobileNumberError}</p>}
-            <div className="mt-3 space-y-2">
+            {OTP_ENABLED && (<div className="mt-3 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <Input
                   id="otpCode"
@@ -472,7 +473,7 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
               </div>
               {otpError && <p className="text-sm text-red-500">{otpError}</p>}
               {otpSuccess && <p className="text-sm text-green-600">{otpSuccess}</p>}
-            </div>
+            </div>)}
           </div>
 
           <div>
@@ -556,7 +557,17 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
               <Checkbox
                 id="terms"
                 checked={acceptedTerms}
-                onCheckedChange={(checked) => setAcceptedTerms(checked === true)}
+                onCheckedChange={(checked) => {
+                  if (checked === true) {
+                    if (!acceptedTerms) {
+                      setShowTerms(true)
+                    } else {
+                      setAcceptedTerms(true)
+                    }
+                  } else {
+                    setAcceptedTerms(false)
+                  }
+                }}
                 className="border-orange-500 data-[state=checked]:bg-orange-500 data-[state=checked]:text-white"
               />
             </div>
@@ -585,9 +596,9 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
 
           <Button
             onClick={handleRegister}
-            disabled={isLoading || !ageVerified || !acceptedTerms || passwordInvalid || passwordsMismatch || !isOtpVerified}
+            disabled={isLoading || !ageVerified || !acceptedTerms || passwordInvalid || passwordsMismatch || (OTP_ENABLED && !isOtpVerified)}
             className={`w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded transition-colors ${
-              (!ageVerified || !acceptedTerms || passwordInvalid || passwordsMismatch || !isOtpVerified) ? 'opacity-50 cursor-not-allowed' : ''
+              (!ageVerified || !acceptedTerms || passwordInvalid || passwordsMismatch || (OTP_ENABLED && !isOtpVerified)) ? 'opacity-50 cursor-not-allowed' : ''
             }`}
           >
             {isLoading ? "Registering..." : "Register"}
@@ -668,7 +679,7 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
             <Button 
               type="button" 
               variant="outline" 
-              onClick={() => setShowTerms(false)}
+              onClick={() => { setAcceptedTerms(true); setShowTerms(false) }}
               className="border-orange-500 text-orange-500 hover:bg-orange-50"
             >
               Close

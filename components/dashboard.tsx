@@ -6,7 +6,7 @@ import type { PluginListenerHandle } from "@capacitor/core"
 import { App } from "@capacitor/app"
 import { Geolocation } from "@capacitor/geolocation"
   import { Button } from "@/components/ui/button"
-  import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding, MapPin, RefreshCcw } from "lucide-react" // Added Swords for Armed Conflict
+  import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding, MapPin, RefreshCcw, Megaphone } from "lucide-react" // Added Swords for Armed Conflict
   import { UserSidebar } from "./user_sidebar"
   import { LocationPermissionModal } from "./location-permission-modal"
 import { supabase } from "@/lib/supabase"
@@ -63,6 +63,16 @@ interface Hotline {
 interface MdrrmoInfo {
   id: string;
   content: string;
+}
+
+interface Advisory {
+  id: string;
+  preset: string | null;
+  title: string | null;
+  body: string | null;
+  expires_at: string | null;
+  created_at: string | null;
+  created_by: string | null;
 }
 
 interface DashboardProps {
@@ -440,6 +450,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [userReports, setUserReports] = useState<Report[]>([]);
   const [mdrrmoInformation, setMdrrmoInformation] = useState<MdrrmoInfo | null>(null);
   const [bulanHotlines, setBulanHotlines] = useState<Hotline[]>([]);
+  const [activeAdvisory, setActiveAdvisory] = useState<Advisory | null>(null);
 
   const reportsSource = userReports;
   const notificationsSource = notifications;
@@ -574,6 +585,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const mdrrmoInfoChannelRef = useRef<RealtimeChannel | null>(null);
   const hotlinesChannelRef = useRef<RealtimeChannel | null>(null);
   const broadcastAlertsChannelRef = useRef<RealtimeChannel | null>(null);
+  const advisoriesChannelRef = useRef<RealtimeChannel | null>(null);
 
   const cleanupRealtime = useCallback(() => {
     try {
@@ -596,6 +608,10 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       if (broadcastAlertsChannelRef.current) {
         supabase.removeChannel(broadcastAlertsChannelRef.current);
         broadcastAlertsChannelRef.current = null;
+      }
+      if (advisoriesChannelRef.current) {
+        supabase.removeChannel(advisoriesChannelRef.current);
+        advisoriesChannelRef.current = null;
       }
     } catch {}
   }, []);
@@ -667,6 +683,38 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       console.error("Error loading Bulan Hotlines:", error);
     }
   }, []);
+
+  // Function to load Active Advisory (only non-expired advisories are returned via RLS)
+  const loadActiveAdvisory = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('advisories')
+        .select('id, preset, title, body, expires_at, created_at, created_by')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (error) {
+        console.error('Error loading advisories:', error);
+        setActiveAdvisory(null);
+        return;
+      }
+      const row = (data || [])[0] as Advisory | undefined;
+      setActiveAdvisory(row || null);
+    } catch (e) {
+      console.error('Error loading advisories:', e);
+      setActiveAdvisory(null);
+    }
+  }, []);
+
+  // Auto-refresh advisory display exactly at expiry so Welcome card returns
+  useEffect(() => {
+    if (!activeAdvisory?.expires_at) return;
+    const expiryMs = new Date(activeAdvisory.expires_at).getTime();
+    const now = Date.now();
+    if (!isFinite(expiryMs) || expiryMs <= now) return;
+    const delay = Math.min(Math.max(0, expiryMs - now + 300), 24 * 60 * 60 * 1000); // cap 24h
+    const timer = setTimeout(() => { void loadActiveAdvisory(); }, delay);
+    return () => clearTimeout(timer);
+  }, [activeAdvisory?.expires_at, loadActiveAdvisory]);
 
   // Realtime setup after loaders are defined
   const setupRealtime = useCallback((userId: string) => {
@@ -772,6 +820,16 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         }
       )
       .subscribe();
+
+    // Advisories: watch for create/update/expire and refresh active advisory
+    advisoriesChannelRef.current = supabase
+      .channel('advisories_channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'advisories' },
+        () => { void loadActiveAdvisory(); }
+      )
+      .subscribe();
   }, [cleanupRealtime, loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines, playAlertSound, showBroadcastAlert]);
 
   // Unified refresh helper to fetch all user-dependent data
@@ -788,7 +846,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     // Fetch global data in parallel (not user-dependent)
     void loadMdrrmoInfo();
     void loadBulanHotlines();
-  }, [loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines]);
+    void loadActiveAdvisory();
+  }, [loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines, loadActiveAdvisory]);
 
   // Shared refresh helper (optionally shows overlay)
   const runRefresh = useCallback(async (showSpinner: boolean) => {
@@ -815,6 +874,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       ]);
       void loadMdrrmoInfo();
       void loadBulanHotlines();
+      void loadActiveAdvisory();
     } catch (e) {
       console.warn('refresh error:', e);
     } finally {
@@ -827,7 +887,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       }
       isResumingRef.current = false;
     }
-  }, [RESUME_COOLDOWN_MS, onLogout, loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines, isNativePlatform]);
+  }, [RESUME_COOLDOWN_MS, onLogout, loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines, loadActiveAdvisory, isNativePlatform]);
 
   const quickRefresh = useCallback(async () => {
     await runRefresh(true);
@@ -1914,23 +1974,35 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         {currentView === 'main' && (
           <>
             {/* Welcome Card with Logo */}
-            <Card className="w-full max-w-2xl mx-auto mb-6 bg-white/90 backdrop-blur-sm shadow-lg rounded-lg border border-orange-300">
-              <CardHeader className="pb-2 flex flex-col items-center justify-center">
-                <img
-                  src="/images/logo.png"
-                  alt="MDRRMO Logo"
-                  className="w-20 h-20 object-contain mb-2 mx-auto"
-                  style={{ maxWidth: '80px', maxHeight: '80px' }}
-                />
-                <CardTitle className="text-lg sm:text-xl font-bold text-orange-700 text-center mt-2">WELCOME TO MDRRMO INCIDENT REPORTING SYSTEM APP</CardTitle>
-              </CardHeader>
-              <CardContent className="text-center text-gray-700 text-sm sm:text-base">
-                SCROLL DOWN AND CLICK ANY INCIDENT TYPE TO SEND AN EMERGENCY ALERT TO MDRRMO RESPONDERS.
-              
-                <CardContent className="text-center text-red-700 text-sm sm:text-base"></CardContent>
-                Available max credit is 3, Every Credits will be refreshed in 10 minutes
-              </CardContent>
-            </Card>
+            {activeAdvisory ? (
+              <Card className="w-full max-w-2xl mx-auto mb-6 bg-white/90 backdrop-blur-sm shadow-lg rounded-lg border border-orange-300">
+                <CardHeader className="pb-2 flex flex-col items-center justify-center">
+                  <Megaphone className="w-12 h-12 text-orange-600 mb-2" />
+                  <CardTitle className="text-lg sm:text-xl font-bold text-orange-700 text-center mt-2">{activeAdvisory.title || 'MDRRMO Advisory'}</CardTitle>
+                </CardHeader>
+                <CardContent className="text-center text-gray-700 text-sm sm:text-base whitespace-pre-wrap">
+                  {activeAdvisory.body || ''}
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="w-full max-w-2xl mx-auto mb-6 bg-white/90 backdrop-blur-sm shadow-lg rounded-lg border border-orange-300">
+                <CardHeader className="pb-2 flex flex-col items-center justify-center">
+                  <img
+                    src="/images/logo.png"
+                    alt="MDRRMO Logo"
+                    className="w-20 h-20 object-contain mb-2 mx-auto"
+                    style={{ maxWidth: '80px', maxHeight: '80px' }}
+                  />
+                  <CardTitle className="text-lg sm:text-xl font-bold text-orange-700 text-center mt-2">WELCOME TO MDRRMO INCIDENT REPORTING SYSTEM APP</CardTitle>
+                </CardHeader>
+                <CardContent className="text-center text-gray-700 text-sm sm:text-base">
+                  SCROLL DOWN AND CLICK ANY INCIDENT TYPE TO SEND AN EMERGENCY ALERT TO MDRRMO RESPONDERS.
+                
+                  <CardContent className="text-center text-red-700 text-sm sm:text-base"></CardContent>
+                  Available max credit is 3, Every Credits will be refreshed in 10 minutes
+                </CardContent>
+              </Card>
+            )}
             <div className="text-center mb-8">
               <div className="space-y-2">
                 <p className="text-white text-lg sm:text-xl font-semibold bg-black/50 p-3 rounded-lg shadow-md">
