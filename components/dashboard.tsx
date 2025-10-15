@@ -1047,6 +1047,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         loadUserReports(user.id),
         loadMdrrmoInfo(),
         loadBulanHotlines(),
+        loadActiveAdvisory(),
       ]);
 
       // 3. Set up real-time subscriptions
