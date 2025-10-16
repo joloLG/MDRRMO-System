@@ -196,7 +196,7 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
       {/* Overlay for better readability */}
       <div className="absolute inset-0 bg-black/40"></div>
 
-      <Card className="w-full max-w-md bg-white/95 backdrop-blur-sm shadow-2xl relative z-10">
+      <Card className="w-full max-w-md bg-white/95 backdrop-blur-sm shadow-2xl relative z-10 auth-card-pop">
         <CardHeader className="text-center bg-orange-500 text-white rounded-t-lg">
           <CardTitle className="text-2xl font-bold">MDRRMO Login</CardTitle>
           <p className="text-orange-100">Emergency Reporting System</p>
