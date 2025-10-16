@@ -106,19 +106,32 @@ export default function AdvisoryManagementPage() {
     }
     try {
       setLoading(true)
-      const { data: sessionData } = await supabase.auth.getSession()
-      const userId = sessionData?.session?.user?.id || null
-      const { error: insertError } = await supabase
-        .from('advisories')
-        .insert({
+      const response = await fetch('/api/advisories', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           preset,
           title: title.trim(),
           body: body.trim(),
-          expires_at: new Date(expiresAt).toISOString(),
-          created_by: userId,
-        })
-      if (insertError) throw insertError
-      setMessage('Advisory posted successfully.')
+          expiresAt,
+        }),
+      })
+
+      const result = await response.json()
+      if (!response.ok) {
+        setError(result?.error || 'Failed to post advisory')
+        return
+      }
+
+      const emailsSent = result?.stats?.emailsSent ?? 0
+      const emailsAttempted = result?.stats?.emailsAttempted ?? undefined
+      const emailSummary = emailsAttempted !== undefined
+        ? ` Emails sent to ${emailsSent} of ${emailsAttempted} users.`
+        : ''
+
+      setMessage(`Advisory posted successfully.${emailSummary}`)
       setTitle('')
       setBody('')
       setExpiresAt('')
