@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -74,94 +74,6 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
       setOtpError("")
       setOtpSuccess("")
       setResendTimer(0)
-    }
-  }
-
-  const calculateAge = (birthDate: string) => {
-    const today = new Date();
-    const birthDateObj = new Date(birthDate);
-    let age = today.getFullYear() - birthDateObj.getFullYear();
-    const monthDiff = today.getMonth() - birthDateObj.getMonth();
-    
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDateObj.getDate())) {
-      age--;
-    }
-    return age;
-  };
-
-  useEffect(() => {
-    if (resendTimer <= 0) {
-      return
-    }
-    const timer = setInterval(() => {
-      setResendTimer((prev) => (prev > 0 ? prev - 1 : 0))
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [resendTimer])
-
-  const handleSendOtp = async () => {
-    if (!/^09\d{9}$/.test(formData.mobileNumber)) {
-      setMobileNumberError('Please provide a valid mobile number starting with 09 (11 digits).')
-      setOtpError("Please provide a valid mobile number before requesting a code.")
-      return
-    }
-    setIsSendingOtp(true)
-    setOtpError("")
-    setOtpSuccess("")
-    setIsOtpVerified(false)
-    try {
-      const response = await fetch("/api/semaphore/otp/send", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ mobileNumber: formData.mobileNumber }),
-      })
-      const data = await response.json()
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to send verification code.")
-      }
-      setOtpMessageId(data.messageId || null)
-      setOtpSuccess("Verification code sent to your mobile number.")
-      setResendTimer(60)
-    } catch (err: any) {
-      setOtpError(err?.message || "Failed to send verification code.")
-    } finally {
-      setIsSendingOtp(false)
-    }
-  }
-
-  const handleVerifyOtp = async () => {
-    if (!otpMessageId) {
-      setOtpError("Please request a verification code first.")
-      return
-    }
-    if (!otpCode.trim()) {
-      setOtpError("Please enter the verification code.")
-      return
-    }
-    setIsVerifyingOtp(true)
-    setOtpError("")
-    setOtpSuccess("")
-    try {
-      const response = await fetch("/api/semaphore/otp/verify", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ messageId: otpMessageId, code: otpCode }),
-      })
-      const data = await response.json()
-      if (!response.ok) {
-        throw new Error(data.error || "Verification failed.")
-      }
-      setIsOtpVerified(true)
-      setOtpSuccess("Mobile number verified.")
-    } catch (err: any) {
-      setIsOtpVerified(false)
-      setOtpError(err?.message || "Verification failed.")
-    } finally {
-      setIsVerifyingOtp(false)
     }
   }
 
@@ -283,6 +195,99 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
     }
   }
 
+  const handleRegisterSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    await handleRegister()
+  }
+
+  const calculateAge = (birthDate: string) => {
+    const today = new Date();
+    const birthDateObj = new Date(birthDate);
+    let age = today.getFullYear() - birthDateObj.getFullYear();
+    const monthDiff = today.getMonth() - birthDateObj.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDateObj.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
+  useEffect(() => {
+    if (resendTimer <= 0) {
+      return
+    }
+    const timer = setInterval(() => {
+      setResendTimer((prev) => (prev > 0 ? prev - 1 : 0))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [resendTimer])
+
+  const handleSendOtp = async () => {
+    if (!/^09\d{9}$/.test(formData.mobileNumber)) {
+      setMobileNumberError('Please provide a valid mobile number starting with 09 (11 digits).')
+      setOtpError("Please provide a valid mobile number before requesting a code.")
+      return
+    }
+    setIsSendingOtp(true)
+    setOtpError("")
+    setOtpSuccess("")
+    setIsOtpVerified(false)
+    try {
+      const response = await fetch("/api/semaphore/otp/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ mobileNumber: formData.mobileNumber }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to send verification code.")
+      }
+      setOtpMessageId(data.messageId || null)
+      setOtpSuccess("Verification code sent to your mobile number.")
+      setResendTimer(60)
+    } catch (err: any) {
+      setOtpError(err?.message || "Failed to send verification code.")
+    } finally {
+      setIsSendingOtp(false)
+    }
+  }
+
+  const handleVerifyOtp = async () => {
+    if (!otpMessageId) {
+      setOtpError("Please request a verification code first.")
+      return
+    }
+    if (!otpCode.trim()) {
+      setOtpError("Please enter the verification code.")
+      return
+    }
+    setIsVerifyingOtp(true)
+    setOtpError("")
+    setOtpSuccess("")
+    try {
+      const response = await fetch("/api/semaphore/otp/verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ messageId: otpMessageId, code: otpCode }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || "Verification failed.")
+      }
+      setIsOtpVerified(true)
+      setOtpSuccess("Mobile number verified.")
+    } catch (err: any) {
+      setIsOtpVerified(false)
+      setOtpError(err?.message || "Verification failed.")
+    } finally {
+      setIsVerifyingOtp(false)
+    }
+  }
+
   return (
     <div
       className="min-h-screen flex items-center justify-center p-4 relative"
@@ -301,315 +306,321 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
           <CardTitle className="text-2xl font-bold">MDRRMO Registration</CardTitle>
           <p className="text-orange-100">Emergency Reporting System</p>
         </CardHeader>
-        <CardContent className="p-6 space-y-4">
-          {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
+        <CardContent className="p-6">
+          <form onSubmit={handleRegisterSubmit} className="space-y-4">
+            {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
 
-          {success && (
-            <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">{success}</div>
-          )}
+            {success && (
+              <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">{success}</div>
+            )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="firstName" className="text-gray-700 font-medium">
-                First Name *
-              </Label>
-              <Input
-                id="firstName"
-                value={formData.firstName}
-                onChange={(e) => handleInputChange("firstName", e.target.value)}
-                className="border-orange-200 focus:border-orange-500"
-                required
-                disabled={isLoading}
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="firstName" className="text-gray-700 font-medium">
+                  First Name *
+                </Label>
+                <Input
+                  id="firstName"
+                  value={formData.firstName}
+                  onChange={(e) => handleInputChange("firstName", e.target.value)}
+                  className="border-orange-200 focus:border-orange-500"
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+              <div>
+                <Label htmlFor="middleName" className="text-gray-700 font-medium">
+                  Middle Name
+                </Label>
+                <Input
+                  id="middleName"
+                  value={formData.middleName}
+                  onChange={(e) => handleInputChange("middleName", e.target.value)}
+                  className="border-orange-200 focus:border-orange-500"
+                  disabled={isLoading}
+                />
+              </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="lastName" className="text-gray-700 font-medium">
+                  Last Name *
+                </Label>
+                <Input
+                  id="lastName"
+                  value={formData.lastName}
+                  onChange={(e) => handleInputChange("lastName", e.target.value)}
+                  className="border-orange-200 focus:border-orange-500"
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+              <div>
+                <Label htmlFor="email" className="text-gray-700 font-medium">
+                  Email Address *
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => handleInputChange("email", e.target.value)}
+                  className="border-orange-200 focus:border-orange-500"
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="username" className="text-gray-700 font-medium">
+                  Username *
+                </Label>
+                <Input
+                  id="username"
+                  value={formData.username}
+                  onChange={(e) => handleInputChange("username", e.target.value)}
+                  className="border-orange-200 focus:border-orange-500"
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+              <div>
+                <Label htmlFor="birthday" className="text-gray-700 font-medium">
+                  Birthday *
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="birthday"
+                    type="date"
+                    value={formData.birthday}
+                    onChange={(e) => {
+                      handleInputChange("birthday", e.target.value);
+                      if (e.target.value) {
+                        const age = calculateAge(e.target.value);
+                        setAgeVerified(age >= 12);
+                      }
+                    }}
+                    className={`border-orange-200 focus:border-orange-500 ${formData.birthday && !ageVerified ? 'border-red-500' : ''}`}
+                    required
+                    disabled={isLoading}
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                  {formData.birthday && (
+                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                      {ageVerified ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <X className="h-4 w-4 text-red-500" />
+                      )}
+                    </div>
+                  )}
+                </div>
+                {formData.birthday && !ageVerified && (
+                  <p className="text-sm text-red-500 mt-1">You must be at least 12 years old to register.</p>
+                )}
+              </div>
+            </div>
+
             <div>
-              <Label htmlFor="middleName" className="text-gray-700 font-medium">
-                Middle Name
+              <Label htmlFor="mobileNumber" className="text-gray-700 font-medium">
+                Mobile Number *
               </Label>
               <Input
-              id="middleName"
-              value={formData.middleName}
-              onChange={(e) => handleInputChange("middleName", e.target.value)}
-              className="border-orange-200 focus:border-orange-500"
-              disabled={isLoading}
-            />
-          </div>
-        </div>
-
-          <div>
-            <Label htmlFor="lastName" className="text-gray-700 font-medium">
-              Last Name *
-            </Label>
-            <Input
-              id="lastName"
-              value={formData.lastName}
-              onChange={(e) => handleInputChange("lastName", e.target.value)}
-              className="border-orange-200 focus:border-orange-500"
-              required
-              disabled={isLoading}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="email" className="text-gray-700 font-medium">
-              Email Address *
-            </Label>
-            <Input
-              id="email"
-              type="email"
-              value={formData.email}
-              onChange={(e) => handleInputChange("email", e.target.value)}
-              className="border-orange-200 focus:border-orange-500"
-              required
-              disabled={isLoading}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="username" className="text-gray-700 font-medium">
-              Username *
-            </Label>
-            <Input
-              id="username"
-              value={formData.username}
-              onChange={(e) => handleInputChange("username", e.target.value)}
-              className="border-orange-200 focus:border-orange-500"
-              required
-              disabled={isLoading}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="birthday" className="text-gray-700 font-medium">
-              Birthday *
-            </Label>
-            <div className="relative">
-              <Input
-                id="birthday"
-                type="date"
-                value={formData.birthday}
+                id="mobileNumber"
+                type="tel"
+                value={formData.mobileNumber}
                 onChange={(e) => {
-                  handleInputChange("birthday", e.target.value);
-                  if (e.target.value) {
-                    const age = calculateAge(e.target.value);
-                    setAgeVerified(age >= 12);
+                  const value = e.target.value.replace(/\D/g, '');
+                  if (value.length <= 11) {
+                    handleInputChange("mobileNumber", value);
+                    if (!/^09\d{0,9}$/.test(value)) {
+                      setMobileNumberError('Please enter a valid PH mobile number starting with 09.');
+                    } else if (value.length < 11) {
+                      setMobileNumberError('Please complete the mobile number (11 digits required).');
+                    } else {
+                      setMobileNumberError(null);
+                    }
                   }
                 }}
-                className={`border-orange-200 focus:border-orange-500 ${formData.birthday && !ageVerified ? 'border-red-500' : ''}`}
+                maxLength={11}
+                className={`border-orange-200 focus:border-orange-500 ${mobileNumberError ? 'border-red-500' : ''}`}
+                placeholder="09XXXXXXXXX"
                 required
                 disabled={isLoading}
-                max={new Date().toISOString().split('T')[0]} // Prevent future dates
               />
-              {formData.birthday && (
-                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                  {ageVerified ? (
-                    <Check className="h-4 w-4 text-green-500" />
-                  ) : (
-                    <X className="h-4 w-4 text-red-500" />
-                  )}
+              {mobileNumberError && <p className="text-sm text-red-500 mt-1">{mobileNumberError}</p>}
+              {OTP_ENABLED && (
+                <div className="mt-3 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      id="otpCode"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                      maxLength={6}
+                      placeholder="Enter code"
+                      disabled={isLoading || isOtpVerified}
+                      className="w-28 sm:w-32 border-orange-200 focus:border-orange-500"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleSendOtp}
+                      disabled={isLoading || isSendingOtp || resendTimer > 0 || formData.mobileNumber.length !== 11 || isOtpVerified}
+                      className="bg-orange-500 hover:bg-orange-600 text-white"
+                    >
+                      {isSendingOtp ? "Sending..." : resendTimer > 0 ? `Resend in ${resendTimer}s` : isOtpVerified ? "Verified" : "Send OTP"}
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={handleVerifyOtp}
+                      disabled={isLoading || isVerifyingOtp || !otpMessageId || !otpCode.trim() || isOtpVerified}
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      {isVerifyingOtp ? "Verifying..." : "Verify"}
+                    </Button>
+                  </div>
+                  {otpError && <p className="text-sm text-red-500">{otpError}</p>}
+                  {otpSuccess && <p className="text-sm text-green-600">{otpSuccess}</p>}
                 </div>
               )}
             </div>
-            {formData.birthday && !ageVerified && (
-              <p className="text-sm text-red-500 mt-1">You must be at least 12 years old to register.</p>
-            )}
-          </div>
 
-          <div>
-            <Label htmlFor="mobileNumber" className="text-gray-700 font-medium">
-              Mobile Number *
-            </Label>
-            <Input
-              id="mobileNumber"
-              type="tel"
-              value={formData.mobileNumber}
-              onChange={(e) => {
-                const value = e.target.value.replace(/\D/g, ''); // Remove non-digits
-                if (value.length <= 11) {
-                  handleInputChange("mobileNumber", value);
-                  if (!/^09\d{0,9}$/.test(value)) {
-                    setMobileNumberError('Please enter a valid PH mobile number starting with 09.');
-                  } else if (value.length < 11) {
-                    setMobileNumberError('Please complete the mobile number (11 digits required).');
-                  } else {
-                    setMobileNumberError(null);
-                  }
-                }
-              }}
-              maxLength={11}
-              className={`border-orange-200 focus:border-orange-500 ${mobileNumberError ? 'border-red-500' : ''}`}
-              placeholder="09XXXXXXXXX"
-              required
-              disabled={isLoading}
-            />
-            {mobileNumberError && <p className="text-sm text-red-500 mt-1">{mobileNumberError}</p>}
-            {OTP_ENABLED && (<div className="mt-3 space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Input
-                  id="otpCode"
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                  maxLength={6}
-                  placeholder="Enter code"
-                  disabled={isLoading || isOtpVerified}
-                  className="w-28 sm:w-32 border-orange-200 focus:border-orange-500"
-                />
-                <Button
-                  type="button"
-                  onClick={handleSendOtp}
-                  disabled={isLoading || isSendingOtp || resendTimer > 0 || formData.mobileNumber.length !== 11 || isOtpVerified}
-                  className="bg-orange-500 hover:bg-orange-600 text-white"
-                >
-                  {isSendingOtp ? "Sending..." : resendTimer > 0 ? `Resend in ${resendTimer}s` : isOtpVerified ? "Verified" : "Send OTP"}
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleVerifyOtp}
-                  disabled={isLoading || isVerifyingOtp || !otpMessageId || !otpCode.trim() || isOtpVerified}
-                  className="bg-green-600 hover:bg-green-700 text-white"
-                >
-                  {isVerifyingOtp ? "Verifying..." : "Verify"}
-                </Button>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="password" className="text-gray-700 font-medium">
+                  Password *
+                </Label>
+                <div className="relative mt-1">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={formData.password}
+                    onChange={(e) => handleInputChange("password", e.target.value)}
+                    className={`border-orange-200 focus:border-orange-500 pr-10 ${(passwordInvalid || passwordsMismatch) ? 'border-red-500 focus:border-red-500' : ''}`}
+                    aria-invalid={passwordInvalid || passwordsMismatch}
+                    aria-describedby="password-help password-rules password-mismatch"
+                    required
+                    disabled={isLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700"
+                    disabled={isLoading}
+                  >
+                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
+                <ul id="password-rules" className="mt-2 space-y-1 text-sm">
+                  <li className="flex items-center gap-2">
+                    {hasMinLength ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
+                    <span className={hasMinLength ? 'text-green-700' : 'text-red-700'}>At least 6 characters</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {hasUppercase ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
+                    <span className={hasUppercase ? 'text-green-700' : 'text-red-700'}>Contains an uppercase letter</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {hasNumber ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
+                    <span className={hasNumber ? 'text-green-700' : 'text-red-700'}>Contains a number</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {hasNoSpecial ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
+                    <span className={hasNoSpecial ? 'text-green-700' : 'text-red-700'}>No special characters</span>
+                  </li>
+                </ul>
+                {passwordsMismatch && (
+                  <p id="password-mismatch" className="text-sm text-red-500 mt-1">Your password didn't match, please match them</p>
+                )}
               </div>
-              {otpError && <p className="text-sm text-red-500">{otpError}</p>}
-              {otpSuccess && <p className="text-sm text-green-600">{otpSuccess}</p>}
-            </div>)}
-          </div>
-
-          <div>
-            <Label htmlFor="password" className="text-gray-700 font-medium">
-              Password *
-            </Label>
-            <div className="relative mt-1">
-              <Input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                value={formData.password}
-                onChange={(e) => handleInputChange("password", e.target.value)}
-                className={`border-orange-200 focus:border-orange-500 pr-10 ${(passwordInvalid || passwordsMismatch) ? 'border-red-500 focus:border-red-500' : ''}`}
-                aria-invalid={passwordInvalid || passwordsMismatch}
-                aria-describedby="password-help password-rules password-mismatch"
-                required
-                disabled={isLoading}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((prev) => !prev)}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700"
-                disabled={isLoading}
-              >
-                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-              </button>
+              <div>
+                <Label htmlFor="confirmPassword" className="text-gray-700 font-medium">
+                  Confirm Password *
+                </Label>
+                <div className="relative mt-1">
+                  <Input
+                    id="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={formData.confirmPassword}
+                    onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
+                    className={`border-orange-200 focus:border-orange-500 pr-10 ${passwordsMismatch ? 'border-red-500 focus:border-red-500' : ''}`}
+                    aria-invalid={passwordsMismatch}
+                    aria-describedby="password-mismatch"
+                    required
+                    disabled={isLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700"
+                    disabled={isLoading}
+                  >
+                    {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
+              </div>
             </div>
-            <ul id="password-rules" className="mt-2 space-y-1 text-sm">
-              <li className="flex items-center gap-2">
-                {hasMinLength ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
-                <span className={hasMinLength ? 'text-green-700' : 'text-red-700'}>At least 6 characters</span>
-              </li>
-              <li className="flex items-center gap-2">
-                {hasUppercase ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
-                <span className={hasUppercase ? 'text-green-700' : 'text-red-700'}>Contains an uppercase letter</span>
-              </li>
-              <li className="flex items-center gap-2">
-                {hasNumber ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
-                <span className={hasNumber ? 'text-green-700' : 'text-red-700'}>Contains a number</span>
-              </li>
-              <li className="flex items-center gap-2">
-                {hasNoSpecial ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
-                <span className={hasNoSpecial ? 'text-green-700' : 'text-red-700'}>No special characters</span>
-              </li>
-            </ul>
-            {passwordsMismatch && (
-              <p id="password-mismatch" className="text-sm text-red-500 mt-1">Your password didn't match, please match them</p>
-            )}
-          </div>
 
-          <div>
-            <Label htmlFor="confirmPassword" className="text-gray-700 font-medium">
-              Confirm Password *
-            </Label>
-            <div className="relative mt-1">
-              <Input
-                id="confirmPassword"
-                type={showConfirmPassword ? "text" : "password"}
-                value={formData.confirmPassword}
-                onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
-                className={`border-orange-200 focus:border-orange-500 pr-10 ${passwordsMismatch ? 'border-red-500 focus:border-red-500' : ''}`}
-                aria-invalid={passwordsMismatch}
-                aria-describedby="password-mismatch"
-                required
-                disabled={isLoading}
-              />
-              <button
-                type="button"
-                onClick={() => setShowConfirmPassword((prev) => !prev)}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700"
-                disabled={isLoading}
-              >
-                {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-              </button>
-            </div>
-          </div>
-
-          {/* Terms and Conditions */}
-          <div className="flex items-start space-x-2 mt-2">
-            <div className="mt-1">
-              <Checkbox
-                id="terms"
-                checked={acceptedTerms}
-                onCheckedChange={(checked) => {
-                  if (checked === true) {
-                    if (!acceptedTerms) {
-                      setShowTerms(true)
+            <div className="flex items-start space-x-2 mt-2">
+              <div className="mt-1">
+                <Checkbox
+                  id="terms"
+                  checked={acceptedTerms}
+                  onCheckedChange={(checked) => {
+                    if (checked === true) {
+                      if (!acceptedTerms) {
+                        setShowTerms(true)
+                      } else {
+                        setAcceptedTerms(true)
+                      }
                     } else {
-                      setAcceptedTerms(true)
+                      setAcceptedTerms(false)
                     }
-                  } else {
-                    setAcceptedTerms(false)
-                  }
-                }}
-                className="border-orange-500 data-[state=checked]:bg-orange-500 data-[state=checked]:text-white"
-              />
-            </div>
-            <div className="grid gap-1.5 leading-none">
-              <label
-                htmlFor="terms"
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-              >
-                I accept the{' '}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    setShowTerms(true)
                   }}
-                  className="text-orange-500 hover:underline font-medium"
+                  className="border-orange-500 data-[state=checked]:bg-orange-500 data-[state=checked]:text-white"
+                />
+              </div>
+              <div className="grid gap-1.5 leading-none">
+                <label
+                  htmlFor="terms"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
                 >
-                  Terms and Conditions
-                </button>
-              </label>
-              <p className="text-xs text-gray-500">
-                You must be at least 12 years old to register. By creating an account, you agree to our terms and conditions.
-              </p>
+                  I accept the{' '}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      setShowTerms(true)
+                    }}
+                    className="text-orange-500 hover:underline font-medium"
+                  >
+                    Terms and Conditions
+                  </button>
+                </label>
+                <p className="text-xs text-gray-500">
+                  You must be at least 12 years old to register. By creating an account, you agree to our terms and conditions.
+                </p>
+              </div>
             </div>
-          </div>
 
-          <Button
-            onClick={handleRegister}
-            disabled={isLoading || !ageVerified || !acceptedTerms || passwordInvalid || passwordsMismatch || (OTP_ENABLED && !isOtpVerified)}
-            className={`w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded transition-colors ${
-              (!ageVerified || !acceptedTerms || passwordInvalid || passwordsMismatch || (OTP_ENABLED && !isOtpVerified)) ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-          >
-            {isLoading ? "Registering..." : "Register"}
-          </Button>
+            <Button
+              type="submit"
+              disabled={isLoading || !ageVerified || !acceptedTerms || passwordInvalid || passwordsMismatch || (OTP_ENABLED && !isOtpVerified)}
+              className={`w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded transition-colors ${
+                (!ageVerified || !acceptedTerms || passwordInvalid || passwordsMismatch || (OTP_ENABLED && !isOtpVerified)) ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              {isLoading ? "Registering..." : "Register"}
+            </Button>
 
-          <p className="text-center text-sm text-gray-600 mt-4">
-            Already have an account?{" "}
-            <span className="text-orange-500 font-medium cursor-pointer hover:underline" onClick={onGoToLogin}>
-              Login here
-            </span>
-          </p>
+            <p className="text-center text-sm text-gray-600 mt-4">
+              Already have an account?{" "}
+              <span className="text-orange-500 font-medium cursor-pointer hover:underline" onClick={onGoToLogin}>
+                Login here
+              </span>
+            </p>
+          </form>
         </CardContent>
       </Card>
 
@@ -679,7 +690,10 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
             <Button 
               type="button" 
               variant="outline" 
-              onClick={() => { setAcceptedTerms(true); setShowTerms(false) }}
+              onClick={() => {
+                setAcceptedTerms(true)
+                setShowTerms(false)
+              }}
               className="border-orange-500 text-orange-500 hover:bg-orange-50"
             >
               Close

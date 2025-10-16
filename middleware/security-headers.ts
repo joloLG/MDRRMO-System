@@ -1,26 +1,36 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+const scriptSrc = process.env.NODE_ENV === 'production'
+  ? "script-src 'self' 'unsafe-inline' https://unpkg.com"
+  : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com";
+
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self' https://*.supabase.co",
+  scriptSrc,
+  "style-src 'self' 'unsafe-inline' https://unpkg.com",
+  "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com",
+  "font-src 'self' https://unpkg.com",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.tile.openstreetmap.org",
+  "frame-src 'self' https://www.openstreetmap.org",
+  "media-src 'self' data: blob: https://*.supabase.co",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "manifest-src 'self'",
+  'upgrade-insecure-requests',
+].join('; ');
+
 const securityHeaders = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'X-XSS-Protection': '1; mode=block',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=*, payment=()',
-  'Content-Security-Policy': [
-    "default-src 'self' https://*.supabase.co",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com",
-    "style-src 'self' 'unsafe-inline' https://unpkg.com",
-    `img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com`,
-    "font-src 'self' https://unpkg.com",
-    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.tile.openstreetmap.org",
-    "frame-src 'self' https://www.openstreetmap.org",
-    "media-src 'self' data: blob: https://*.supabase.co",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-  ].join('; '),
+  'Cross-Origin-Resource-Policy': 'same-origin',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Content-Security-Policy': CONTENT_SECURITY_POLICY,
 };
 
 const EXCLUDED_PATHS: string[] = [
@@ -35,12 +45,7 @@ const EXCLUDED_PATHS: string[] = [
 
 export function securityHeadersMiddleware(request: NextRequest) {
   const path = new URL(request.url).pathname;
-  
-  // Skip for the root path (login screen)
-  if (path === '/') {
-    return NextResponse.next();
-  }
-  
+
   // Skip middleware for excluded paths
   if (EXCLUDED_PATHS.some(p => path.startsWith(p))) {
     return NextResponse.next();
