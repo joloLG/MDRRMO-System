@@ -79,8 +79,6 @@ $$ LANGUAGE sql SECURITY DEFINER STABLE;
 -- ====================================================
 -- 3. ALLOW ANONYMOUS USERS TO REGISTER
 -- ====================================================
--- This policy allows anyone to create a new user account
--- but only with the default 'user' role
 CREATE POLICY "Allow public user registration"
 ON public.users
 FOR INSERT

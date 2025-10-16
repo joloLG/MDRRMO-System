@@ -162,7 +162,7 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
 
       if (authData.user) {
         // 2. Create user profile
-        const { error: profileError } = await supabase.from("users").insert({
+        const profilePayload = {
           id: authData.user.id,
           firstName: formData.firstName,
           middleName: formData.middleName || null,
@@ -171,7 +171,12 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
           username: formData.username,
           birthday: formData.birthday || null,
           mobileNumber: formData.mobileNumber,
-        })
+          user_type: 'user',
+        }
+
+        const { error: profileError } = await supabase
+          .from('users')
+          .insert(profilePayload)
 
         if (profileError) {
           setError("Registration failed: " + profileError.message)

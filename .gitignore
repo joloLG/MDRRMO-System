@@ -40,7 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-
+/.supabase
 # firebase
 firebase-service-account.b64.txt
 firebase-adminsdk.b64.txt
