@@ -2404,7 +2404,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       {/* Bottom Navigation - Adjusted for sidebar offset on desktop */}
       <div className="fixed bottom-0 left-0 right-0 bg-orange-500/95 backdrop-blur-sm text-white p-4 z-10 lg:pl-64">
         <div className="flex justify-center items-center">
-          <span className="text-xs sm:text-sm font-medium">Copyright © 2025 MDRRMO-Bulan Sorsogon</span>
+          <span className="text-xs sm:text-sm font-medium">Copyright © 2025 | Jolo Gracilla</span>
         </div>
       </div>
     </div>

@@ -119,7 +119,7 @@ export function Sidebar({ onAdminViewChange, currentAdminView, unreadFeedbackCou
           </Button>
         </nav>
         <div className="mt-auto pt-4 text-xs text-gray-500 border-t flex items-center justify-center">
-          MDRRMO EMERGENCY APP 2025 ©
+          Copyright © 2025 | Jolo Gracilla
         </div>
       </SheetContent>
     </Sheet>

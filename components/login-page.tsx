@@ -299,6 +299,7 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
                     Register here
                   </span>
                 </p>
+                <p className="text-xs text-gray-500">Copyright © 2025 | Jolo Gracilla</p>
               </div>
             </>
           )}
