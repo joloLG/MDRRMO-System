@@ -10,6 +10,7 @@ import Link from "next/link";
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { useRouter } from "next/navigation"
 
 // Define InternalReport interface (must match your database schema)
 interface InternalReport {
@@ -73,6 +74,8 @@ export function ReportHistoryTable({
   totalPages,
   totalReports,
 }: ReportHistoryTableProps) {
+
+  const router = useRouter()
 
   const getBarangayName = (id: number) => barangays.find(b => b.id === id)?.name || 'N/A';
   const getIncidentTypeName = (id: number) => incidentTypes.find(it => it.id === id)?.name || 'N/A';
@@ -427,7 +430,19 @@ export function ReportHistoryTable({
               </TableHeader>
               <TableBody>
                 {internalReports.map((report) => (
-                  <TableRow key={report.id} className="hover:bg-gray-50">
+                  <TableRow
+                    key={report.id}
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() => router.push(`/admin/report-history/${report.id}`)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        router.push(`/admin/report-history/${report.id}`)
+                      }
+                    }}
+                  >
                     <TableCell className="font-medium text-gray-800">{report.id}</TableCell>
                     <TableCell className="text-gray-700">{report.original_report_id ? report.original_report_id.substring(0, 8) + '...' : 'N/A'}</TableCell>
                     <TableCell className="text-gray-700">{getIncidentTypeName(report.incident_type_id)}</TableCell>
