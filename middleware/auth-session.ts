@@ -14,7 +14,9 @@ const sha256Hex = async (text: string): Promise<string> => {
   return out;
 }
 
-const PROTECTED_PREFIXES = ['/admin'];
+const ADMIN_PREFIXES = ['/admin'];
+const HOSPITAL_PREFIXES = ['/hospital'];
+const PROTECTED_PREFIXES = [...ADMIN_PREFIXES, ...HOSPITAL_PREFIXES];
 
 const PUBLIC_PREFIXES = [
   '/_next',
@@ -45,6 +47,8 @@ export async function authSessionMiddleware(request: NextRequest, response: Next
   } = await supabase.auth.getSession();
 
   const isProtected = PROTECTED_PREFIXES.some((p) => path.startsWith(p));
+  const isAdminRoute = ADMIN_PREFIXES.some((p) => path.startsWith(p));
+  const isHospitalRoute = HOSPITAL_PREFIXES.some((p) => path.startsWith(p));
   if (isProtected) {
     if (error || !session) {
       const redirectUrl = new URL('/', request.url);
@@ -63,7 +67,12 @@ export async function authSessionMiddleware(request: NextRequest, response: Next
         return NextResponse.redirect(redirectUrl);
       }
 
-      if (!['admin', 'superadmin'].includes(userProfile.user_type)) {
+      if (isAdminRoute && !['admin', 'superadmin'].includes(userProfile.user_type)) {
+        const redirectUrl = new URL('/', request.url);
+        return NextResponse.redirect(redirectUrl);
+      }
+
+      if (isHospitalRoute && userProfile.user_type !== 'hospital') {
         const redirectUrl = new URL('/', request.url);
         return NextResponse.redirect(redirectUrl);
       }

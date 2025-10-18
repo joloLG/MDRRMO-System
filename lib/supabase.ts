@@ -7,6 +7,16 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
   throw new Error('Missing environment variable: NEXT_PUBLIC_SUPABASE_URL')
 }
 
+export interface Hospital {
+  id: string
+  name: string
+}
+
+export interface HospitalUserAssignment {
+  user_id: string
+  hospital_id: string
+}
+
 if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
   throw new Error('Missing environment variable: NEXT_PUBLIC_SUPABASE_ANON_KEY')
 }
@@ -16,7 +26,7 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
 export const supabase = createClientComponentClient()
 
 // User type
-export type UserRole = 'superadmin' | 'admin' | 'user';
+export type UserRole = 'superadmin' | 'admin' | 'user' | 'hospital';
 
 export interface User {
   id: string
@@ -87,6 +97,59 @@ const handleSupabaseError = (error: any, context: string) => {
   throw new DatabaseError(error.message || 'An unknown database error occurred');
 };
 
+export const hospitalQueries = {
+  getHospitals: async (): Promise<Hospital[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('hospitals')
+        .select('id, name')
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      return (data ?? []) as Hospital[];
+    } catch (error) {
+      return handleSupabaseError(error, 'getHospitals') as never;
+    }
+  },
+
+  getHospitalAssignments: async (): Promise<HospitalUserAssignment[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('hospital_users')
+        .select('user_id, hospital_id');
+
+      if (error) throw error;
+      return (data ?? []) as HospitalUserAssignment[];
+    } catch (error) {
+      return handleSupabaseError(error, 'getHospitalAssignments') as never;
+    }
+  },
+
+  assignHospitalToUser: async (userId: string, hospitalId: string | null): Promise<void> => {
+    try {
+      if (hospitalId) {
+        const { error } = await supabase
+          .from('hospital_users')
+          .upsert(
+            { user_id: userId, hospital_id: hospitalId },
+            { onConflict: 'user_id' }
+          );
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('hospital_users')
+          .delete()
+          .eq('user_id', userId);
+
+        if (error) throw error;
+      }
+    } catch (error) {
+      handleSupabaseError(error, 'assignHospitalToUser');
+    }
+  },
+};
+
 // User queries
 export const userQueries = {
   // Get all users (only accessible by superadmin)
@@ -131,7 +194,7 @@ export const userQueries = {
   // Update user role (only for superadmin)
   updateUserRole: async (
     userId: string, 
-    role: 'admin' | 'user' | 'superadmin'
+    role: 'admin' | 'user' | 'superadmin' | 'hospital'
   ): Promise<User> => {
     try {
       if (!userId || !role) {

@@ -8,6 +8,7 @@ import html2canvas from "html2canvas"
 import jsPDF from "jspdf"
 
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 
 const FRONT_BODY_REGION_IDS = [
   "front_x3D__x22_right-thigh_x22_",
@@ -414,6 +415,7 @@ interface ReportDetailProps {
   barangayName: string
   incidentTypeName: string
   erTeamName: string
+  restrictToPatientView?: boolean
 }
 
 const parseCommaSeparated = (value: string | null | undefined) => {
@@ -424,9 +426,11 @@ const parseCommaSeparated = (value: string | null | undefined) => {
     .filter(Boolean)
 }
 
-export function InternalReportDetail({ report, barangayName, incidentTypeName, erTeamName }: ReportDetailProps) {
+export function InternalReportDetail({ report, barangayName, incidentTypeName, erTeamName, restrictToPatientView = false }: ReportDetailProps) {
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null)
   const headerRef = React.useRef<HTMLDivElement | null>(null)
   const bodyRef = React.useRef<HTMLDivElement | null>(null)
+  const [responsiveScale, setResponsiveScale] = React.useState(1)
 
   const frontRegions = React.useMemo(() => parseBodySummary(report.body_parts_front), [report.body_parts_front])
   const backRegions = React.useMemo(() => parseBodySummary(report.body_parts_back), [report.body_parts_back])
@@ -478,71 +482,111 @@ export function InternalReportDetail({ report, barangayName, incidentTypeName, e
   const breathingSupport = React.useMemo(() => parseCommaSeparated(report.breathing_support), [report.breathing_support])
   const circulationStatus = React.useMemo(() => parseCommaSeparated(report.circulation_status), [report.circulation_status])
 
+  React.useEffect(() => {
+    if (!restrictToPatientView) {
+      setResponsiveScale(1)
+      return
+    }
+
+    const targetWidthPx = 816
+    const minScale = 0.65
+
+    const updateScale = () => {
+      if (!wrapperRef.current) return
+      const currentWidth = wrapperRef.current.offsetWidth
+      if (!currentWidth) return
+      const nextScale = Math.min(1, Math.max(minScale, currentWidth / targetWidthPx))
+      setResponsiveScale(nextScale)
+    }
+
+    updateScale()
+
+    window.addEventListener("resize", updateScale)
+    return () => {
+      window.removeEventListener("resize", updateScale)
+    }
+  }, [restrictToPatientView])
+
   const handleDownloadPdf = React.useCallback(async () => {
     if (!headerRef.current || !bodyRef.current) return
 
-    const pdf = new jsPDF("p", "mm", "legal")
-    const pageWidth = pdf.internal.pageSize.getWidth()
-    const pageHeight = pdf.internal.pageSize.getHeight()
-    const marginX = 12
-    const marginTop = 12
-    const usableWidth = pageWidth - marginX * 2
+    const wrapperEl = wrapperRef.current
+    let previousFontSize: string | null = null
 
-    const headerCanvas = await html2canvas(headerRef.current, { scale: 2 })
-    const headerImgData = headerCanvas.toDataURL("image/png")
-    const headerHeightMm = (headerCanvas.height * usableWidth) / headerCanvas.width
-
-    const bodyCanvas = await html2canvas(bodyRef.current, { scale: 2 })
-    const pxPerMm = bodyCanvas.width / usableWidth
-    const availableHeightMm = pageHeight - marginTop - headerHeightMm - 8
-    const availableHeightPx = availableHeightMm * pxPerMm
-
-    let yOffset = 0
-    let isFirstPage = true
-
-    while (yOffset < bodyCanvas.height) {
-      if (!isFirstPage) {
-        pdf.addPage("legal")
+    try {
+      if (restrictToPatientView && wrapperEl) {
+        previousFontSize = wrapperEl.style.fontSize || null
+        wrapperEl.style.fontSize = "1rem"
+        await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
       }
 
-      pdf.addImage(headerImgData, "PNG", marginX, marginTop, usableWidth, headerHeightMm)
+      const pdf = new jsPDF("p", "mm", "legal")
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const marginX = 12
+      const marginTop = 12
+      const usableWidth = pageWidth - marginX * 2
 
-      const sliceHeightPx = Math.min(availableHeightPx, bodyCanvas.height - yOffset)
-      const sliceCanvas = document.createElement("canvas")
-      sliceCanvas.width = bodyCanvas.width
-      sliceCanvas.height = sliceHeightPx
-      const ctx = sliceCanvas.getContext("2d")
-      if (!ctx) break
-      ctx.drawImage(
-        bodyCanvas,
-        0,
-        yOffset,
-        bodyCanvas.width,
-        sliceHeightPx,
-        0,
-        0,
-        bodyCanvas.width,
-        sliceHeightPx
-      )
+      const headerCanvas = await html2canvas(headerRef.current, { scale: 2 })
+      const headerImgData = headerCanvas.toDataURL("image/png")
+      const headerHeightMm = (headerCanvas.height * usableWidth) / headerCanvas.width
 
-      const sliceData = sliceCanvas.toDataURL("image/png")
-      const sliceHeightMm = sliceHeightPx / pxPerMm
+      const bodyCanvas = await html2canvas(bodyRef.current, { scale: 2 })
+      const pxPerMm = bodyCanvas.width / usableWidth
+      const availableHeightMm = pageHeight - marginTop - headerHeightMm - 8
+      const availableHeightPx = availableHeightMm * pxPerMm
 
-      pdf.addImage(
-        sliceData,
-        "PNG",
-        marginX,
-        marginTop + headerHeightMm + 4,
-        usableWidth,
-        sliceHeightMm
-      )
+      let yOffset = 0
+      let isFirstPage = true
 
-      yOffset += sliceHeightPx
-      isFirstPage = false
+      while (yOffset < bodyCanvas.height) {
+        if (!isFirstPage) {
+          pdf.addPage("legal")
+        }
+
+        pdf.addImage(headerImgData, "PNG", marginX, marginTop, usableWidth, headerHeightMm)
+
+        const sliceHeightPx = Math.min(availableHeightPx, bodyCanvas.height - yOffset)
+        const sliceCanvas = document.createElement("canvas")
+        sliceCanvas.width = bodyCanvas.width
+        sliceCanvas.height = sliceHeightPx
+        const ctx = sliceCanvas.getContext("2d")
+        if (!ctx) break
+        ctx.drawImage(
+          bodyCanvas,
+          0,
+          yOffset,
+          bodyCanvas.width,
+          sliceHeightPx,
+          0,
+          0,
+          bodyCanvas.width,
+          sliceHeightPx
+        )
+
+        const sliceData = sliceCanvas.toDataURL("image/png")
+        const sliceHeightMm = sliceHeightPx / pxPerMm
+
+        pdf.addImage(
+          sliceData,
+          "PNG",
+          marginX,
+          marginTop + headerHeightMm + 4,
+          usableWidth,
+          sliceHeightMm
+        )
+
+        yOffset += sliceHeightPx
+        isFirstPage = false
+      }
+
+      pdf.save(`internal-report-${report.id}.pdf`)
+    } finally {
+      if (restrictToPatientView && wrapperEl) {
+        wrapperEl.style.fontSize = previousFontSize ?? ""
+      }
     }
-
-    pdf.save(`internal-report-${report.id}.pdf`)
-  }, [report.id])
+  }, [report.id, restrictToPatientView])
 
   const formatDateTime = (isoString: string | null | undefined, withTime = false) => {
     if (!isoString) return "—"
@@ -552,14 +596,21 @@ export function InternalReportDetail({ report, barangayName, incidentTypeName, e
   }
 
   return (
-    <div className="space-y-6">
+    <div
+      ref={wrapperRef}
+      className="space-y-6"
+      style={restrictToPatientView ? { fontSize: `${responsiveScale}rem` } : undefined}
+    >
       <div className="flex justify-end">
         <Button variant="outline" onClick={handleDownloadPdf}>
           Download PDF
         </Button>
       </div>
 
-      <div className="mx-auto max-w-4xl bg-white p-8 sm:p-10 shadow-lg">
+      <div className={cn(
+        "mx-auto bg-white p-6 shadow-lg sm:p-8",
+        restrictToPatientView ? "w-full max-w-[816px]" : "max-w-4xl"
+      )}>
         <header ref={headerRef} className="flex flex-col gap-6 border-b border-gray-200 pb-6">
           <div className="flex items-center justify-between">
             <Image src="/images/bulan-logo.png" alt="Bulan Municipality Logo" width={80} height={80} className="h-16 w-auto" />
@@ -588,47 +639,88 @@ export function InternalReportDetail({ report, barangayName, incidentTypeName, e
         </header>
 
         <main ref={bodyRef} className="mt-6 space-y-8 text-gray-800">
-          <section>
-            <h3 className="text-lg font-semibold text-gray-900">Incident Details</h3>
-            <div className="mt-3 grid gap-4 text-sm sm:grid-cols-2">
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Incident Type</p>
-                <p className="font-medium text-gray-900">{incidentTypeName || "—"}</p>
+          {!restrictToPatientView && (
+            <section>
+              <h2 className="text-lg font-semibold text-gray-800">Incident Summary</h2>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Incident Type</p>
+                  <p className="text-base font-medium text-gray-800">{incidentTypeName}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Incident Date</p>
+                  <p className="text-base text-gray-800">{formatDateTime(report.incident_date, true)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Barangay</p>
+                  <p className="text-base text-gray-800">{barangayName}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Prepared By</p>
+                  <p className="text-base text-gray-800">{report.prepared_by || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">ER Team</p>
+                  <p className="text-base text-gray-800">{erTeamName}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Time Responded</p>
+                  <p className="text-base text-gray-800">{formatDateTime(report.time_responded, true)}</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Incident Location</p>
+                  <p className="text-base text-gray-800">{report.incident_location || "—"}</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">MOI/POI/TOI</p>
+                  <p className="text-base text-gray-800">{report.moi_poi_toi || "—"}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Incident Date &amp; Time</p>
-                <p className="font-medium text-gray-900">{formatDateTime(report.incident_date, true)}</p>
+            </section>
+          )}
+          {!restrictToPatientView && (
+            <section>
+              <h3 className="text-lg font-semibold text-gray-900">Incident Details</h3>
+              <div className="mt-3 grid gap-4 text-sm sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-medium uppercase text-gray-500">Incident Type</p>
+                  <p className="font-medium text-gray-900">{incidentTypeName || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase text-gray-500">Incident Date &amp; Time</p>
+                  <p className="font-medium text-gray-900">{formatDateTime(report.incident_date, true)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase text-gray-500">Time Responded</p>
+                  <p className="font-medium text-gray-900">{formatDateTime(report.time_responded, true)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase text-gray-500">Barangay</p>
+                  <p className="font-medium text-gray-900">{barangayName || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase text-gray-500">ER Team</p>
+                  <p className="font-medium text-gray-900">{erTeamName || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase text-gray-500">Incident Location</p>
+                  <p className="font-medium text-gray-900">{report.incident_location || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase text-gray-500">Persons Involved</p>
+                  <p className="font-medium text-gray-900">{report.persons_involved ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase text-gray-500">Responders</p>
+                  <p className="font-medium text-gray-900">{report.number_of_responders ?? "—"}</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <p className="text-xs font-medium uppercase text-gray-500">MOI / POI / TOI</p>
+                  <p className="font-medium text-gray-900 whitespace-pre-line">{report.moi_poi_toi || "—"}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Time Responded</p>
-                <p className="font-medium text-gray-900">{formatDateTime(report.time_responded, true)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Barangay</p>
-                <p className="font-medium text-gray-900">{barangayName || "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">ER Team</p>
-                <p className="font-medium text-gray-900">{erTeamName || "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Incident Location</p>
-                <p className="font-medium text-gray-900">{report.incident_location || "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Persons Involved</p>
-                <p className="font-medium text-gray-900">{report.persons_involved ?? "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Responders</p>
-                <p className="font-medium text-gray-900">{report.number_of_responders ?? "—"}</p>
-              </div>
-              <div className="sm:col-span-2">
-                <p className="text-xs font-medium uppercase text-gray-500">MOI / POI / TOI</p>
-                <p className="font-medium text-gray-900 whitespace-pre-line">{report.moi_poi_toi || "—"}</p>
-              </div>
-            </div>
-          </section>
+            </section>
+          )}
 
           <section>
             <h3 className="text-lg font-semibold text-gray-900">Patient Information</h3>
@@ -678,47 +770,49 @@ export function InternalReportDetail({ report, barangayName, incidentTypeName, e
             </div>
           </section>
 
-          <section>
-            <h3 className="text-lg font-semibold text-gray-900">Primary Assessment</h3>
-            <div className="mt-3 grid gap-4 text-sm sm:grid-cols-3">
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Airway Interventions</p>
-                <ul className="mt-1 space-y-1">
-                  {airwayInterventions.length > 0 ? (
-                    airwayInterventions.map((item) => (
-                      <li key={item} className="text-gray-900">• {item}</li>
-                    ))
-                  ) : (
-                    <li className="text-gray-900">• —</li>
-                  )}
-                </ul>
+          {!restrictToPatientView && (
+            <section>
+              <h3 className="text-lg font-semibold text-gray-900">Primary Assessment</h3>
+              <div className="mt-3 grid gap-4 text-sm sm:grid-cols-3">
+                <div>
+                  <p className="text-xs font-medium uppercase text-gray-500">Airway Interventions</p>
+                  <ul className="mt-1 space-y-1">
+                    {airwayInterventions.length > 0 ? (
+                      airwayInterventions.map((item) => (
+                        <li key={item} className="text-gray-900">• {item}</li>
+                      ))
+                    ) : (
+                      <li className="text-gray-900">• —</li>
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase text-gray-500">Breathing Support</p>
+                  <ul className="mt-1 space-y-1">
+                    {breathingSupport.length > 0 ? (
+                      breathingSupport.map((item) => (
+                        <li key={item} className="text-gray-900">• {item}</li>
+                      ))
+                    ) : (
+                      <li className="text-gray-900">• —</li>
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase text-gray-500">Circulation Status</p>
+                  <ul className="mt-1 space-y-1">
+                    {circulationStatus.length > 0 ? (
+                      circulationStatus.map((item) => (
+                        <li key={item} className="text-gray-900">• {item}</li>
+                      ))
+                    ) : (
+                      <li className="text-gray-900">• —</li>
+                    )}
+                  </ul>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Breathing Support</p>
-                <ul className="mt-1 space-y-1">
-                  {breathingSupport.length > 0 ? (
-                    breathingSupport.map((item) => (
-                      <li key={item} className="text-gray-900">• {item}</li>
-                    ))
-                  ) : (
-                    <li className="text-gray-900">• —</li>
-                  )}
-                </ul>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Circulation Status</p>
-                <ul className="mt-1 space-y-1">
-                  {circulationStatus.length > 0 ? (
-                    circulationStatus.map((item) => (
-                      <li key={item} className="text-gray-900">• {item}</li>
-                    ))
-                  ) : (
-                    <li className="text-gray-900">• —</li>
-                  )}
-                </ul>
-              </div>
-            </div>
-          </section>
+            </section>
+          )}
 
           <section>
             <h3 className="text-lg font-semibold text-gray-900">Injury Overview</h3>
@@ -787,27 +881,29 @@ export function InternalReportDetail({ report, barangayName, incidentTypeName, e
             </div>
           </section>
 
-          <section>
-            <h3 className="text-lg font-semibold text-gray-900">Transfer of Care</h3>
-            <div className="mt-3 grid gap-4 text-sm sm:grid-cols-2">
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Receiving Hospital</p>
-                <p className="font-medium text-gray-900">{report.receiving_hospital_name || "—"}</p>
+          {!restrictToPatientView && (
+            <section>
+              <h3 className="text-lg font-semibold text-gray-900">Transfer of Care</h3>
+              <div className="mt-3 grid gap-4 text-sm sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-medium uppercase text-gray-500">Receiving Hospital</p>
+                  <p className="font-medium text-gray-900">{report.receiving_hospital_name || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase text-gray-500">Receiving Date</p>
+                  <p className="font-medium text-gray-900">{formatDateTime(report.receiving_hospital_date)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase text-gray-500">EMT / ERT Date</p>
+                  <p className="font-medium text-gray-900">{formatDateTime(report.emt_ert_date)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase text-gray-500">Injury Types Summary</p>
+                  <p className="font-medium text-gray-900">{report.injury_types || "—"}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Receiving Date</p>
-                <p className="font-medium text-gray-900">{formatDateTime(report.receiving_hospital_date)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">EMT / ERT Date</p>
-                <p className="font-medium text-gray-900">{formatDateTime(report.emt_ert_date)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Injury Types Summary</p>
-                <p className="font-medium text-gray-900">{report.injury_types || "—"}</p>
-              </div>
-            </div>
-          </section>
+            </section>
+          )}
         </main>
       </div>
     </div>

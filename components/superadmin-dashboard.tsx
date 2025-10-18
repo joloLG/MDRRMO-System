@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Loader2, LogOut, Info } from "lucide-react" // Removed Ban, CheckCircle, CalendarIcon
-import { userQueries, type User, supabase } from "@/lib/supabase"
+import { userQueries, hospitalQueries, type User, type Hospital, supabase } from "@/lib/supabase"
 import { robustSignOut } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -61,6 +61,8 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'banned'>('all')
   const PAGE_SIZE = 15
   const [currentPage, setCurrentPage] = useState(1)
+  const [hospitals, setHospitals] = useState<Hospital[]>([])
+  const [hospitalAssignments, setHospitalAssignments] = useState<Record<string, string | null>>({})
 
   // Fetch all users
   const fetchUsers = async () => {
@@ -79,9 +81,27 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
     }
   }
 
+  const fetchHospitalsAndAssignments = async () => {
+    try {
+      const [hospitalList, assignments] = await Promise.all([
+        hospitalQueries.getHospitals(),
+        hospitalQueries.getHospitalAssignments(),
+      ])
+      setHospitals(hospitalList)
+      const assignmentMap: Record<string, string | null> = {}
+      assignments.forEach((item) => {
+        assignmentMap[item.user_id] = item.hospital_id
+      })
+      setHospitalAssignments(assignmentMap)
+    } catch (err) {
+      console.error("Error fetching hospitals/assignments:", err)
+    }
+  }
+
   // Set up real-time subscription for user updates
   useEffect(() => {
     fetchUsers();
+    fetchHospitalsAndAssignments();
     
     // Subscribe to user updates (still useful for role changes or external ban updates)
     const userSubscription = supabase
@@ -122,7 +142,15 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
       ))
 
       await userQueries.updateUserRole(userId, newRole as User['user_type'])
-      
+
+      if (newRole !== 'hospital') {
+        await hospitalQueries.assignHospitalToUser(userId, null)
+        setHospitalAssignments((prev) => ({
+          ...prev,
+          [userId]: null,
+        }))
+      }
+
       setUsers(users.map(user => 
         user.id === userId 
           ? { ...user, user_type: newRole as User['user_type'], isUpdating: false } 
@@ -131,6 +159,27 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
     } catch (err) {
       console.error("Error updating user role:", err)
       setError("Failed to update user role. Please try again.")
+      setUsers(users.map(user => 
+        user.id === userId 
+          ? { ...user, isUpdating: false } 
+          : user
+      ))
+    }
+  }
+
+  const handleHospitalAssignment = async (userId: string, hospitalId: string | null) => {
+    setUsers(users.map((user) => (user.id === userId ? { ...user, isUpdating: true } : user)))
+    try {
+      await hospitalQueries.assignHospitalToUser(userId, hospitalId)
+      setHospitalAssignments((prev) => ({
+        ...prev,
+        [userId]: hospitalId,
+      }))
+    } catch (err) {
+      console.error("Error assigning hospital:", err)
+      setError("Failed to update hospital assignment. Please try again.")
+    } finally {
+      setUsers(users.map((user) => (user.id === userId ? { ...user, isUpdating: false } : user)))
     }
   }
 
@@ -273,10 +322,10 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
   }, [users, searchTerm, roleFilter, statusFilter]);
 
   const sortedUsers = useMemo(() => {
-    const roleOrder: Record<string, number> = { superadmin: 0, admin: 1, responder: 2, user: 3 };
+    const roleOrder: Record<string, number> = { superadmin: 0, admin: 1, hospital: 2, responder: 3, user: 4 };
     return [...filteredUsers].sort((a, b) => {
-      const roleA = roleOrder[a.user_type] || 3;
-      const roleB = roleOrder[b.user_type] || 3;
+      const roleA = roleOrder[a.user_type] ?? Number.MAX_SAFE_INTEGER;
+      const roleB = roleOrder[b.user_type] ?? Number.MAX_SAFE_INTEGER;
       if (roleA !== roleB) return roleA - roleB;
 
       const nameA = `${a.firstName} ${a.lastName}`.toLowerCase();
@@ -369,6 +418,7 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
                     <SelectItem value="all">All Roles</SelectItem>
                     <SelectItem value="superadmin">Superadmin</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="hospital">Hospital</SelectItem>
                     <SelectItem value="user">User</SelectItem>
                   </SelectContent>
                 </Select>
@@ -393,6 +443,7 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
                   <TableHead>Email</TableHead>
                   <TableHead>Contact</TableHead>
                   <TableHead>Role</TableHead>
+                  <TableHead>Hospital</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Date Created</TableHead>
                 </TableRow>
@@ -400,7 +451,7 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
               <TableBody>
                 {paginatedUsers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center text-sm text-gray-500">
+                    <TableCell colSpan={8} className="py-8 text-center text-sm text-gray-500">
                       No users match the current filters.
                     </TableCell>
                   </TableRow>
@@ -427,9 +478,36 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
                         <SelectContent>
                           <SelectItem value="superadmin">Superadmin</SelectItem>
                           <SelectItem value="admin">Admin</SelectItem>
+                          <SelectItem value="hospital">Hospital</SelectItem>
                           <SelectItem value="user">User</SelectItem>
                         </SelectContent>
                       </Select>
+                    </TableCell>
+                    <TableCell>
+                      {user.user_type === 'hospital' ? (
+                        <Select
+                          value={(hospitalAssignments[user.id] ?? null) ?? 'unassigned'}
+                          onValueChange={(value) => {
+                            const hospitalId = value === 'unassigned' ? null : value
+                            void handleHospitalAssignment(user.id, hospitalId)
+                          }}
+                          disabled={user.isUpdating || hospitals.length === 0}
+                        >
+                          <SelectTrigger className="w-[200px]">
+                            <SelectValue placeholder="Assign hospital" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Unassigned</SelectItem>
+                            {hospitals.map((hospital) => (
+                              <SelectItem key={hospital.id} value={hospital.id}>
+                                {hospital.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-sm text-gray-500">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <TooltipProvider>
