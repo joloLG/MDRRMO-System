@@ -29,10 +29,18 @@ const GLOBAL_LIMIT: RateConfig = {
 
 const POLICY_CONFIGS: Array<{ prefix: string; config: RateConfig }> = [
   {
+    prefix: '/api/auth/callback',
+    config: {
+      windowMs: 60 * 1000,
+      maxRequests: 120,
+      message: 'Too many authentication callbacks. Please wait a moment before retrying.',
+    },
+  },
+  {
     prefix: '/api/auth',
     config: {
       windowMs: 60 * 1000,
-      maxRequests: 10,
+      maxRequests: 30,
       message: 'Too many authentication attempts. Please wait before retrying.',
     },
   },

@@ -239,12 +239,15 @@ export async function POST(req: NextRequest) {
     }
 
     let emailSent = 0
+    let emailAttempted = 0
+    const emailErrors: { email: string; error: string }[] = []
     try {
       const SMTP_HOST = process.env.SMTP_HOST
       const SMTP_PORT = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : undefined
       const SMTP_USER = process.env.SMTP_USER
       const SMTP_PASS = process.env.SMTP_PASS
-      const SMTP_FROM = process.env.SMTP_FROM || 'no-reply@mdrrmo.local'
+      const rawFrom = (process.env.SMTP_FROM || '').trim()
+      const SMTP_FROM = rawFrom.replace(/^"|"$/g, '') || SMTP_USER
 
       if (SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASS) {
         const mailer = await ensureMailerLoaded()
@@ -261,18 +264,32 @@ export async function POST(req: NextRequest) {
             .in('user_type', ['user', 'hospital'])
             .not('email', 'is', null)
             .limit(1000)
-          const tasks = (users || []).map((u: any) => transporter.sendMail({
-            from: SMTP_FROM,
-            to: u.email,
-            subject: title,
-            text: [
-              `Hello ${[u.firstName, u.lastName].filter(Boolean).join(' ')}`.trim(),
+          const tasks = (users || []).map(async (u: any) => {
+            const email = u?.email?.trim()
+            if (!email) return
+            emailAttempted += 1
+            const name = [u?.firstName, u?.lastName].filter(Boolean).join(' ') || 'Citizen'
+            const text = [
+              `Hello ${name},`,
               '',
               payload.body,
               '',
               'This is an automated alert from MDRRMO.',
             ].join('\n')
-          }).then(() => { emailSent += 1 }).catch(() => {}))
+            try {
+              await transporter.sendMail({
+                from: SMTP_FROM,
+                to: email,
+                subject: title,
+                text,
+              })
+              emailSent += 1
+            } catch (err) {
+              console.warn('[broadcast-alert] email send failed for', email, err)
+              const message = err instanceof Error ? err.message : String(err)
+              emailErrors.push({ email, error: message })
+            }
+          })
           await Promise.allSettled(tasks)
         }
       }
@@ -280,7 +297,7 @@ export async function POST(req: NextRequest) {
       console.warn('Email blast error:', e)
     }
 
-    return NextResponse.json({ ok: true, broadcast: insertData, stats: { webPushSent, fcmSent, emailSent } })
+    return NextResponse.json({ ok: true, broadcast: insertData, stats: { webPushSent, fcmSent, emailSent, emailAttempted, emailErrors } })
   } catch (e: any) {
     console.error('[broadcast-alert] error', e)
     return NextResponse.json({ ok: false, error: e?.message || 'Unknown error' }, { status: 500 })

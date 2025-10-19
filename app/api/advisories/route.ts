@@ -78,10 +78,12 @@ export async function POST(req: NextRequest) {
     const SMTP_PORT = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : undefined
     const SMTP_USER = process.env.SMTP_USER
     const SMTP_PASS = process.env.SMTP_PASS
-    const SMTP_FROM = process.env.SMTP_FROM || 'no-reply@mdrrmo.com'
+    const rawFrom = (process.env.SMTP_FROM || '').trim()
+    const SMTP_FROM = rawFrom.replace(/^"|"$/g, '') || SMTP_USER
 
     let emailsSent = 0
     let emailsAttempted = 0
+    const emailErrors: { email: string; error: string }[] = []
 
     if (SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASS) {
       try {
@@ -97,7 +99,7 @@ export async function POST(req: NextRequest) {
           const { data: recipients, error: recipientsError } = await supabaseAdmin
             .from('users')
             .select('email, firstName, lastName')
-            .in('user_type', ['user', 'hospital'])
+            .eq('user_type', 'user')
             .not('email', 'is', null)
             .limit(1000)
 
@@ -130,6 +132,8 @@ export async function POST(req: NextRequest) {
                 emailsSent += 1
               } catch (mailError) {
                 console.warn('[advisories] email send failed for', email, mailError)
+                const message = mailError instanceof Error ? mailError.message : String(mailError)
+                emailErrors.push({ email, error: message })
               }
             })
 
@@ -143,7 +147,7 @@ export async function POST(req: NextRequest) {
       console.warn('[advisories] SMTP not fully configured; skipping email send.')
     }
 
-    return NextResponse.json({ ok: true, advisory: inserted, stats: { emailsSent, emailsAttempted } })
+    return NextResponse.json({ ok: true, advisory: inserted, stats: { emailsSent, emailsAttempted, emailErrors } })
   } catch (error: any) {
     console.error('[advisories] unexpected error:', error)
     return NextResponse.json({ ok: false, error: error?.message || 'Unknown error' }, { status: 500 })
