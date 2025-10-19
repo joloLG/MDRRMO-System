@@ -207,12 +207,36 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
   ];
 
   // Colors for Incident Types Bar Chart
-  const INCIDENT_TYPE_COLORS = [
-    '#4CAF50', '#2196F3', '#FFC107', '#FF5722', '#9C27B0', '#00BCD4', '#FFEB3B', '#8BC34A', '#E91E63', '#607D8B'
-  ];
+  const PIE_COLORS = React.useMemo<string[]>(
+    () => ['#0EA5E9', '#F97316', '#22C55E', '#6366F1', '#F59E0B', '#EC4899', '#14B8A6', '#8B5CF6', '#EF4444', '#FBBF24', '#34D399', '#60A5FA'],
+    []
+  );
+
+  const INCIDENT_TYPE_COLOR_MAP = React.useMemo<Record<string, string>>(
+    () => ({
+      'armed conflict': '#EF4444',
+      'drowning incident': '#2563EB',
+      'fire incident': '#FFB6C1',
+      'medical emergency': '#10B981',
+      'vehicular/pedestrian accident': '#6366F1',
+      'vehicular/pedestrian roadcrash incident': '#9acd32',
+      'water mishap': '#0EA5E9',
+      'weather disturbance': '#22D3EE',
+      'public disturbance': '#F59E0B',
+      'tsunami': '#0EA5E9',
+      'others': '#6B7280',
+    }),
+    []
+  );
 
   // Helper function to get color for an incident type
-  const getIncidentTypeColor = (index: number) => INCIDENT_TYPE_COLORS[index % INCIDENT_TYPE_COLORS.length];
+  const getIncidentTypeColor = React.useCallback((typeName: string | null | undefined, index: number) => {
+    const key = (typeName ?? '').toLowerCase().trim();
+    if (key && INCIDENT_TYPE_COLOR_MAP[key]) {
+      return INCIDENT_TYPE_COLOR_MAP[key];
+    }
+    return PIE_COLORS[index % PIE_COLORS.length];
+  }, [INCIDENT_TYPE_COLOR_MAP, PIE_COLORS]);
 
   // --- Data Processing for Charts ---
 
@@ -302,7 +326,6 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
   }, [allInternalReports, barangays, incidentTypes, pieChartPeriod, pieChartDate, pieChartMonth, pieChartYear, pieStartDateRange, pieEndDateRange, pieStartTime, pieEndTime]);
 
   const pieChartData = getBarangayIncidentData();
-  const PIE_COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#d0ed57', '#a4de6c', '#00bfa5'];
 
 
   // Bar Chart Data: Incident Types (Monthly/Yearly)
@@ -528,21 +551,75 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
       captureTarget.style.overflow = originalOverflow; // Restore original overflow
 
       const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgWidth = 210; // A4 width in mm
-      const pageHeight = 297; // A4 height in mm
-      const imgHeight = canvas.height * imgWidth / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
+      const pdf = new jsPDF('l', 'mm', 'legal');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const marginX = 14;
+      const marginTop = 14;
+      const marginBottom = 14;
+      const usableWidth = pageWidth - marginX * 2;
 
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
+      const headerContainer = document.createElement('div');
+      headerContainer.style.width = `${canvas.width}px`;
+      headerContainer.style.display = 'flex';
+      headerContainer.style.alignItems = 'center';
+      headerContainer.style.justifyContent = 'space-between';
+      headerContainer.style.padding = '28px 40px';
+      headerContainer.style.background = '#ffffff';
+      headerContainer.style.position = 'absolute';
+      headerContainer.style.left = '-99999px';
 
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
+      const leftLogo = document.createElement('img');
+      leftLogo.src = '/images/bulan-logo.png';
+      leftLogo.alt = 'Bulan Logo';
+      leftLogo.style.height = '250px';
+
+      const rightLogo = document.createElement('img');
+      rightLogo.src = '/images/logo.png';
+      rightLogo.alt = 'MDRRMO Logo';
+      rightLogo.style.height = '250px';
+
+      const headerText = document.createElement('div');
+      headerText.style.textAlign = 'center';
+      headerText.style.flex = '1';
+      headerText.style.fontFamily = 'Helvetica, Arial, sans-serif';
+      headerText.innerHTML = `
+        <div style="font-size:30px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:#1f2933;">Republic of the Philippines</div>
+        <div style="font-size:39px; font-weight:800; margin-top:10px; text-transform:uppercase; color:#1f2933;">Local Government Unit of Bulan Sorsogon</div>
+        <div style="font-size:43px; font-weight:900; margin-top:12px; text-transform:uppercase; color:#ff6b00;">Municipal Disaster Risk Reduction and Management Office</div>
+        <div style="font-size:30px; font-weight:600; margin-top:14px; color:#1f2933;">${chartTitle}</div>
+      `;
+
+      headerContainer.appendChild(leftLogo);
+      headerContainer.appendChild(headerText);
+      headerContainer.appendChild(rightLogo);
+
+      document.body.appendChild(headerContainer);
+      const headerCanvas = await html2canvas(headerContainer, { scale: 2, backgroundColor: '#ffffff' });
+      document.body.removeChild(headerContainer);
+      const headerImgData = headerCanvas.toDataURL('image/png');
+      const headerHeightMm = (headerCanvas.height * usableWidth) / headerCanvas.width;
+
+      const baseImgWidth = usableWidth;
+      const baseImgHeight = (canvas.height * baseImgWidth) / canvas.width;
+      const availableHeight = pageHeight - marginTop - headerHeightMm - marginBottom - 4;
+      const scaleFactor = Math.min(1, availableHeight / baseImgHeight);
+      const imgWidth = baseImgWidth * scaleFactor;
+      const imgHeight = baseImgHeight * scaleFactor;
+      const contentTop = marginTop + headerHeightMm + 4;
+      const contentLeft = marginX + (usableWidth - imgWidth) / 2;
+      const effectiveAvailableHeight = pageHeight - contentTop - marginBottom;
+      let remainingHeight = Math.max(0, imgHeight - effectiveAvailableHeight);
+
+      pdf.addImage(headerImgData, 'PNG', marginX, marginTop, usableWidth, headerHeightMm);
+      pdf.addImage(imgData, 'PNG', contentLeft, contentTop, imgWidth, imgHeight);
+
+      while (remainingHeight > 0) {
         pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+        pdf.addImage(headerImgData, 'PNG', marginX, marginTop, usableWidth, headerHeightMm);
+        const offset = imgHeight - remainingHeight;
+        pdf.addImage(imgData, 'PNG', contentLeft, contentTop - offset, imgWidth, imgHeight);
+        remainingHeight -= effectiveAvailableHeight;
       }
 
       addSummaryTablesToPdf(pdf, summaryTables, chartTitle);
@@ -558,7 +635,6 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
   };
   return (
     <div className="grid grid-cols-1 gap-6">
-      {/* Back Button for Admin Dashboard */}
       <div className="flex justify-start mb-4">
         <Button
           variant="outline"
@@ -585,7 +661,6 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
           </Button>
         </CardHeader>
         <CardContent className="p-6 bg-white rounded-b-lg">
-          <p className="text-sm text-gray-600 mb-4">Filter by period, date range, and time range for admin-recorded incidents.</p>
           <div className="flex flex-col gap-4 mb-6">
             <Select value={pieChartPeriod} onValueChange={setPieChartPeriod}>
               <SelectTrigger className="w-full">
@@ -767,7 +842,6 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
           </Button>
         </CardHeader>
         <CardContent className="p-6 bg-white rounded-b-lg">
-          <p className="text-sm text-gray-600 mb-4">Filter by month or year for incidents recorded by admin.</p>
           <div className="flex flex-col sm:flex-row items-center gap-4 mb-6">
             <Select value={barIncidentPeriod} onValueChange={setBarIncidentPeriod}>
               <SelectTrigger className="w-full sm:w-[180px]">
@@ -803,26 +877,34 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
           </div>
           <div data-chart-canvas className="w-full">
             {incidentTypeBarData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={350}>
+              <ResponsiveContainer width="100%" height={460}>
                 <BarChart
                   data={incidentTypeBarData}
-                  margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                  margin={{ top: 36, right: 24, left: 24, bottom: 40 }}
+                  barCategoryGap="6%"
+                  barGap={0}
                 >
-                  <CartesianGrid strokeDasharray="3 3" />
+                  <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" />
                   {barIncidentPeriod === 'yearly' ? (
-                    <XAxis dataKey="month" />
+                    <XAxis dataKey="month" tickMargin={12} />
                   ) : (
-                    <XAxis dataKey="day" />
+                    <XAxis dataKey="day" tickMargin={12} />
                   )}
-                  <YAxis allowDecimals={false} />
-                  <Tooltip content={<CustomBarTooltip />} />
-                  <Legend />
+                  <YAxis allowDecimals={false} tickMargin={10} />
+                  <Tooltip content={<CustomBarTooltip />} cursor={{ fill: 'rgba(30,64,175,0.08)' }} />
+                  <Legend wrapperStyle={{ paddingTop: 18 }} iconType="circle" />
                   {incidentTypes.map((type, index) => (
                     <Bar
                       key={type.id}
                       dataKey={type.name}
-                      fill={getIncidentTypeColor(index)}
+                      fill={getIncidentTypeColor(type.name, index)}
                       name={type.name}
+                      stroke="#1f2933"
+                      strokeWidth={1}
+                      fillOpacity={0.97}
+                      radius={[12, 12, 0, 0]}
+                      isAnimationActive={false}
+                      maxBarSize={200}
                     />
                   ))}
                 </BarChart>
@@ -850,13 +932,12 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
           </Button>
         </CardHeader>
         <CardContent className="p-6 bg-white rounded-b-lg">
-          <p className="text-sm text-gray-600 mb-4">Filter by period and date for all emergency reports.</p>
           <div className="flex flex-col gap-4 mb-6">
             <Select value={barStatusPeriod} onValueChange={setBarStatusPeriod}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Choose a period" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent> 
                 <SelectItem value="daily">Day</SelectItem>
                 <SelectItem value="weekly">Range</SelectItem>
                 <SelectItem value="monthly">Month</SelectItem>
@@ -874,7 +955,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
                       !barStatusDate && "text-muted-foreground"
                     )}
                   >
-                    <span> {/* Added span to wrap children */}
+                    <span> 
                       <CalendarIcon className="mr-2 h-4 w-4" />
                       {barStatusDate ? format(barStatusDate, "PPP") : <span>Select Day</span>}
                     </span>
@@ -902,7 +983,7 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
                         !barStatusStartDateRange && "text-muted-foreground"
                       )}
                     >
-                      <span> {/* Added span to wrap children */}
+                      <span> 
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {barStatusStartDateRange ? format(barStatusStartDateRange, "PPP") : <span>Start Date</span>}
                       </span>
