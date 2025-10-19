@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
           const { data: recipients, error: recipientsError } = await supabaseAdmin
             .from('users')
             .select('email, firstName, lastName')
-            .eq('user_type', 'user')
+            .in('user_type', ['user', 'hospital'])
             .not('email', 'is', null)
             .limit(1000)
 

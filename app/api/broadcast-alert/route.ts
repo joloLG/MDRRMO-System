@@ -258,6 +258,8 @@ export async function POST(req: NextRequest) {
           const { data: users } = await supabase
             .from('users')
             .select('email, firstName, lastName')
+            .in('user_type', ['user', 'hospital'])
+            .not('email', 'is', null)
             .limit(1000)
           const tasks = (users || []).map((u: any) => transporter.sendMail({
             from: SMTP_FROM,

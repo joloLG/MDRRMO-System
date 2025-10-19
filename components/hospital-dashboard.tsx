@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -42,6 +43,8 @@ export function HospitalDashboard({ onLogout }: HospitalDashboardProps) {
     incidentType: "",
     erTeam: "",
   })
+  const [searchTerm, setSearchTerm] = React.useState("")
+  const [currentPage, setCurrentPage] = React.useState(1)
 
   React.useEffect(() => {
     const loadHospitalData = async () => {
@@ -97,6 +100,7 @@ export function HospitalDashboard({ onLogout }: HospitalDashboardProps) {
         setErTeams(erTeamsRes.data as BaseEntry[])
         const sortedReports = (reportsRes.data as InternalReportRecord[]).sort((a, b) => b.id - a.id)
         setReports(sortedReports)
+        setCurrentPage(1)
       } catch (err: any) {
         console.error("Failed to load hospital dashboard:", err)
         const message = err?.message || "Unable to load hospital dashboard. Please try again later."
@@ -136,6 +140,37 @@ export function HospitalDashboard({ onLogout }: HospitalDashboardProps) {
   const closeDialog = () => {
     setSelectedReport(null)
   }
+
+  React.useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm])
+
+  const pageSize = 15
+
+  const filteredReports = React.useMemo(() => {
+    if (!searchTerm.trim()) return reports
+    const term = searchTerm.toLowerCase()
+    return reports.filter((report) => {
+      const idMatch = report.id.toString().includes(term)
+      const patientMatch = (report.patient_name || "").toLowerCase().includes(term)
+      const barangayMatch = getBarangayName(report.barangay_id).toLowerCase().includes(term)
+      const incidentMatch = getIncidentTypeName(report.incident_type_id).toLowerCase().includes(term)
+      return idMatch || patientMatch || barangayMatch || incidentMatch
+    })
+  }, [reports, searchTerm, getBarangayName, getIncidentTypeName])
+
+  const totalPages = Math.max(1, Math.ceil(filteredReports.length / pageSize))
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages)
+    }
+  }, [currentPage, totalPages])
+
+  const paginatedReports = React.useMemo(() => {
+    const start = (currentPage - 1) * pageSize
+    return filteredReports.slice(start, start + pageSize)
+  }, [filteredReports, currentPage])
 
   const renderContent = () => {
     if (loading) {
@@ -194,16 +229,26 @@ export function HospitalDashboard({ onLogout }: HospitalDashboardProps) {
         </Card>
 
         <Card className="border-none shadow-lg">
-          <CardHeader className="flex flex-col gap-2 bg-white pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-xl font-semibold text-gray-900">Transferred Patients</CardTitle>
-              <Badge variant="outline" className="border-orange-500 text-orange-600">
-                {reports.length} Case{reports.length === 1 ? "" : "s"}
-              </Badge>
+          <CardHeader className="flex flex-col gap-3 bg-white pb-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-xl font-semibold text-gray-900">Transferred Patients</CardTitle>
+                  <Badge variant="outline" className="border-orange-500 text-orange-600">
+                    {filteredReports.length} Case{filteredReports.length === 1 ? "" : "s"}
+                  </Badge>
+                </div>
+                <p className="text-sm text-gray-600">
+                  View patient details and injury diagrams for transfers endorsed to your hospital.
+                </p>
+              </div>
+              <Input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Search by ID, patient, barangay, or incident"
+                className="w-full sm:w-72"
+              />
             </div>
-            <p className="text-sm text-gray-600">
-              View patient details and injury diagrams for transfers endorsed to your hospital.
-            </p>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -213,20 +258,20 @@ export function HospitalDashboard({ onLogout }: HospitalDashboardProps) {
                     <TableHead className="text-gray-700">Report ID</TableHead>
                     <TableHead className="text-gray-700">Incident Date</TableHead>
                     <TableHead className="text-gray-700">Patient Name</TableHead>
-                    <TableHead className="text-gray-700">Barangay</TableHead>
+                    <TableHead className="text-gray-700">Incident Type</TableHead>
                     <TableHead className="text-gray-700">Prepared By</TableHead>
                     <TableHead className="text-gray-700">ER Team</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {reports.length === 0 ? (
+                  {paginatedReports.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="py-10 text-center text-gray-500">
-                        No transfers recorded for your hospital yet.
+                        {reports.length === 0 ? "No transfers recorded for your hospital yet." : "No matches found for your search."}
                       </TableCell>
                     </TableRow>
                   ) : (
-                    reports.map((report) => (
+                    paginatedReports.map((report) => (
                       <TableRow
                         key={report.id}
                         className="cursor-pointer transition hover:bg-orange-50"
@@ -237,7 +282,7 @@ export function HospitalDashboard({ onLogout }: HospitalDashboardProps) {
                           {format(new Date(report.incident_date), "PPP • hh:mm a")}
                         </TableCell>
                         <TableCell className="text-gray-700">{report.patient_name || "—"}</TableCell>
-                        <TableCell className="text-gray-700">{getBarangayName(report.barangay_id)}</TableCell>
+                        <TableCell className="text-gray-700">{getIncidentTypeName(report.incident_type_id)}</TableCell>
                         <TableCell className="text-gray-700">{report.prepared_by || "—"}</TableCell>
                         <TableCell className="text-gray-700">{getErTeamName(report.er_team_id)}</TableCell>
                       </TableRow>
@@ -246,6 +291,30 @@ export function HospitalDashboard({ onLogout }: HospitalDashboardProps) {
                 </TableBody>
               </Table>
             </div>
+            {filteredReports.length > pageSize && (
+              <div className="flex flex-col items-center justify-between gap-3 border-t border-gray-100 px-4 py-4 text-sm text-gray-600 sm:flex-row">
+                <span>
+                  Showing {(currentPage - 1) * pageSize + 1}–
+                  {Math.min(currentPage * pageSize, filteredReports.length)} of {filteredReports.length}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}>
+                    Previous
+                  </Button>
+                  <span>
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -301,6 +370,11 @@ export function HospitalDashboard({ onLogout }: HospitalDashboardProps) {
           )}
         </DialogContent>
       </Dialog>
+      <div className="fixed bottom-0 left-0 right-0 bg-orange-500/95 backdrop-blur-sm text-white p-4 z-10">
+        <div className="flex justify-center">
+          <span className="text-center text-xs sm:text-sm font-medium">Copyright 2025 | Jolo Gracilla</span>
+        </div>
+      </div>
     </div>
   )
 }
