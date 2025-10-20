@@ -134,6 +134,69 @@ const BACK_BODY_REGION_IDS = [
 const FRONT_SVG_PATH = "/body_part_front-01.svg";
 const BACK_SVG_PATH = "/body_part_back-01.svg";
 
+const STEP1_REQUIRED_FIELDS = [
+  "incidentDate",
+  "incidentTime",
+  "incidentTypeId",
+  "barangayId",
+  "erTeamId",
+  "preparedBy",
+] as const;
+
+const STEP2_REQUIRED_FIELDS = [
+  "patientName",
+  "patientNumber",
+  "patientBirthday",
+  "patientAge",
+  "patientAddress",
+  "patientSex",
+  "evacPriority",
+  "typeOfEmergencySelections",
+  "incidentLocation",
+  "moiPoiToi",
+  "hospitalName",
+  "receivingDate",
+  "emtErtDate",
+] as const;
+
+const REQUIRED_FIELD_LABEL = "Required to fill-up";
+
+type Step1Field = typeof STEP1_REQUIRED_FIELDS[number];
+type Step2Field = typeof STEP2_REQUIRED_FIELDS[number];
+type FieldKey = Step1Field | Step2Field;
+
+const FIELD_STEP_MAP: Record<FieldKey, 1 | 2> = {
+  incidentDate: 1,
+  incidentTime: 1,
+  incidentTypeId: 1,
+  barangayId: 1,
+  erTeamId: 1,
+  preparedBy: 1,
+  patientName: 2,
+  patientNumber: 2,
+  patientBirthday: 2,
+  patientAge: 2,
+  patientAddress: 2,
+  patientSex: 2,
+  evacPriority: 2,
+  typeOfEmergencySelections: 2,
+  incidentLocation: 2,
+  moiPoiToi: 2,
+  hospitalName: 2,
+  receivingDate: 2,
+  emtErtDate: 2,
+};
+
+const isValueEmpty = (value: unknown) => {
+  if (Array.isArray(value)) {
+    return value.length === 0;
+  }
+  if (typeof value === 'string') {
+    return value.trim().length === 0;
+  }
+  return value === null || value === undefined;
+};
+
 const generateInjuryColor = (seed: string) => {
   const hash = seed.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   const hue = (hash * 47) % 360;
@@ -256,6 +319,7 @@ interface DatePickerFieldProps {
   disabled?: boolean;
   required?: boolean;
   allowClear?: boolean;
+  error?: boolean;
   fromYear?: number;
   toYear?: number;
 }
@@ -269,6 +333,7 @@ const DatePickerField: React.FC<DatePickerFieldProps> = ({
   disabled,
   required,
   allowClear = false,
+  error = false,
   fromYear,
   toYear,
 }) => {
@@ -287,7 +352,13 @@ const DatePickerField: React.FC<DatePickerFieldProps> = ({
 
   return (
     <div className="space-y-1">
-      <Label htmlFor={id} className="block text-sm font-medium text-gray-700">
+      <Label
+        htmlFor={id}
+        className={cn(
+          "block text-sm font-medium",
+          error ? "text-red-600" : "text-gray-700"
+        )}
+      >
         {label} {required ? <span className="text-red-500">*</span> : null}
       </Label>
       <Popover open={open} onOpenChange={setOpen}>
@@ -298,9 +369,11 @@ const DatePickerField: React.FC<DatePickerFieldProps> = ({
             variant="outline"
             className={cn(
               "w-full justify-start text-left font-normal",
-              !selectedDate && "text-muted-foreground"
+              !selectedDate && "text-muted-foreground",
+              error && "border-red-500 text-red-600 focus-visible:ring-red-500"
             )}
             disabled={disabled}
+            aria-invalid={error}
           >
             <div className="flex flex-1 items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -365,6 +438,9 @@ const DatePickerField: React.FC<DatePickerFieldProps> = ({
           )}
         </PopoverContent>
       </Popover>
+      {error ? (
+        <p className="text-xs font-semibold text-red-500">{REQUIRED_FIELD_LABEL}</p>
+      ) : null}
     </div>
   );
 };
@@ -585,6 +661,122 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
   const [pendingInjurySelection, setPendingInjurySelection] = React.useState<string[]>([]);
   const [injurySelectionError, setInjurySelectionError] = React.useState<string | null>(null);
   const [isSuccessDialogOpen, setIsSuccessDialogOpen] = React.useState(false);
+  const [validationErrors, setValidationErrors] = React.useState<Partial<Record<FieldKey, boolean>>>({});
+
+  const getFieldValue = React.useCallback((field: FieldKey) => {
+    switch (field) {
+      case "incidentDate":
+        return incidentDate;
+      case "incidentTime":
+        return incidentTime;
+      case "incidentTypeId":
+        return incidentTypeId;
+      case "barangayId":
+        return barangayId;
+      case "erTeamId":
+        return erTeamId;
+      case "preparedBy":
+        return preparedBy;
+      case "patientName":
+        return patientName;
+      case "patientNumber":
+        return patientNumber;
+      case "patientBirthday":
+        return patientBirthday;
+      case "patientAge":
+        return patientAge;
+      case "patientAddress":
+        return patientAddress;
+      case "patientSex":
+        return patientSex;
+      case "evacPriority":
+        return evacPriority;
+      case "typeOfEmergencySelections":
+        return typeOfEmergencySelections;
+      case "incidentLocation":
+        return incidentLocation;
+      case "moiPoiToi":
+        return moiPoiToi;
+      case "hospitalName":
+        return hospitalName;
+      case "receivingDate":
+        return receivingDate;
+      case "emtErtDate":
+        return emtErtDate;
+      default:
+        return undefined;
+    }
+  }, [
+    incidentDate,
+    incidentTime,
+    incidentTypeId,
+    barangayId,
+    erTeamId,
+    preparedBy,
+    patientName,
+    patientNumber,
+    patientBirthday,
+    patientAge,
+    patientAddress,
+    patientSex,
+    evacPriority,
+    typeOfEmergencySelections,
+    incidentLocation,
+    moiPoiToi,
+    hospitalName,
+    receivingDate,
+    emtErtDate,
+  ]);
+
+  const clearFieldError = React.useCallback((field: FieldKey) => {
+    setValidationErrors((prev) => {
+      if (!prev[field]) return prev;
+      const { [field]: _removed, ...rest } = prev;
+      return rest;
+    });
+  }, []);
+
+  const clearFieldErrorIfFilled = React.useCallback((field: FieldKey, value: unknown) => {
+    if (!isValueEmpty(value)) {
+      clearFieldError(field);
+    }
+  }, [clearFieldError]);
+
+  const isFieldInvalid = React.useCallback((field: FieldKey) => Boolean(validationErrors[field]), [validationErrors]);
+
+  const validateFields = React.useCallback((fields: readonly FieldKey[]) => {
+    const missing: FieldKey[] = [];
+    fields.forEach((field) => {
+      if (isValueEmpty(getFieldValue(field))) {
+        missing.push(field);
+      }
+    });
+
+    setValidationErrors((prev) => {
+      const next = { ...prev };
+      fields.forEach((field) => {
+        if (missing.includes(field)) {
+          next[field] = true;
+        } else if (next[field]) {
+          delete next[field];
+        }
+      });
+      return next;
+    });
+
+    return missing;
+  }, [getFieldValue]);
+
+  const requireFields = React.useCallback((fields: readonly FieldKey[], message: string) => {
+    const missing = validateFields(fields);
+    if (missing.length > 0) {
+      const firstMissing = missing[0];
+      setStep(FIELD_STEP_MAP[firstMissing]);
+      setFormMessage({ type: 'error', text: message });
+      return false;
+    }
+    return true;
+  }, [validateFields]);
 
   React.useEffect(() => {
     if (!patientBirthday) {
@@ -602,13 +794,16 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
     if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < parsed.getDate())) {
       age -= 1;
     }
-    setPatientAge(String(Math.max(age, 0)));
-  }, [patientBirthday]);
+    const calculated = String(Math.max(age, 0));
+    setPatientAge(calculated);
+    clearFieldErrorIfFilled("patientAge", calculated);
+  }, [patientBirthday, clearFieldErrorIfFilled]);
 
   const handlePatientNumberChange = React.useCallback((value: string) => {
     const digitsOnly = value.replace(/[^0-9]/g, '').slice(0, 11);
     setPatientNumber(digitsOnly);
-  }, []);
+    clearFieldErrorIfFilled("patientNumber", digitsOnly);
+  }, [clearFieldErrorIfFilled]);
 
   const selectedBodyPartsFront = React.useMemo(
     () => FRONT_BODY_REGION_IDS.filter(part => (bodyPartInjuries[part] ?? []).length > 0),
@@ -849,13 +1044,18 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
     }
     if (match) {
       setIncidentLocation(match.name);
+      clearFieldErrorIfFilled("incidentLocation", match.name);
     }
-  }, [barangayId, barangays, searchTerm]);
+  }, [barangayId, barangays, searchTerm, clearFieldErrorIfFilled]);
 
   const handleBarangaySelect = (barangay: Barangay) => {
-    setBarangayId(String(barangay.id));
+    const nextId = String(barangay.id);
+    setBarangayId(nextId);
+    clearFieldErrorIfFilled("barangayId", nextId);
     setSearchTerm(barangay.name);
     setIsBarangayDropdownOpen(false);
+    setIncidentLocation(barangay.name);
+    clearFieldErrorIfFilled("incidentLocation", barangay.name);
   };
 
   const clearBarangaySelection = () => {
@@ -866,17 +1066,27 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
   };
 
   const handleToggleTypeOfEmergency = (option: string) => {
-    setTypeOfEmergencySelections((prev) =>
-      prev.includes(option) ? prev.filter(item => item !== option) : [...prev, option]
-    );
+    setTypeOfEmergencySelections((prev) => {
+      const next = prev.includes(option) ? prev.filter(item => item !== option) : [...prev, option];
+      clearFieldErrorIfFilled("typeOfEmergencySelections", next);
+      return next;
+    });
   };
 
   const handleSexSelection = (sex: 'male' | 'female') => {
-    setPatientSex((prev) => (prev === sex ? '' : sex));
+    setPatientSex((prev) => {
+      const next = prev === sex ? '' : sex;
+      clearFieldErrorIfFilled("patientSex", next);
+      return next;
+    });
   };
 
   const handleEvacPrioritySelection = (priority: string) => {
-    setEvacPriority((prev) => (prev === priority ? '' : priority));
+    setEvacPriority((prev) => {
+      const next = prev === priority ? '' : priority;
+      clearFieldErrorIfFilled("evacPriority", next);
+      return next;
+    });
   };
 
   const toggleSelection = (option: string, setter: React.Dispatch<React.SetStateAction<string[]>>) => {
@@ -939,8 +1149,7 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
 
   const handleNextStep = () => {
     if (step === 1) {
-      if (!incidentDate || !incidentTime || !incidentTypeId || !barangayId || !erTeamId || !preparedBy) {
-        setFormMessage({ type: 'error', text: 'Please complete all required fields before proceeding.' });
+      if (!requireFields(STEP1_REQUIRED_FIELDS, 'Please complete all required incident details before continuing.')) {
         return;
       }
       setFormMessage(null);
@@ -949,8 +1158,7 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
     }
 
     if (step === 2) {
-      if (!patientName || !patientNumber || !patientBirthday || !patientAge || !patientAddress || !patientSex || !evacPriority || typeOfEmergencySelections.length === 0 || !incidentLocation || !moiPoiToi || !hospitalName || !receivingDate || !emtErtDate) {
-        setFormMessage({ type: 'error', text: 'Please complete all Patients Information and Transfer of Care fields before continuing.' });
+      if (!requireFields(STEP2_REQUIRED_FIELDS, 'Please complete all patient and transfer fields before proceeding.')) {
         return;
       }
       setFormMessage(null);
@@ -999,6 +1207,8 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
     setHospitalName('');
     setReceivingDate('');
     setEmtErtDate('');
+    setValidationErrors({});
+    setFormMessage(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1006,26 +1216,32 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
     setFormMessage(null); 
     setIsLoading(true);
 
-    if (!incidentDate || !incidentTime || !incidentTypeId || !barangayId || !erTeamId || !preparedBy) {
-      setFormMessage({ type: 'error', text: "Please fill in all required fields." });
+    if (!requireFields(STEP1_REQUIRED_FIELDS, 'Please fill in all required incident details.')) {
+      setIsLoading(false);
+      return;
+    }
+
+    if (!requireFields(STEP2_REQUIRED_FIELDS, 'Please complete all patient and transfer details.')) {
       setIsLoading(false);
       return;
     }
 
     if (step !== 3) {
+      setStep(3);
       setFormMessage({ type: 'error', text: 'Please proceed through all form steps before submitting.' });
       setIsLoading(false);
       return;
     }
 
-    if (!patientName || !patientNumber || !patientBirthday || !patientAge || !patientAddress || !patientSex || !evacPriority || typeOfEmergencySelections.length === 0 || !incidentLocation || !moiPoiToi || !hospitalName || !receivingDate || !emtErtDate) {
-      setFormMessage({ type: 'error', text: 'Please complete all Patients Information and Transfer of Care fields.' });
+    if (!incidentTypeId || !barangayId || !erTeamId) {
+      setFormMessage({ type: 'error', text: 'Missing required identifiers for incident type, barangay, or ER team.' });
       setIsLoading(false);
       return;
     }
 
     const hasBodyPartSelections = Object.values(bodyPartInjuries).some(list => list.length > 0);
     if (!hasBodyPartSelections) {
+      setStep(3);
       setFormMessage({ type: 'error', text: 'Select at least one body part and confirm its injury types.' });
       setIsLoading(false);
       return;
@@ -1045,19 +1261,19 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
         .from('internal_reports')
         .insert({
           original_report_id: selectedReport?.id || null, 
-          incident_type_id: parseInt(incidentTypeId),
+          incident_type_id: parseInt(incidentTypeId, 10),
           incident_date: incidentDateTime,
           time_responded: timeRespondedIso,
-          barangay_id: parseInt(barangayId),
-          er_team_id: parseInt(erTeamId),
-          persons_involved: personsInvolved ? parseInt(personsInvolved) : null,
-          number_of_responders: numberOfResponders ? parseInt(numberOfResponders) : null,
+          barangay_id: parseInt(barangayId, 10),
+          er_team_id: parseInt(erTeamId, 10),
+          persons_involved: personsInvolved ? parseInt(personsInvolved, 10) : null,
+          number_of_responders: numberOfResponders ? parseInt(numberOfResponders, 10) : null,
           prepared_by: preparedBy,
           created_at: new Date().toISOString(), 
           patient_name: patientName,
           patient_contact_number: patientNumber,
           patient_birthday: patientBirthday,
-          patient_age: patientAge ? parseInt(patientAge) : null,
+          patient_age: patientAge ? parseInt(patientAge, 10) : null,
           patient_address: patientAddress,
           patient_sex: patientSex || null,
           evacuation_priority: evacPriority || null,
@@ -1189,30 +1405,73 @@ return (
                   id="incidentDate"
                   label="Incident Date"
                   value={incidentDate}
-                  onChange={setIncidentDate}
+                  onChange={(next) => {
+                    setIncidentDate(next);
+                    clearFieldErrorIfFilled("incidentDate", next);
+                  }}
                   required
+                  error={isFieldInvalid("incidentDate")}
                 />
                 <div>
-                  <Label htmlFor="incidentTime" className="block text-sm font-medium text-gray-700 mb-1">Time Reported</Label>
+                  <Label
+                    htmlFor="incidentTime"
+                    className={cn(
+                      "block text-sm font-medium mb-1",
+                      isFieldInvalid("incidentTime") ? "text-red-600" : "text-gray-700"
+                    )}
+                  >
+                    Time Reported
+                  </Label>
                   <Input
                     id="incidentTime"
                     type="time"
                     value={incidentTime}
-                    onChange={(e) => setIncidentTime(e.target.value)}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setIncidentTime(next);
+                      clearFieldErrorIfFilled("incidentTime", next);
+                    }}
                     required
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm"
+                    className={cn(
+                      "w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm",
+                      isFieldInvalid("incidentTime") ? "border-red-500" : "border-gray-300"
+                    )}
                   />
+                  {isFieldInvalid("incidentTime") ? (
+                    <p className="text-xs font-semibold text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                  ) : null}
                 </div>
               </div>
 
               <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <Label htmlFor="incidentType" className="block text-sm font-medium text-gray-700">Incident Type</Label>
+                    <Label
+                      htmlFor="incidentType"
+                      className={cn(
+                        "block text-sm font-medium",
+                        isFieldInvalid("incidentTypeId") ? "text-red-600" : "text-gray-700"
+                      )}
+                    >
+                      Incident Type
+                    </Label>
                     <StepTooltip text="Select the category that best captures this emergency." />
                   </div>
-                  <Select value={incidentTypeId} onValueChange={setIncidentTypeId} required>
-                    <SelectTrigger id="incidentType" className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm">
+                  <Select
+                    value={incidentTypeId}
+                    onValueChange={(value) => {
+                      setIncidentTypeId(value);
+                      clearFieldErrorIfFilled("incidentTypeId", value);
+                    }}
+                    required
+                  >
+                    <SelectTrigger
+                      id="incidentType"
+                      className={cn(
+                        "w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm",
+                        isFieldInvalid("incidentTypeId") ? "border-red-500" : "border-gray-300"
+                      )}
+                    >
                       <SelectValue placeholder="Select incident type" />
                     </SelectTrigger>
                     <SelectContent className="bg-white rounded-md shadow-lg max-h-60 overflow-y-auto z-50">
@@ -1230,7 +1489,15 @@ return (
                 </div>
 
                 <div ref={barangayDropdownRef} className="relative">
-                  <Label htmlFor="barangaySearch" className="block text-sm font-medium text-gray-700 mb-1">Barangay Name</Label>
+                  <Label
+                    htmlFor="barangaySearch"
+                    className={cn(
+                      "block text-sm font-medium mb-1",
+                      isFieldInvalid("barangayId") ? "text-red-600" : "text-gray-700"
+                    )}
+                  >
+                    Barangay Name
+                  </Label>
                   <div className="flex items-center gap-2">
                     <Input
                       id="barangaySearch"
@@ -1242,7 +1509,10 @@ return (
                         setSearchTerm(e.target.value);
                         setIsBarangayDropdownOpen(true);
                       }}
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm"
+                      className={cn(
+                        "w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm",
+                        isFieldInvalid("barangayId") ? "border-red-500" : "border-gray-300"
+                      )}
                     />
                     {searchTerm && (
                       <Button type="button" variant="outline" className="px-3" onClick={clearBarangaySelection}>
@@ -1268,15 +1538,38 @@ return (
                       )}
                     </div>
                   )}
-                  {!barangayId && (
+                  {isFieldInvalid("barangayId") ? (
+                    <p className="text-xs font-semibold text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                  ) : !barangayId ? (
                     <p className="text-xs text-gray-500 mt-1">Select a barangay from the list to continue.</p>
-                  )}
+                  ) : null}
                 </div>
 
                 <div>
-                  <Label htmlFor="erTeam" className="block text-sm font-medium text-gray-700 mb-1">ER Team</Label>
-                  <Select value={erTeamId} onValueChange={setErTeamId} required>
-                    <SelectTrigger id="erTeam" className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm">
+                  <Label
+                    htmlFor="erTeam"
+                    className={cn(
+                      "block text-sm font-medium mb-1",
+                      isFieldInvalid("erTeamId") ? "text-red-600" : "text-gray-700"
+                    )}
+                  >
+                    ER Team
+                  </Label>
+                  <Select
+                    value={erTeamId}
+                    onValueChange={(value) => {
+                      setErTeamId(value);
+                      clearFieldErrorIfFilled("erTeamId", value);
+                    }}
+                    required
+                  >
+                    <SelectTrigger
+                      id="erTeam"
+                      className={cn(
+                        "w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm",
+                        isFieldInvalid("erTeamId") ? "border-red-500" : "border-gray-300"
+                      )}
+                    >
                       <SelectValue placeholder="Select ER team" />
                     </SelectTrigger>
                     <SelectContent className="bg-white rounded-md shadow-lg max-h-60 overflow-y-auto z-50">
@@ -1296,26 +1589,63 @@ return (
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <Label htmlFor="personsInvolved" className="block text-sm font-medium text-gray-700 mb-1">Number of Persons Involved</Label>
+                  <Label
+                    htmlFor="incidentLocation"
+                    className={cn(
+                      "block text-sm font-medium mb-1",
+                      isFieldInvalid("incidentLocation") ? "text-red-600" : "text-gray-700"
+                    )}
+                  >
+                    Incident Location
+                  </Label>
                   <Input
-                    id="personsInvolved"
-                    type="number"
-                    value={personsInvolved}
-                    onChange={(e) => setPersonsInvolved(e.target.value)}
-                    min="0"
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm"
+                    id="incidentLocation"
+                    type="text"
+                    value={incidentLocation}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setIncidentLocation(next);
+                      clearFieldErrorIfFilled("incidentLocation", next);
+                    }}
+                    required
+                    className={cn(
+                      "w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm",
+                      isFieldInvalid("incidentLocation") ? "border-red-500" : "border-gray-300"
+                    )}
                   />
+                  <p className="text-xs text-gray-500 mt-1">Auto-filled from barangay selection. You may adjust if needed.</p>
+                  {isFieldInvalid("incidentLocation") ? (
+                    <p className="text-xs font-semibold text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                  ) : null}
                 </div>
                 <div>
-                  <Label htmlFor="numberOfResponders" className="block text-sm font-medium text-gray-700 mb-1">Number of Responders (Optional)</Label>
-                  <Input
-                    id="numberOfResponders"
-                    type="number"
-                    value={numberOfResponders}
-                    onChange={(e) => setNumberOfResponders(e.target.value)}
-                    min="0"
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm"
+                  <Label
+                    htmlFor="moiPoiToi"
+                    className={cn(
+                      "block text-sm font-medium mb-1",
+                      isFieldInvalid("moiPoiToi") ? "text-red-600" : "text-gray-700"
+                    )}
+                  >
+                    MOI / POI / TOI
+                  </Label>
+                  <Textarea
+                    id="moiPoiToi"
+                    value={moiPoiToi}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setMoiPoiToi(next);
+                      clearFieldErrorIfFilled("moiPoiToi", next);
+                    }}
+                    required
+                    className={cn(
+                      "w-full border rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm",
+                      isFieldInvalid("moiPoiToi") ? "border-red-500" : "border-gray-300"
+                    )}
+                    rows={4}
                   />
+                  {isFieldInvalid("moiPoiToi") ? (
+                    <p className="text-xs font-semibold text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                  ) : null}
                 </div>
               </div>
 
@@ -1342,17 +1672,35 @@ return (
 
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <Label htmlFor="preparedBy" className="block text-sm font-medium text-gray-700">Prepared By</Label>
+                  <Label
+                    htmlFor="preparedBy"
+                    className={cn(
+                      "block text-sm font-medium",
+                      isFieldInvalid("preparedBy") ? "text-red-600" : "text-gray-700"
+                    )}
+                  >
+                    Prepared By
+                  </Label>
                   <StepTooltip text="Automatically fills from your profile if available. Update if another admin handles this report." />
                 </div>
                 <Input
                   id="preparedBy"
                   type="text"
                   value={preparedBy}
-                  onChange={(e) => setPreparedBy(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setPreparedBy(next);
+                    clearFieldErrorIfFilled("preparedBy", next);
+                  }}
                   required
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm"
+                  className={cn(
+                    "w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm",
+                    isFieldInvalid("preparedBy") ? "border-red-500" : "border-gray-300"
+                  )}
                 />
+                {isFieldInvalid("preparedBy") ? (
+                  <p className="text-xs font-semibold text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                ) : null}
               </div>
 
               <div className="flex justify-end">
@@ -1379,19 +1727,45 @@ return (
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <Label htmlFor="patientName" className="block text-sm font-medium text-gray-700 mb-1">Patient's Name</Label>
+                  <Label
+                    htmlFor="patientName"
+                    className={cn(
+                      "block text-sm font-medium mb-1",
+                      isFieldInvalid("patientName") ? "text-red-600" : "text-gray-700"
+                    )}
+                  >
+                    Patient's Name
+                  </Label>
                   <Input
                     id="patientName"
                     type="text"
                     value={patientName}
-                    onChange={(e) => setPatientName(e.target.value)}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setPatientName(next);
+                      clearFieldErrorIfFilled("patientName", next);
+                    }}
                     required
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm"
+                    className={cn(
+                      "w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm",
+                      isFieldInvalid("patientName") ? "border-red-500" : "border-gray-300"
+                    )}
                   />
+                  {isFieldInvalid("patientName") ? (
+                    <p className="text-xs font-semibold text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                  ) : null}
                 </div>
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <Label htmlFor="patientNumber" className="block text-sm font-medium text-gray-700">Patient's Contact Number</Label>
+                    <Label
+                      htmlFor="patientNumber"
+                      className={cn(
+                        "block text-sm font-medium",
+                        isFieldInvalid("patientNumber") ? "text-red-600" : "text-gray-700"
+                      )}
+                    >
+                      Patient's Contact Number
+                    </Label>
                     <StepTooltip text="Only accepts 11-digit Philippine mobile numbers starting with 09." />
                   </div>
                   <Input
@@ -1403,8 +1777,14 @@ return (
                     onChange={(e) => handlePatientNumberChange(e.target.value)}
                     placeholder="09xxxxxxxxx"
                     required
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm"
+                    className={cn(
+                      "w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm",
+                      isFieldInvalid("patientNumber") ? "border-red-500" : "border-gray-300"
+                    )}
                   />
+                  {isFieldInvalid("patientNumber") ? (
+                    <p className="text-xs font-semibold text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                  ) : null}
                 </div>
               </div>
 
@@ -1413,14 +1793,26 @@ return (
                   id="patientBirthday"
                   label="Birthday"
                   value={patientBirthday}
-                  onChange={setPatientBirthday}
+                  onChange={(next) => {
+                    setPatientBirthday(next);
+                    clearFieldErrorIfFilled("patientBirthday", next);
+                  }}
                   required
                   placeholder="Select birthday"
                   fromYear={1900}
+                  error={isFieldInvalid("patientBirthday")}
                 />
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <Label htmlFor="patientAge" className="block text-sm font-medium text-gray-700">Age</Label>
+                    <Label
+                      htmlFor="patientAge"
+                      className={cn(
+                        "block text-sm font-medium",
+                        isFieldInvalid("patientAge") ? "text-red-600" : "text-gray-700"
+                      )}
+                    >
+                      Age
+                    </Label>
                     <StepTooltip text="Automatically calculates after the birthday is set." />
                   </div>
                   <Input
@@ -1430,11 +1822,25 @@ return (
                     value={patientAge}
                     readOnly
                     required
-                    className="w-full p-2 border border-gray-300 rounded-md bg-gray-50 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
+                    className={cn(
+                      "w-full p-2 border rounded-md bg-gray-50 focus:ring-blue-500 focus:border-blue-500 shadow-sm",
+                      isFieldInvalid("patientAge") ? "border-red-500" : "border-gray-300"
+                    )}
                   />
+                  {isFieldInvalid("patientAge") ? (
+                    <p className="text-xs font-semibold text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                  ) : null}
                 </div>
                 <div>
-                  <Label htmlFor="patientSex" className="block text-sm font-medium text-gray-700 mb-1">Sex</Label>
+                  <Label
+                    htmlFor="patientSex"
+                    className={cn(
+                      "block text-sm font-medium mb-1",
+                      isFieldInvalid("patientSex") ? "text-red-600" : "text-gray-700"
+                    )}
+                  >
+                    Sex
+                  </Label>
                   <div className="flex items-center gap-4 mt-2">
                     <div className="flex items-center space-x-2">
                       <Checkbox
@@ -1453,23 +1859,51 @@ return (
                       <Label htmlFor="sex-female" className="text-sm text-gray-700">Female</Label>
                     </div>
                   </div>
+                  {isFieldInvalid("patientSex") ? (
+                    <p className="text-xs font-semibold text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                  ) : null}
                 </div>
               </div>
 
               <div>
-                <Label htmlFor="patientAddress" className="block text-sm font-medium text-gray-700 mb-1">Patient's Address</Label>
+                <Label
+                  htmlFor="patientAddress"
+                  className={cn(
+                    "block text-sm font-medium mb-1",
+                    isFieldInvalid("patientAddress") ? "text-red-600" : "text-gray-700"
+                  )}
+                >
+                  Patient's Address
+                </Label>
                 <Input
                   id="patientAddress"
                   type="text"
                   value={patientAddress}
-                  onChange={(e) => setPatientAddress(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setPatientAddress(next);
+                    clearFieldErrorIfFilled("patientAddress", next);
+                  }}
                   required
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm"
+                  className={cn(
+                    "w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm",
+                    isFieldInvalid("patientAddress") ? "border-red-500" : "border-gray-300"
+                  )}
                 />
+                {isFieldInvalid("patientAddress") ? (
+                  <p className="text-xs font-semibold text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                ) : null}
               </div>
 
               <div className="rounded-lg border shadow-sm p-4 bg-white">
-                <Label className="block text-sm font-medium text-gray-700 mb-1">Evacuation Priority</Label>
+                <Label
+                  className={cn(
+                    "block text-sm font-medium mb-1",
+                    isFieldInvalid("evacPriority") ? "text-red-600" : "text-gray-700"
+                  )}
+                >
+                  Evacuation Priority
+                </Label>
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { label: 'Red / Priority 1', value: 'priority_red' },
@@ -1487,9 +1921,19 @@ return (
                     </button>
                   ))}
                 </div>
+                {isFieldInvalid("evacPriority") ? (
+                  <p className="text-xs font-semibold text-red-500 mt-2">{REQUIRED_FIELD_LABEL}</p>
+                ) : null}
               </div>
               <div className="rounded-lg border shadow-sm p-4 bg-white">
-                <Label className="block text-sm font-medium text-gray-700 mb-1">Type of Emergency</Label>
+                <Label
+                  className={cn(
+                    "block text-sm font-medium mb-1",
+                    isFieldInvalid("typeOfEmergencySelections") ? "text-red-600" : "text-gray-700"
+                  )}
+                >
+                  Type of Emergency
+                </Label>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {['RTA', 'Medical', 'Trauma', 'Conduction', 'Psyche', 'Pedia', 'OB'].map(option => (
                     <button
@@ -1502,6 +1946,9 @@ return (
                     </button>
                   ))}
                 </div>
+                {isFieldInvalid("typeOfEmergencySelections") ? (
+                  <p className="text-xs font-semibold text-red-500 mt-2">{REQUIRED_FIELD_LABEL}</p>
+                ) : null}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1554,27 +2001,55 @@ return (
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <Label htmlFor="incidentLocation" className="block text-sm font-medium text-gray-700 mb-1">Incident Location</Label>
+                  <Label
+                    htmlFor="incidentLocation"
+                    className={cn(
+                      "block text-sm font-medium mb-1",
+                      isFieldInvalid("incidentLocation") ? "text-red-600" : "text-gray-700"
+                    )}
+                  >
+                    Incident Location
+                  </Label>
                   <Input
                     id="incidentLocation"
                     type="text"
                     value={incidentLocation}
-                    onChange={(e) => setIncidentLocation(e.target.value)}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setIncidentLocation(next);
+                      clearFieldErrorIfFilled("incidentLocation", next);
+                    }}
                     required
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm"
+                    className={cn(
+                      "w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm",
+                      isFieldInvalid("incidentLocation") ? "border-red-500" : "border-gray-300"
+                    )}
                   />
                   <p className="text-xs text-gray-500 mt-1">Auto-filled from barangay selection. You may adjust if needed.</p>
+                  {isFieldInvalid("incidentLocation") ? (
+                    <p className="text-xs font-semibold text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                  ) : null}
                 </div>
                 <div>
                   <Label htmlFor="moiPoiToi" className="block text-sm font-medium text-gray-700 mb-1">MOI / POI / TOI</Label>
                   <Textarea
                     id="moiPoiToi"
                     value={moiPoiToi}
-                    onChange={(e) => setMoiPoiToi(e.target.value)}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setMoiPoiToi(next);
+                      clearFieldErrorIfFilled("moiPoiToi", next);
+                    }}
                     required
-                    className="w-full border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm"
+                    className={cn(
+                      "w-full border rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm",
+                      isFieldInvalid("moiPoiToi") ? "border-red-500" : "border-gray-300"
+                    )}
                     rows={4}
                   />
+                  {isFieldInvalid("moiPoiToi") ? (
+                    <p className="text-xs font-semibold text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                  ) : null}
                 </div>
               </div>
 
@@ -1582,13 +2057,30 @@ return (
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">Transfer of Care</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
-                    <Label htmlFor="hospitalName" className="block text-sm font-medium text-gray-700 mb-1">Hospital Name</Label>
+                    <Label
+                      htmlFor="hospitalName"
+                      className={cn(
+                        "block text-sm font-medium mb-1",
+                        isFieldInvalid("hospitalName") ? "text-red-600" : "text-gray-700"
+                      )}
+                    >
+                      Hospital Name
+                    </Label>
                     <Select
                       value={hospitalName}
-                      onValueChange={setHospitalName}
+                      onValueChange={(value) => {
+                        setHospitalName(value);
+                        clearFieldErrorIfFilled("hospitalName", value);
+                      }}
                       required
                     >
-                      <SelectTrigger id="hospitalName" className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm">
+                      <SelectTrigger
+                        id="hospitalName"
+                        className={cn(
+                          "w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm",
+                          isFieldInvalid("hospitalName") ? "border-red-500" : "border-gray-300"
+                        )}
+                      >
                         <SelectValue placeholder="Select receiving hospital" />
                       </SelectTrigger>
                       <SelectContent className="max-h-60 bg-white">
@@ -1599,20 +2091,31 @@ return (
                         ))}
                       </SelectContent>
                     </Select>
+                    {isFieldInvalid("hospitalName") ? (
+                      <p className="text-xs font-semibold text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                    ) : null}
                   </div>
                   <DatePickerField
                     id="receivingDate"
                     label="Receiving Date"
                     value={receivingDate}
-                    onChange={setReceivingDate}
+                    onChange={(next) => {
+                      setReceivingDate(next);
+                      clearFieldErrorIfFilled("receivingDate", next);
+                    }}
                     required
+                    error={isFieldInvalid("receivingDate")}
                   />
                   <DatePickerField
                     id="emtErtDate"
                     label="EMT / ERT Date"
                     value={emtErtDate}
-                    onChange={setEmtErtDate}
+                    onChange={(next) => {
+                      setEmtErtDate(next);
+                      clearFieldErrorIfFilled("emtErtDate", next);
+                    }}
                     required
+                    error={isFieldInvalid("emtErtDate")}
                   />
                 </div>
               </div>
