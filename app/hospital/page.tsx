@@ -5,11 +5,13 @@ import { format } from "date-fns"
 import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Loader2, AlertTriangle } from "lucide-react"
-import { InternalReportDetail, type InternalReportRecord } from "@/components/admin/internal-report-detail"
+import { InternalReportDetail, type InternalReportRecord, type InternalReportPatientRecord } from "@/components/admin/internal-report-detail"
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
+import { getPriorityDetails, PRIORITY_ORDER } from "@/lib/priority"
 
 interface BaseEntry {
   id: number
@@ -26,6 +28,7 @@ export default function HospitalDashboardPage() {
   const [error, setError] = React.useState<string | null>(null)
   const [hospital, setHospital] = React.useState<HospitalRecord | null>(null)
   const [reports, setReports] = React.useState<InternalReportRecord[]>([])
+  const [patientMap, setPatientMap] = React.useState<Record<number, InternalReportPatientRecord[]>>({})
   const [barangays, setBarangays] = React.useState<BaseEntry[]>([])
   const [incidentTypes, setIncidentTypes] = React.useState<BaseEntry[]>([])
   const [erTeams, setErTeams] = React.useState<BaseEntry[]>([])
@@ -35,6 +38,11 @@ export default function HospitalDashboardPage() {
     incidentType: "",
     erTeam: "",
   })
+
+  const getPatientsForReport = React.useCallback(
+    (reportId: number): InternalReportPatientRecord[] => patientMap[reportId] ?? [],
+    [patientMap]
+  )
 
   React.useEffect(() => {
     const loadHospitalData = async () => {
@@ -88,7 +96,27 @@ export default function HospitalDashboardPage() {
         setBarangays(barangaysRes.data as BaseEntry[])
         setIncidentTypes(incidentTypesRes.data as BaseEntry[])
         setErTeams(erTeamsRes.data as BaseEntry[])
-        setReports(reportsRes.data as InternalReportRecord[])
+        const reportRows = (reportsRes.data as InternalReportRecord[])
+        setReports(reportRows)
+
+        const reportIds = reportRows.map((report) => report.id)
+        if (reportIds.length > 0) {
+          const { data: patientRows, error: patientError } = await supabase
+            .from('internal_report_patients')
+            .select('*')
+            .in('internal_report_id', reportIds)
+
+          if (patientError) throw patientError
+
+          const grouped: Record<number, InternalReportPatientRecord[]> = {}
+          for (const patient of (patientRows ?? []) as InternalReportPatientRecord[]) {
+            if (!grouped[patient.internal_report_id]) grouped[patient.internal_report_id] = []
+            grouped[patient.internal_report_id].push(patient)
+          }
+          setPatientMap(grouped)
+        } else {
+          setPatientMap({})
+        }
       } catch (err: any) {
         console.error('Failed to load hospital dashboard:', err)
         const message = err?.message || 'Unable to load hospital dashboard. Please try again later.'
@@ -205,6 +233,7 @@ export default function HospitalDashboardPage() {
                     <TableHead className="text-gray-700">Report ID</TableHead>
                     <TableHead className="text-gray-700">Incident Date</TableHead>
                     <TableHead className="text-gray-700">Patient Name</TableHead>
+                    <TableHead className="text-gray-700">Evacuation Priority</TableHead>
                     <TableHead className="text-gray-700">Barangay</TableHead>
                     <TableHead className="text-gray-700">Prepared By</TableHead>
                     <TableHead className="text-gray-700">ER Team</TableHead>
@@ -213,7 +242,7 @@ export default function HospitalDashboardPage() {
                 <TableBody>
                   {reports.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-10 text-center text-gray-500">
+                      <TableCell colSpan={7} className="py-10 text-center text-gray-500">
                         No transfers recorded for your hospital yet.
                       </TableCell>
                     </TableRow>
@@ -228,9 +257,41 @@ export default function HospitalDashboardPage() {
                         <TableCell className="text-gray-700">
                           {format(new Date(report.incident_date), 'PPP • hh:mm a')}
                         </TableCell>
-                        <TableCell className="text-gray-700">{report.patient_name || '—'}</TableCell>
+                        <TableCell className="text-gray-700">
+                          {(() => {
+                            const patients = getPatientsForReport(report.id)
+                            if (patients.length === 0) return '—'
+                            const firstName = patients[0]?.patient_name || 'Unnamed patient'
+                            return patients.length > 1 ? `${firstName} +${patients.length - 1}` : firstName
+                          })()}
+                        </TableCell>
+                        <TableCell className="text-gray-700">
+                          {(() => {
+                            const priorities = getPatientsForReport(report.id)
+                              .map((patient) => getPriorityDetails(patient.evacuation_priority))
+                              .filter((details): details is NonNullable<ReturnType<typeof getPriorityDetails>> => Boolean(details))
+                            if (priorities.length === 0) return '—'
+                            const unique = PRIORITY_ORDER
+                              .map((value) => priorities.find((details) => details.value === value))
+                              .filter((details): details is NonNullable<typeof priorities[number]> => Boolean(details))
+                            return (
+                              <span className="flex flex-wrap gap-1">
+                                {unique.map((details) => (
+                                  <span
+                                    key={details.value}
+                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold text-white ${details.colorClass}`}
+                                  >
+                                    <span className="inline-flex h-2 w-2 rounded-full bg-white" />
+                                    {details.value}
+                                  </span>
+                                ))}
+                              </span>
+                            )
+                          })()}
+                        </TableCell>
                         <TableCell className="text-gray-700">{getBarangayName(report.barangay_id)}</TableCell>
-                        <TableCell className="text-gray-700">{report.prepared_by || '—'}</TableCell>
+                        <TableCell className="text-gray-700">{report.prepared_by || '—'}
+                        </TableCell>
                         <TableCell className="text-gray-700">{getErTeamName(report.er_team_id)}</TableCell>
                       </TableRow>
                     ))
@@ -263,14 +324,25 @@ export default function HospitalDashboardPage() {
       </main>
 
       <Dialog open={selectedReport !== null} onOpenChange={(open) => { if (!open) closeDialog() }}>
-        <DialogContent className="max-w-5xl border-none bg-white p-0 shadow-xl">
+        <DialogContent
+          className="border-none bg-white p-0 shadow-xl"
+          style={{ width: "21.59cm", height: "33.02cm", maxWidth: "95vw", maxHeight: "90vh" }}
+        >
+          <VisuallyHidden>
+            <DialogTitle>Internal report detail</DialogTitle>
+          </VisuallyHidden>
+          <DialogDescription className="sr-only">
+            View the read-only patient transfer report, including diagrams and injury legends, sized to legal bond paper dimensions.
+          </DialogDescription>
           {selectedReport ? (
-            <div className="max-h-[85vh] overflow-y-auto p-6">
+            <div className="h-full overflow-y-auto p-6">
               <InternalReportDetail
                 report={selectedReport}
+                patients={getPatientsForReport(selectedReport.id)}
                 barangayName={selectedMeta.barangay}
                 incidentTypeName={selectedMeta.incidentType}
                 erTeamName={selectedMeta.erTeam}
+                restrictToPatientView
               />
             </div>
           ) : (
@@ -278,6 +350,12 @@ export default function HospitalDashboardPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <div className="fixed bottom-0 left-0 right-0 bg-orange-500/95 backdrop-blur-sm text-white p-4 z-10">
+        <div className="flex justify-center">
+          <span className="text-center text-xs sm:text-sm font-medium">Copyright 2025 | Jolo Gracilla</span>
+        </div>
+      </div>
     </div>
   )
 }

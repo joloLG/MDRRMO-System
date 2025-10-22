@@ -154,7 +154,7 @@ export function LocationPermissionModal({
                   <AlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0" />
                   <span>{errorMessage}</span>
                 </div>
-                <div className="text-gray-600">
+                <div id="location-permission-description" className="text-gray-600">
                   To use all features of this app, please enable location services in your {Capacitor.isNativePlatform() ? "device" : "browser"} settings.
                 </div>
               </div>

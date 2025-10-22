@@ -40,6 +40,11 @@ interface IncidentType {
   name: string;
 }
 
+interface Hospital {
+  id: string;
+  name: string;
+}
+
 function MakeReportContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -49,6 +54,7 @@ function MakeReportContent() {
   const [erTeams, setErTeams] = useState<ERTeam[]>([]);
   const [barangays, setBarangays] = useState<Barangay[]>([]);
   const [incidentTypes, setIncidentTypes] = useState<IncidentType[]>([]);
+  const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -91,6 +97,19 @@ function MakeReportContent() {
     return data as IncidentType[] || [];
   }, []);
 
+  const fetchHospitals = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('hospitals')
+      .select('id, name')
+      .order('name', { ascending: true });
+    if (error) {
+      console.error("Error fetching Hospitals:", error);
+      setError(`Failed to load Hospitals: ${error.message}`);
+      return [];
+    }
+    return data as Hospital[] || [];
+  }, []);
+
   useEffect(() => {
     const loadFormData = async () => {
       setLoading(true);
@@ -104,6 +123,9 @@ function MakeReportContent() {
         setErTeams(erTeamsData);
         setBarangays(barangaysData);
         setIncidentTypes(incidentTypesData);
+
+        const hospitalsData = await fetchHospitals();
+        setHospitals(hospitalsData);
 
         if (incidentId) {
           const { data: reportData, error: reportError } = await supabase
@@ -174,6 +196,7 @@ function MakeReportContent() {
           erTeams={erTeams}
           barangays={barangays}
           incidentTypes={incidentTypes}
+          hospitals={hospitals}
           onReportSubmitted={() => {
             console.log("Report submitted.");
           }}

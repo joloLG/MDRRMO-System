@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import Link from "next/link"
 // Added new icons for the admin-specific menu items
 import { Menu, BarChart, Settings, FileText, History, Info, Phone, Mail, X, MapPin, Bell, Flame, Megaphone } from "lucide-react"
+import { Newspaper } from "lucide-react"
 
 type AdminViewType = 'main' | 'editMdrrmoInfo' | 'editHotlines' | 'viewFeedback';
 
@@ -60,6 +61,11 @@ export function Sidebar({ onAdminViewChange, currentAdminView, unreadFeedbackCou
           <Button variant="ghost" className="justify-start" asChild>
             <Link href="/admin/report" onClick={() => setIsOpen(false)}>
               <FileText className="mr-2 h-4 w-4" /> Report Management
+            </Link>
+          </Button>
+          <Button variant="ghost" className={`justify-start ${isActive('narrative-reports') ? 'bg-blue-100 text-blue-800' : ''}`} asChild>
+            <Link href="/admin/narrative-reports" onClick={() => setIsOpen(false)}>
+              <Newspaper className="mr-2 h-4 w-4" /> Narrative Reports
             </Link>
           </Button>
           <Button variant="ghost" className="justify-start" asChild>

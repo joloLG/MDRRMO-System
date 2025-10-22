@@ -18,6 +18,7 @@ const menuItems = [
   { id: 'mdrrmoInfo', icon: Info, label: 'MDRRMO-Bulan Info', type: 'internal', path: '/mdrrmo-info' },
   { id: 'hotlines', icon: Phone, label: 'Bulan Hotlines', type: 'internal', path: '/hotlines' },
   { id: 'userProfile', icon: User, label: 'User Profile', type: 'internal' },
+  { id: 'incidentPosts', icon: AlertTriangle, label: 'MDRRMO Incident Posts', type: 'internal' },
   { id: 'sendFeedback', icon: Mail, label: 'Send Feedback', type: 'internal' },
 ];
 

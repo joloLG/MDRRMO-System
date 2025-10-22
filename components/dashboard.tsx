@@ -1,12 +1,12 @@
 "use client"
 
-  import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
+  import React, { useState, useEffect, useCallback, useRef, useMemo, useDeferredValue } from "react"
 import { Capacitor } from "@capacitor/core"
 import type { PluginListenerHandle } from "@capacitor/core"
 import { App } from "@capacitor/app"
 import { Geolocation } from "@capacitor/geolocation"
   import { Button } from "@/components/ui/button"
-  import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding, MapPin, RefreshCcw, Megaphone, Star, Loader2, Wand2 } from "lucide-react" // Added Swords for Armed Conflict
+import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding, MapPin, RefreshCcw, Megaphone, Star, Loader2, Wand2, Search } from "lucide-react" // Added Swords for Armed Conflict
   import { UserSidebar } from "./user_sidebar"
   import { LocationPermissionModal } from "./location-permission-modal"
   import { supabase } from "@/lib/supabase"
@@ -14,9 +14,10 @@ import { Geolocation } from "@capacitor/geolocation"
   import { Input } from "@/components/ui/input"
   import { Textarea } from "@/components/ui/textarea"
   import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
   import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
   import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-  import { formatDistanceToNowStrict, parseISO } from 'date-fns';
+  import { formatDistanceToNowStrict, parseISO, formatDistanceToNow } from 'date-fns';
   import { FeedbackHistory } from "@/components/feedback-history"
 import { ReportDetailModal } from "@/components/ReportDetailModal"
 import { useAppStore } from '@/lib/store'
@@ -80,6 +81,16 @@ interface Advisory {
 interface DashboardProps {
   onLogout: () => void
   userData?: any
+}
+
+interface PublishedNarrative {
+  id: string
+  title: string
+  narrative_text: string
+  image_url: string | null
+  internal_report_id: number | null
+  published_at: string | null
+  created_at: string
 }
 
 // Define Incident Types with their corresponding Lucide React icons
@@ -335,12 +346,22 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
-  const [currentView, setCurrentView] = useState<'main' | 'reportHistory' | 'mdrrmoInfo' | 'hotlines' | 'userProfile' | 'sendFeedback'>('main');
+  const [currentView, setCurrentView] = useState<'main' | 'reportHistory' | 'mdrrmoInfo' | 'hotlines' | 'userProfile' | 'sendFeedback' | 'incidentPosts'>('main');
   const [hasLoadedUserData, setHasLoadedUserData] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [reportPage, setReportPage] = useState<number>(1);
   const PAGE_SIZE = 10;
   const MIN_HIDDEN_MS_BEFORE_REFRESH = 5000; // Skip refresh for quick tab switches (<5s)
+
+  const INCIDENT_PAGE_SIZE = 10
+  const [incidentPosts, setIncidentPosts] = useState<PublishedNarrative[]>([])
+  const [incidentPostsTotal, setIncidentPostsTotal] = useState(0)
+  const [incidentPostsPage, setIncidentPostsPage] = useState(1)
+  const [incidentPostsSearch, setIncidentPostsSearch] = useState("")
+  const deferredIncidentSearch = useDeferredValue(incidentPostsSearch)
+  const [incidentPostsLoading, setIncidentPostsLoading] = useState(false)
+  const [incidentPostsError, setIncidentPostsError] = useState<string | null>(null)
+  const incidentPostsTotalPages = useMemo(() => Math.max(1, Math.ceil(incidentPostsTotal / INCIDENT_PAGE_SIZE)), [incidentPostsTotal])
 
   // State for deep-linked report modal
   const [deepLinkedReport, setDeepLinkedReport] = useState<Report | null>(null);
@@ -587,6 +608,67 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     const intervalId = setInterval(tick, 1000);
     return () => clearInterval(intervalId);
   }, [activeCooldowns, reconcileCooldownsAndCredits, reportCredits]);
+
+  useEffect(() => {
+    if (currentView !== 'incidentPosts') return
+    let isCancelled = false
+    const fetchPosts = async () => {
+      setIncidentPostsLoading(true)
+      setIncidentPostsError(null)
+      try {
+        const from = (incidentPostsPage - 1) * INCIDENT_PAGE_SIZE
+        const to = from + INCIDENT_PAGE_SIZE - 1
+        let query = supabase
+          .from('narrative_reports')
+          .select('id, narrative_text, image_url, internal_report_id, published_at, created_at', { count: 'exact' })
+          .eq('status', 'published')
+          .order('published_at', { ascending: false })
+          .range(from, to)
+
+        if (deferredIncidentSearch.trim()) {
+          const term = deferredIncidentSearch.trim()
+          query = query.or(`title.ilike.%${term}%,narrative_text.ilike.%${term}%`)
+        }
+
+        const { data, error, count } = await query
+        if (error) throw error
+        if (!isCancelled) {
+          setIncidentPosts((data as PublishedNarrative[]) ?? [])
+          setIncidentPostsTotal(count ?? 0)
+        }
+      } catch (err: any) {
+        if (!isCancelled) {
+          setIncidentPostsError(err?.message ?? 'Failed to load incident posts')
+        }
+      } finally {
+        if (!isCancelled) {
+          setIncidentPostsLoading(false)
+        }
+      }
+    }
+
+    void fetchPosts()
+    return () => {
+      isCancelled = true
+    }
+  }, [currentView, incidentPostsPage, deferredIncidentSearch])
+
+  useEffect(() => {
+    if (currentView === 'incidentPosts') return
+    setIncidentPostsPage(1)
+    setIncidentPostsSearch("")
+  }, [currentView])
+
+  useEffect(() => {
+    if (currentView !== 'incidentPosts') return
+    setIncidentPostsPage(1)
+  }, [deferredIncidentSearch, currentView])
+
+  useEffect(() => {
+    if (incidentPostsPage > incidentPostsTotalPages) {
+      setIncidentPostsPage(incidentPostsTotalPages)
+    }
+  }, [incidentPostsPage, incidentPostsTotalPages])
 
   // Realtime channel refs
   const notificationsChannelRef = useRef<RealtimeChannel | null>(null);
@@ -1810,7 +1892,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       <UserSidebar 
         isOpen={isSidebarOpen} 
         onClose={() => setIsSidebarOpen(false)}
-        onChangeView={(view: string) => setCurrentView(view as "main" | "reportHistory" | "mdrrmoInfo" | "hotlines" | "userProfile" | "sendFeedback")}
+        onChangeView={(view: string) => setCurrentView(view as typeof currentView)}
       />
 
       {/* Notifications Dropdown - Positioned relative to header */}
@@ -2173,6 +2255,98 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                   </div>
                 </div>
               )}
+            </CardContent>
+          </Card>
+        )}
+
+        {currentView === 'incidentPosts' && (
+          <Card className="w-full bg-white/90 backdrop-blur-sm shadow-lg rounded-lg">
+            <CardHeader className="px-4 sm:px-6 pt-4 pb-3 border-b border-gray-200">
+              <CardTitle className="text-xl sm:text-2xl font-bold text-gray-800">MDRRMO Incident Posts</CardTitle>
+              <p className="text-xs sm:text-sm text-gray-500 mt-1">Read the latest narratives published by MDRRMO. Use the search to find specific incidents.</p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="p-4 sm:p-6 space-y-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    value={incidentPostsSearch}
+                    onChange={(event) => setIncidentPostsSearch(event.target.value)}
+                    placeholder="Search incident posts..."
+                    className="pl-9"
+                  />
+                </div>
+
+                {incidentPostsLoading ? (
+                  <div className="flex items-center justify-center py-10 gap-2 text-gray-500">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Loading posts...
+                  </div>
+                ) : incidentPostsError ? (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+                    {incidentPostsError}
+                  </div>
+                ) : incidentPosts.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
+                    No incident posts found.
+                  </div>
+                ) : (
+                  <div className="space-y-5">
+                    {incidentPosts.map((post) => (
+                      <div key={post.id} className="rounded-lg border border-gray-200 overflow-hidden shadow-sm bg-white">
+                        {post.image_url ? (
+                          <div className="relative bg-gray-100">
+                            <img
+                              src={post.image_url}
+                              alt={post.title}
+                              className="w-full object-cover"
+                              style={{ maxHeight: 260 }}
+                            />
+                          </div>
+                        ) : null}
+                        <div className="p-4 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <h3 className="text-lg font-semibold text-gray-900 break-words flex-1">{post.title}</h3>
+                            <Badge variant="outline" className="shrink-0 border-orange-200 bg-orange-50 text-orange-700">
+                              {post.internal_report_id ? `Report #${post.internal_report_id}` : "Incident"}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            {post.published_at
+                              ? `Published ${formatDistanceToNow(new Date(post.published_at), { addSuffix: true })}`
+                              : `Created ${formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}`}
+                          </p>
+                          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700">
+                            {post.narrative_text}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-center gap-3 pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={incidentPostsLoading || incidentPostsPage <= 1}
+                    onClick={() => setIncidentPostsPage((prev) => Math.max(1, prev - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-xs text-gray-500">
+                    Page {incidentPostsTotalPages === 0 ? 0 : incidentPostsPage} of {incidentPostsTotalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={incidentPostsLoading || incidentPostsPage >= incidentPostsTotalPages}
+                    onClick={() => setIncidentPostsPage((prev) => Math.min(incidentPostsTotalPages, prev + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
         )}

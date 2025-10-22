@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input"
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { InternalReportDetail, type InternalReportRecord } from "@/components/admin/internal-report-detail"
+import { InternalReportDetail, type InternalReportRecord, type InternalReportPatientRecord } from "@/components/admin/internal-report-detail"
 
 interface BaseEntry {
   id: number
@@ -34,6 +34,7 @@ export function HospitalDashboard({ onLogout }: HospitalDashboardProps) {
   const [error, setError] = React.useState<string | null>(null)
   const [hospital, setHospital] = React.useState<HospitalRecord | null>(null)
   const [reports, setReports] = React.useState<InternalReportRecord[]>([])
+  const [patientMap, setPatientMap] = React.useState<Record<number, InternalReportPatientRecord[]>>({})
   const [barangays, setBarangays] = React.useState<BaseEntry[]>([])
   const [incidentTypes, setIncidentTypes] = React.useState<BaseEntry[]>([])
   const [erTeams, setErTeams] = React.useState<BaseEntry[]>([])
@@ -101,6 +102,25 @@ export function HospitalDashboard({ onLogout }: HospitalDashboardProps) {
         const sortedReports = (reportsRes.data as InternalReportRecord[]).sort((a, b) => b.id - a.id)
         setReports(sortedReports)
         setCurrentPage(1)
+
+        const reportIds = sortedReports.map((report) => report.id)
+        if (reportIds.length > 0) {
+          const { data: patientRows, error: patientError } = await supabase
+            .from("internal_report_patients")
+            .select("*")
+            .in("internal_report_id", reportIds)
+
+          if (patientError) throw patientError
+
+          const grouped: Record<number, InternalReportPatientRecord[]> = {}
+          for (const patient of (patientRows ?? []) as InternalReportPatientRecord[]) {
+            if (!grouped[patient.internal_report_id]) grouped[patient.internal_report_id] = []
+            grouped[patient.internal_report_id].push(patient)
+          }
+          setPatientMap(grouped)
+        } else {
+          setPatientMap({})
+        }
       } catch (err: any) {
         console.error("Failed to load hospital dashboard:", err)
         const message = err?.message || "Unable to load hospital dashboard. Please try again later."
@@ -112,6 +132,11 @@ export function HospitalDashboard({ onLogout }: HospitalDashboardProps) {
 
     void loadHospitalData()
   }, [])
+
+  const getPatientsForReport = React.useCallback(
+    (reportId: number): InternalReportPatientRecord[] => patientMap[reportId] ?? [],
+    [patientMap]
+  )
 
   const getBarangayName = React.useCallback((id: number | null | undefined) => {
     if (!id) return "—"
@@ -152,12 +177,13 @@ export function HospitalDashboard({ onLogout }: HospitalDashboardProps) {
     const term = searchTerm.toLowerCase()
     return reports.filter((report) => {
       const idMatch = report.id.toString().includes(term)
-      const patientMatch = (report.patient_name || "").toLowerCase().includes(term)
+      const patients = getPatientsForReport(report.id)
+      const patientMatch = patients.some((patient) => (patient.patient_name ?? "").toLowerCase().includes(term))
       const barangayMatch = getBarangayName(report.barangay_id).toLowerCase().includes(term)
       const incidentMatch = getIncidentTypeName(report.incident_type_id).toLowerCase().includes(term)
       return idMatch || patientMatch || barangayMatch || incidentMatch
     })
-  }, [reports, searchTerm, getBarangayName, getIncidentTypeName])
+  }, [reports, searchTerm, getBarangayName, getIncidentTypeName, getPatientsForReport])
 
   const totalPages = Math.max(1, Math.ceil(filteredReports.length / pageSize))
 
@@ -281,7 +307,14 @@ export function HospitalDashboard({ onLogout }: HospitalDashboardProps) {
                         <TableCell className="text-gray-700">
                           {format(new Date(report.incident_date), "PPP • hh:mm a")}
                         </TableCell>
-                        <TableCell className="text-gray-700">{report.patient_name || "—"}</TableCell>
+                        <TableCell className="text-gray-700">
+                          {(() => {
+                            const patients = getPatientsForReport(report.id)
+                            if (patients.length === 0) return "—"
+                            const firstName = patients[0]?.patient_name || "Unnamed patient"
+                            return patients.length > 1 ? `${firstName} +${patients.length - 1}` : firstName
+                          })()}
+                        </TableCell>
                         <TableCell className="text-gray-700">{getIncidentTypeName(report.incident_type_id)}</TableCell>
                         <TableCell className="text-gray-700">{report.prepared_by || "—"}</TableCell>
                         <TableCell className="text-gray-700">{getErTeamName(report.er_team_id)}</TableCell>
@@ -359,6 +392,7 @@ export function HospitalDashboard({ onLogout }: HospitalDashboardProps) {
             <div className="h-full overflow-y-auto p-6">
               <InternalReportDetail
                 report={selectedReport}
+                patients={getPatientsForReport(selectedReport.id)}
                 barangayName={selectedMeta.barangay}
                 incidentTypeName={selectedMeta.incidentType}
                 erTeamName={selectedMeta.erTeam}

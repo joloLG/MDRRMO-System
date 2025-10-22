@@ -9,6 +9,7 @@ import jsPDF from "jspdf"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { getPriorityDetails } from "@/lib/priority"
 
 const FRONT_BODY_REGION_IDS = [
   "front_x3D__x22_right-thigh_x22_",
@@ -389,6 +390,15 @@ export interface InternalReportRecord {
   number_of_responders: number | null
   prepared_by: string
   created_at: string
+  incident_location: string | null
+  moi_poi_toi: string | null
+}
+
+export interface InternalReportPatientRecord {
+  id: string
+  internal_report_id: number
+  receiving_hospital_id: string | null
+  receiving_hospital_name?: string | null
   patient_name: string | null
   patient_contact_number: string | null
   patient_birthday: string | null
@@ -405,13 +415,15 @@ export interface InternalReportRecord {
   injury_types: string | null
   incident_location: string | null
   moi_poi_toi: string | null
-  receiving_hospital_name: string | null
   receiving_hospital_date: string | null
   emt_ert_date: string | null
+  created_at?: string | null
+  updated_at?: string | null
 }
 
 interface ReportDetailProps {
   report: InternalReportRecord
+  patients: InternalReportPatientRecord[]
   barangayName: string
   incidentTypeName: string
   erTeamName: string
@@ -426,14 +438,44 @@ const parseCommaSeparated = (value: string | null | undefined) => {
     .filter(Boolean)
 }
 
-export function InternalReportDetail({ report, barangayName, incidentTypeName, erTeamName, restrictToPatientView = false }: ReportDetailProps) {
+export function InternalReportDetail({ report, patients, barangayName, incidentTypeName, erTeamName, restrictToPatientView = false }: ReportDetailProps) {
   const wrapperRef = React.useRef<HTMLDivElement | null>(null)
   const headerRef = React.useRef<HTMLDivElement | null>(null)
   const bodyRef = React.useRef<HTMLDivElement | null>(null)
   const [responsiveScale, setResponsiveScale] = React.useState(1)
 
-  const frontRegions = React.useMemo(() => parseBodySummary(report.body_parts_front), [report.body_parts_front])
-  const backRegions = React.useMemo(() => parseBodySummary(report.body_parts_back), [report.body_parts_back])
+  const [activePatientId, setActivePatientId] = React.useState<string | null>(() => patients[0]?.id ?? null)
+
+  React.useEffect(() => {
+    if (!patients || patients.length === 0) {
+      setActivePatientId(null)
+      return
+    }
+
+    if (!activePatientId || !patients.some((patient) => patient.id === activePatientId)) {
+      setActivePatientId(patients[0]?.id ?? null)
+    }
+  }, [patients, activePatientId])
+
+  const activePatient = React.useMemo(() => {
+    if (!patients || patients.length === 0) return null
+    if (!activePatientId) return patients[0]
+    return patients.find((patient) => patient.id === activePatientId) ?? patients[0]
+  }, [patients, activePatientId])
+
+  const activePatientIndex = React.useMemo(() => {
+    if (!activePatient) return -1
+    return patients.findIndex((patient) => patient.id === activePatient.id)
+  }, [patients, activePatient])
+
+  const frontRegions = React.useMemo(
+    () => parseBodySummary(activePatient?.body_parts_front ?? null),
+    [activePatient?.body_parts_front]
+  )
+  const backRegions = React.useMemo(
+    () => parseBodySummary(activePatient?.body_parts_back ?? null),
+    [activePatient?.body_parts_back]
+  )
 
   const uniqueInjuryCodes = React.useMemo(() => {
     const codes = new Set<string>()
@@ -441,6 +483,28 @@ export function InternalReportDetail({ report, barangayName, incidentTypeName, e
     backRegions.forEach((injuries) => injuries.forEach((code) => codes.add(code)))
     return Array.from(codes)
   }, [frontRegions, backRegions])
+
+  const collectUnique = React.useCallback((values: (string | null | undefined)[]) => {
+    const unique = new Set<string>()
+    values.forEach((value) => {
+      const trimmed = value?.trim()
+      if (trimmed) unique.add(trimmed)
+    })
+    return Array.from(unique)
+  }, [])
+
+  const incidentLocations = React.useMemo(
+    () => collectUnique([report.incident_location, ...patients.map((patient) => patient.incident_location)]),
+    [collectUnique, patients, report.incident_location],
+  )
+
+  const moiPoiToiEntries = React.useMemo(
+    () => collectUnique([report.moi_poi_toi, ...patients.map((patient) => patient.moi_poi_toi)]),
+    [collectUnique, patients, report.moi_poi_toi],
+  )
+
+  const incidentLocationDisplay = incidentLocations.length > 0 ? incidentLocations.join("; ") : "—"
+  const moiPoiToiDisplay = moiPoiToiEntries.length > 0 ? moiPoiToiEntries.join("\n\n") : "—"
 
   const legendItems = React.useMemo(
     () =>
@@ -477,10 +541,22 @@ export function InternalReportDetail({ report, barangayName, incidentTypeName, e
     return entries
   }, [frontRegions, backRegions])
 
-  const emergencyCategories = React.useMemo(() => parseCommaSeparated(report.emergency_category), [report.emergency_category])
-  const airwayInterventions = React.useMemo(() => parseCommaSeparated(report.airway_interventions), [report.airway_interventions])
-  const breathingSupport = React.useMemo(() => parseCommaSeparated(report.breathing_support), [report.breathing_support])
-  const circulationStatus = React.useMemo(() => parseCommaSeparated(report.circulation_status), [report.circulation_status])
+  const emergencyCategories = React.useMemo(
+    () => parseCommaSeparated(activePatient?.emergency_category ?? null),
+    [activePatient?.emergency_category]
+  )
+  const airwayInterventions = React.useMemo(
+    () => parseCommaSeparated(activePatient?.airway_interventions ?? null),
+    [activePatient?.airway_interventions]
+  )
+  const breathingSupport = React.useMemo(
+    () => parseCommaSeparated(activePatient?.breathing_support ?? null),
+    [activePatient?.breathing_support]
+  )
+  const circulationStatus = React.useMemo(
+    () => parseCommaSeparated(activePatient?.circulation_status ?? null),
+    [activePatient?.circulation_status]
+  )
 
   React.useEffect(() => {
     if (!restrictToPatientView) {
@@ -621,28 +697,35 @@ export function InternalReportDetail({ report, barangayName, incidentTypeName, e
             </div>
             <Image src="/images/logo.png" alt="MDRRMO Logo" width={80} height={80} className="h-16 w-auto" />
           </div>
-
-          <div className="grid gap-3 text-sm text-gray-700 sm:grid-cols-3">
-            <div>
-              <h2 className="text-xs font-semibold uppercase text-gray-500">Internal Report ID</h2>
-              <p className="font-medium text-gray-900">{report.id}</p>
-            </div>
-            <div>
-              <h2 className="text-xs font-semibold uppercase text-gray-500">Prepared By</h2>
-              <p className="font-medium text-gray-900">{report.prepared_by || "—"}</p>
-            </div>
-            <div>
-              <h2 className="text-xs font-semibold uppercase text-gray-500">Date Created</h2>
-              <p className="font-medium text-gray-900">{formatDateTime(report.created_at, true)}</p>
-            </div>
-          </div>
         </header>
 
         <main ref={bodyRef} className="mt-6 space-y-8 text-gray-800">
-          {!restrictToPatientView && (
+          {restrictToPatientView ? (
+            <section>
+              <h2 className="text-lg font-semibold text-gray-800">Report Overview</h2>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Internal Report ID</p>
+                  <p className="text-base font-medium text-gray-800">{report.id}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Date Created</p>
+                  <p className="text-base text-gray-800">{formatDateTime(report.created_at, true)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Prepared By</p>
+                  <p className="text-base text-gray-800">{report.prepared_by || "—"}</p>
+                </div>
+              </div>
+            </section>
+          ) : (
             <section>
               <h2 className="text-lg font-semibold text-gray-800">Incident Summary</h2>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Internal Report ID</p>
+                  <p className="text-base font-medium text-gray-800">{report.id}</p>
+                </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Incident Type</p>
                   <p className="text-base font-medium text-gray-800">{incidentTypeName}</p>
@@ -660,6 +743,10 @@ export function InternalReportDetail({ report, barangayName, incidentTypeName, e
                   <p className="text-base text-gray-800">{report.prepared_by || "—"}</p>
                 </div>
                 <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Date Created</p>
+                  <p className="text-base text-gray-800">{formatDateTime(report.created_at, true)}</p>
+                </div>
+                <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">ER Team</p>
                   <p className="text-base text-gray-800">{erTeamName}</p>
                 </div>
@@ -669,11 +756,11 @@ export function InternalReportDetail({ report, barangayName, incidentTypeName, e
                 </div>
                 <div className="sm:col-span-2">
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Incident Location</p>
-                  <p className="text-base text-gray-800">{report.incident_location || "—"}</p>
+                  <p className="text-base text-gray-800 whitespace-pre-line">{incidentLocationDisplay}</p>
                 </div>
                 <div className="sm:col-span-2">
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">MOI/POI/TOI</p>
-                  <p className="text-base text-gray-800">{report.moi_poi_toi || "—"}</p>
+                  <p className="text-base text-gray-800 whitespace-pre-line">{moiPoiToiDisplay}</p>
                 </div>
               </div>
             </section>
@@ -704,7 +791,7 @@ export function InternalReportDetail({ report, barangayName, incidentTypeName, e
                 </div>
                 <div>
                   <p className="text-xs font-medium uppercase text-gray-500">Incident Location</p>
-                  <p className="font-medium text-gray-900">{report.incident_location || "—"}</p>
+                  <p className="font-medium text-gray-900 whitespace-pre-line">{incidentLocationDisplay}</p>
                 </div>
                 <div>
                   <p className="text-xs font-medium uppercase text-gray-500">Persons Involved</p>
@@ -716,194 +803,251 @@ export function InternalReportDetail({ report, barangayName, incidentTypeName, e
                 </div>
                 <div className="sm:col-span-2">
                   <p className="text-xs font-medium uppercase text-gray-500">MOI / POI / TOI</p>
-                  <p className="font-medium text-gray-900 whitespace-pre-line">{report.moi_poi_toi || "—"}</p>
+                  <p className="font-medium text-gray-900 whitespace-pre-line">{moiPoiToiDisplay}</p>
                 </div>
               </div>
             </section>
           )}
 
-          <section>
-            <h3 className="text-lg font-semibold text-gray-900">Patient Information</h3>
-            <div className="mt-3 grid gap-4 text-sm sm:grid-cols-2">
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Patient Name</p>
-                <p className="font-medium text-gray-900">{report.patient_name || "—"}</p>
+          {patients.length > 0 ? (
+            <section className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Patients in this report</h3>
+              <div className="flex flex-wrap gap-2">
+                {patients.map((patient, index) => {
+                  const isActive = activePatient?.id === patient.id
+                  return (
+                    <Button
+                      key={patient.id}
+                      type="button"
+                      variant={isActive ? "default" : "outline"}
+                      className={cn(
+                        "justify-start",
+                        isActive ? "bg-orange-500 text-white hover:bg-orange-600" : "bg-white text-gray-700 hover:bg-gray-100"
+                      )}
+                      onClick={() => setActivePatientId(patient.id)}
+                    >
+                      <span className="font-medium">Patient {index + 1}</span>
+                      {patient.patient_name ? <span className="ml-2 text-sm">({patient.patient_name})</span> : null}
+                    </Button>
+                  )
+                })}
               </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Contact Number</p>
-                <p className="font-medium text-gray-900">{report.patient_contact_number || "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Birthday</p>
-                <p className="font-medium text-gray-900">{formatDateTime(report.patient_birthday)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Age</p>
-                <p className="font-medium text-gray-900">{report.patient_age ?? "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Sex</p>
-                <p className="font-medium text-gray-900">{report.patient_sex ? report.patient_sex.toUpperCase() : "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Evacuation Priority</p>
-                <p className="font-medium text-gray-900">{report.evacuation_priority || "—"}</p>
-              </div>
-              <div className="sm:col-span-2">
-                <p className="text-xs font-medium uppercase text-gray-500">Address</p>
-                <p className="font-medium text-gray-900">{report.patient_address || "—"}</p>
-              </div>
-              <div className="sm:col-span-2">
-                <p className="text-xs font-medium uppercase text-gray-500">Emergency Categories</p>
-                <div className="mt-1 flex flex-wrap gap-2">
-                  {emergencyCategories.length > 0 ? (
-                    emergencyCategories.map((category) => (
-                      <span key={category} className="rounded-full bg-orange-100 px-3 py-1 text-xs font-medium text-orange-700">
-                        {category}
-                      </span>
-                    ))
-                  ) : (
-                    <p className="font-medium text-gray-900">—</p>
+            </section>
+          ) : (
+            <section className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-sm text-gray-500">
+              No patient records were found for this internal report.
+            </section>
+          )}
+
+          {activePatient ? (
+            <>
+              <section>
+                <div className="flex items-baseline justify-between">
+                  <h3 className="text-lg font-semibold text-gray-900">Patient Information</h3>
+                  {activePatientIndex >= 0 && (
+                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                      Viewing patient {activePatientIndex + 1} of {patients.length}
+                    </span>
                   )}
                 </div>
-              </div>
-            </div>
-          </section>
-
-          {!restrictToPatientView && (
-            <section>
-              <h3 className="text-lg font-semibold text-gray-900">Primary Assessment</h3>
-              <div className="mt-3 grid gap-4 text-sm sm:grid-cols-3">
-                <div>
-                  <p className="text-xs font-medium uppercase text-gray-500">Airway Interventions</p>
-                  <ul className="mt-1 space-y-1">
-                    {airwayInterventions.length > 0 ? (
-                      airwayInterventions.map((item) => (
-                        <li key={item} className="text-gray-900">• {item}</li>
-                      ))
-                    ) : (
-                      <li className="text-gray-900">• —</li>
-                    )}
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase text-gray-500">Breathing Support</p>
-                  <ul className="mt-1 space-y-1">
-                    {breathingSupport.length > 0 ? (
-                      breathingSupport.map((item) => (
-                        <li key={item} className="text-gray-900">• {item}</li>
-                      ))
-                    ) : (
-                      <li className="text-gray-900">• —</li>
-                    )}
-                  </ul>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase text-gray-500">Circulation Status</p>
-                  <ul className="mt-1 space-y-1">
-                    {circulationStatus.length > 0 ? (
-                      circulationStatus.map((item) => (
-                        <li key={item} className="text-gray-900">• {item}</li>
-                      ))
-                    ) : (
-                      <li className="text-gray-900">• —</li>
-                    )}
-                  </ul>
-                </div>
-              </div>
-            </section>
-          )}
-
-          <section>
-            <h3 className="text-lg font-semibold text-gray-900">Injury Overview</h3>
-            <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <div className="space-y-3">
-                <p className="text-sm font-semibold text-gray-700">Front View</p>
-                <ReadOnlyBodyDiagram view="front" regionMap={frontRegions} />
-                <p className="text-xs text-gray-600">Highlighted regions correspond to confirmed injuries on the patient's front body.</p>
-              </div>
-              <div className="space-y-3">
-                <p className="text-sm font-semibold text-gray-700">Back View</p>
-                <ReadOnlyBodyDiagram view="back" regionMap={backRegions} />
-                <p className="text-xs text-gray-600">Highlighted regions correspond to confirmed injuries on the patient's back body.</p>
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <h4 className="text-sm font-semibold text-gray-700">Body Region Legend</h4>
-              <div className="mt-2 grid gap-2">
-                {regionLegendEntries.length > 0 ? (
-                  regionLegendEntries.map(({ key, orientation, label, color, injuries }) => (
-                    <div key={key} className="flex items-start gap-3 rounded border border-gray-200 bg-white p-3 text-sm shadow-sm">
-                      <span className="mt-0.5 h-4 w-4 rounded-full" style={{ backgroundColor: color }} />
-                      <div>
-                        <p className="font-semibold text-gray-800">
-                          {label}
-                          <span className="ml-2 text-xs font-medium uppercase text-gray-500">{orientation}</span>
-                        </p>
-                        <p className="text-xs text-gray-600">
-                          {injuries.length > 0 ? injuries.join(", ") : "No specific injury noted"}
-                        </p>
-                      </div>
+                <div className="mt-3 grid gap-4 text-sm sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-medium uppercase text-gray-500">Patient Name</p>
+                    <p className="font-medium text-gray-900">{activePatient.patient_name || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium uppercase text-gray-500">Contact Number</p>
+                    <p className="font-medium text-gray-900">{activePatient.patient_contact_number || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium uppercase text-gray-500">Birthday</p>
+                    <p className="font-medium text-gray-900">{formatDateTime(activePatient.patient_birthday)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium uppercase text-gray-500">Age</p>
+                    <p className="font-medium text-gray-900">{activePatient.patient_age ?? "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium uppercase text-gray-500">Sex</p>
+                    <p className="font-medium text-gray-900">{activePatient.patient_sex ? activePatient.patient_sex.toUpperCase() : "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium uppercase text-gray-500">Evacuation Priority</p>
+                    <p className="font-medium text-gray-900">
+                      {(() => {
+                        const details = getPriorityDetails(activePatient.evacuation_priority)
+                        if (!details) return "—"
+                        return (
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold text-white",
+                              details.colorClass,
+                            )}
+                          >
+                            <span className="inline-flex h-2.5 w-2.5 rounded-full bg-white" />
+                            {details.description}
+                          </span>
+                        )
+                      })()}
+                    </p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <p className="text-xs font-medium uppercase text-gray-500">Address</p>
+                    <p className="font-medium text-gray-900">{activePatient.patient_address || "—"}</p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <p className="text-xs font-medium uppercase text-gray-500">Emergency Categories</p>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      {emergencyCategories.length > 0 ? (
+                        emergencyCategories.map((category) => (
+                          <span key={category} className="rounded-full bg-orange-100 px-3 py-1 text-xs font-medium text-orange-700">
+                            {category}
+                          </span>
+                        ))
+                      ) : (
+                        <p className="font-medium text-gray-900">—</p>
+                      )}
                     </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-gray-600">No highlighted body regions recorded for this report.</p>
-                )}
-              </div>
-            </div>
+                  </div>
+                </div>
+              </section>
 
-            <div className="mt-6">
-              <h4 className="text-sm font-semibold text-gray-700">Injury Type Legend</h4>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {legendItems.length > 0 ? (
-                  legendItems.map((item) => (
-                    <div key={item.code} className="flex items-center gap-3 rounded border border-gray-200 bg-gray-50 p-3 text-sm">
-                      <span className="h-4 w-4 rounded-full" style={{ backgroundColor: item.color }} />
-                      <span className="font-medium text-gray-800">{item.label}</span>
+              {!restrictToPatientView && (
+                <section>
+                  <h3 className="text-lg font-semibold text-gray-900">Primary Assessment</h3>
+                  <div className="mt-3 grid gap-4 text-sm sm:grid-cols-3">
+                    <div>
+                      <p className="text-xs font-medium uppercase text-gray-500">Airway Interventions</p>
+                      <ul className="mt-1 space-y-1">
+                        {airwayInterventions.length > 0 ? (
+                          airwayInterventions.map((item) => (
+                            <li key={item} className="text-gray-900">• {item}</li>
+                          ))
+                        ) : (
+                          <li className="text-gray-900">• —</li>
+                        )}
+                      </ul>
                     </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-gray-600">No injuries recorded for this report.</p>
-                )}
-              </div>
-            </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase text-gray-500">Breathing Support</p>
+                      <ul className="mt-1 space-y-1">
+                        {breathingSupport.length > 0 ? (
+                          breathingSupport.map((item) => (
+                            <li key={item} className="text-gray-900">• {item}</li>
+                          ))
+                        ) : (
+                          <li className="text-gray-900">• —</li>
+                        )}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase text-gray-500">Circulation Status</p>
+                      <ul className="mt-1 space-y-1">
+                        {circulationStatus.length > 0 ? (
+                          circulationStatus.map((item) => (
+                            <li key={item} className="text-gray-900">• {item}</li>
+                          ))
+                        ) : (
+                          <li className="text-gray-900">• —</li>
+                        )}
+                      </ul>
+                    </div>
+                  </div>
+                </section>
+              )}
 
-            <div className="mt-6 grid gap-4 text-sm sm:grid-cols-2">
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Front Summary</p>
-                <p className="whitespace-pre-line font-medium text-gray-900">{report.body_parts_front || "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase text-gray-500">Back Summary</p>
-                <p className="whitespace-pre-line font-medium text-gray-900">{report.body_parts_back || "—"}</p>
-              </div>
-            </div>
-          </section>
+              <section>
+                <h3 className="text-lg font-semibold text-gray-900">Injury Overview</h3>
+                <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-gray-700">Front View</p>
+                    <ReadOnlyBodyDiagram view="front" regionMap={frontRegions} />
+                    <p className="text-xs text-gray-600">Highlighted regions correspond to confirmed injuries on the patient's front body.</p>
+                  </div>
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-gray-700">Back View</p>
+                    <ReadOnlyBodyDiagram view="back" regionMap={backRegions} />
+                    <p className="text-xs text-gray-600">Highlighted regions correspond to confirmed injuries on the patient's back body.</p>
+                  </div>
+                </div>
 
-          {!restrictToPatientView && (
-            <section>
-              <h3 className="text-lg font-semibold text-gray-900">Transfer of Care</h3>
-              <div className="mt-3 grid gap-4 text-sm sm:grid-cols-2">
-                <div>
-                  <p className="text-xs font-medium uppercase text-gray-500">Receiving Hospital</p>
-                  <p className="font-medium text-gray-900">{report.receiving_hospital_name || "—"}</p>
+                <div className="mt-6">
+                  <h4 className="text-sm font-semibold text-gray-700">Body Region Legend</h4>
+                  <div className="mt-2 grid gap-2">
+                    {regionLegendEntries.length > 0 ? (
+                      regionLegendEntries.map(({ key, orientation, label, color, injuries }) => (
+                        <div key={key} className="flex items-start gap-3 rounded border border-gray-200 bg-white p-3 text-sm shadow-sm">
+                          <span className="mt-0.5 h-4 w-4 rounded-full" style={{ backgroundColor: color }} />
+                          <div>
+                            <p className="font-semibold text-gray-800">
+                              {label}
+                              <span className="ml-2 text-xs font-medium uppercase text-gray-500">{orientation}</span>
+                            </p>
+                            <p className="text-xs text-gray-600">
+                              {injuries.length > 0 ? injuries.join(", ") : "No specific injury noted"}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-600">No highlighted body regions recorded for this patient.</p>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs font-medium uppercase text-gray-500">Receiving Date</p>
-                  <p className="font-medium text-gray-900">{formatDateTime(report.receiving_hospital_date)}</p>
+
+                <div className="mt-6">
+                  <h4 className="text-sm font-semibold text-gray-700">Injury Type Legend</h4>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    {legendItems.length > 0 ? (
+                      legendItems.map((item) => (
+                        <div key={item.code} className="flex items-center gap-3 rounded border border-gray-200 bg-gray-50 p-3 text-sm">
+                          <span className="h-4 w-4 rounded-full" style={{ backgroundColor: item.color }} />
+                          <span className="font-medium text-gray-800">{item.label}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-600">No injuries recorded for this patient.</p>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs font-medium uppercase text-gray-500">EMT / ERT Date</p>
-                  <p className="font-medium text-gray-900">{formatDateTime(report.emt_ert_date)}</p>
+
+                <div className="mt-6 grid gap-4 text-sm sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-medium uppercase text-gray-500">Front Summary</p>
+                    <p className="whitespace-pre-line font-medium text-gray-900">{activePatient.body_parts_front || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium uppercase text-gray-500">Back Summary</p>
+                    <p className="whitespace-pre-line font-medium text-gray-900">{activePatient.body_parts_back || "—"}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs font-medium uppercase text-gray-500">Injury Types Summary</p>
-                  <p className="font-medium text-gray-900">{report.injury_types || "—"}</p>
-                </div>
-              </div>
-            </section>
-          )}
+              </section>
+
+              {!restrictToPatientView && (
+                <section>
+                  <h3 className="text-lg font-semibold text-gray-900">Transfer of Care</h3>
+                  <div className="mt-3 grid gap-4 text-sm sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-medium uppercase text-gray-500">Receiving Hospital</p>
+                      <p className="font-medium text-gray-900">{activePatient.receiving_hospital_name || activePatient.receiving_hospital_id || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase text-gray-500">Receiving Date</p>
+                      <p className="font-medium text-gray-900">{formatDateTime(activePatient.receiving_hospital_date)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase text-gray-500">EMT / ERT Date</p>
+                      <p className="font-medium text-gray-900">{formatDateTime(activePatient.emt_ert_date)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase text-gray-500">Injury Types Summary</p>
+                      <p className="font-medium text-gray-900">{activePatient.injury_types || "—"}</p>
+                    </div>
+                  </div>
+                </section>
+              )}
+            </>
+          ) : null}
         </main>
       </div>
     </div>

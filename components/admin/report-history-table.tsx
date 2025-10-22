@@ -11,9 +11,10 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useRouter } from "next/navigation"
+import { getPriorityDetails, PRIORITY_ORDER } from "@/lib/priority"
 
 // Define InternalReport interface (must match your database schema)
-interface InternalReport {
+interface InternalReportRow {
   id: number;
   original_report_id: string | null;
   incident_type_id: number;
@@ -25,6 +26,15 @@ interface InternalReport {
   number_of_responders: number | null;
   prepared_by: string;
   created_at: string; // TIMESTAMPTZ
+  patients: ReportPatientSummary[];
+}
+
+interface ReportPatientSummary {
+  id: string;
+  patient_name: string | null;
+  receiving_hospital_name: string | null;
+  evacuation_priority: string | null;
+  injury_types: string | null;
 }
 
 // Define BaseEntry for reference tables (Barangays, Incident Types, ER Teams)
@@ -34,7 +44,7 @@ interface BaseEntry {
 }
 
 interface ReportHistoryTableProps {
-  internalReports: InternalReport[];
+  internalReports: InternalReportRow[];
   barangays: BaseEntry[];
   incidentTypes: BaseEntry[];
   erTeams: BaseEntry[];
@@ -422,8 +432,6 @@ export function ReportHistoryTable({
                   <TableHead className="font-semibold text-gray-700">Incident Date & Time</TableHead>
                   <TableHead className="font-semibold text-gray-700">Barangay</TableHead>
                   <TableHead className="font-semibold text-gray-700">ER Team</TableHead>
-                  <TableHead className="font-semibold text-gray-700">Persons Involved</TableHead>
-                  <TableHead className="font-semibold text-gray-700">Number of Responders</TableHead>
                   <TableHead className="font-semibold text-gray-700">Prepared By</TableHead>
                   <TableHead className="font-semibold text-gray-700">Created At</TableHead>
                 </TableRow>
@@ -449,8 +457,6 @@ export function ReportHistoryTable({
                     <TableCell className="text-gray-700">{format(new Date(report.incident_date), 'PPP HH:mm')}</TableCell>
                     <TableCell className="text-gray-700">{getBarangayName(report.barangay_id)}</TableCell>
                     <TableCell className="text-gray-700">{getErTeamName(report.er_team_id)}</TableCell>
-                    <TableCell className="text-gray-700">{report.persons_involved ?? 'N/A'}</TableCell>
-                    <TableCell className="text-gray-700">{report.number_of_responders ?? 'N/A'}</TableCell>
                     <TableCell className="text-gray-700">{report.prepared_by}</TableCell>
                     <TableCell className="text-gray-700">{format(new Date(report.created_at), 'PPP HH:mm')}</TableCell>
                   </TableRow>

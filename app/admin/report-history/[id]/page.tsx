@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useParams, useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
-import { InternalReportDetail, type InternalReportRecord } from "@/components/admin/internal-report-detail"
+import { InternalReportDetail, type InternalReportRecord, type InternalReportPatientRecord } from "@/components/admin/internal-report-detail"
 
 interface BaseEntry {
   id: number
@@ -41,6 +41,7 @@ const InternalReportDetailPage = () => {
   const [barangayName, setBarangayName] = React.useState<string>("")
   const [incidentTypeName, setIncidentTypeName] = React.useState<string>("")
   const [erTeamName, setErTeamName] = React.useState<string>("")
+  const [patients, setPatients] = React.useState<InternalReportPatientRecord[]>([])
   const [error, setError] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(true)
 
@@ -58,6 +59,15 @@ const InternalReportDetailPage = () => {
 
         const fetchedReport = await fetchInternalReportById(reportId)
         setReport(fetchedReport)
+
+        const { data: patientRows, error: patientsError } = await supabase
+          .from("internal_report_patients")
+          .select("*")
+          .eq("internal_report_id", reportId)
+          .order("created_at", { ascending: true })
+
+        if (patientsError) throw patientsError
+        setPatients((patientRows ?? []) as InternalReportPatientRecord[])
 
         const [barangay, incidentType, erTeam] = await Promise.all([
           fetchSingleEntry("barangays", fetchedReport.barangay_id),
@@ -126,6 +136,7 @@ const InternalReportDetailPage = () => {
         </button>
         <InternalReportDetail
           report={report}
+          patients={patients}
           barangayName={barangayName}
           incidentTypeName={incidentTypeName}
           erTeamName={erTeamName}
