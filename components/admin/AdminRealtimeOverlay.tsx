@@ -26,7 +26,7 @@ export default function AdminRealtimeOverlay() {
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [adminSoundPath, setAdminSoundPath] = useState<string | null>(null)
+  const [adminSoundPath, setAdminSoundPath] = useState<string | null>('/sounds/alert.mp3')
 
   useEffect(() => {
     const notifChannel = supabase
@@ -53,15 +53,17 @@ export default function AdminRealtimeOverlay() {
         if (!error && data && data.length > 0) {
           const row = data[0] as any
           setAdminSoundPath(prev => {
-            const next = row.admin_incident_sound_path || row.active_file_path || null
-            if (prev && prev !== next) clearAlertSoundCache(prev)
+            const next = row.admin_incident_sound_path || row.active_file_path || prev || '/sounds/alert.mp3'
+            if (prev && prev !== next && prev !== '/sounds/alert.mp3') clearAlertSoundCache(prev)
             return next
           })
         } else {
-          setAdminSoundPath(null)
+          // Keep the default sound if no settings found
+          setAdminSoundPath(prev => prev || '/sounds/alert.mp3')
         }
       } catch {
-        setAdminSoundPath(null)
+        // Keep the default sound on error
+        setAdminSoundPath(prev => prev || '/sounds/alert.mp3')
       }
     }
     void loadAdminSound()
@@ -119,7 +121,7 @@ export default function AdminRealtimeOverlay() {
     if (dismissTimer.current) clearTimeout(dismissTimer.current)
     dismissTimer.current = setTimeout(() => {
       hideOverlay()
-    }, 5000)
+    }, 10000)
   }
 
   const hideOverlay = () => {
@@ -139,11 +141,17 @@ export default function AdminRealtimeOverlay() {
 
       let url: string | null = null
       if (adminSoundPath) {
-        const signed = await getAlertSoundSignedUrl(adminSoundPath, 120)
-        if (signed) {
-          url = signed
+        if (adminSoundPath.startsWith('/')) {
+          // Local public path - use directly
+          url = adminSoundPath
         } else {
-          console.warn('[AdminAlertSound] Signed URL unavailable', { path: adminSoundPath })
+          // Supabase storage path - get signed URL
+          const signed = await getAlertSoundSignedUrl(adminSoundPath, 120)
+          if (signed) {
+            url = signed
+          } else {
+            console.warn('[AdminAlertSound] Signed URL unavailable', { path: adminSoundPath })
+          }
         }
       }
 

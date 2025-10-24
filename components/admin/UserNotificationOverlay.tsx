@@ -43,7 +43,7 @@ export default function UserNotificationOverlay() {
     if (dismissTimer.current) clearTimeout(dismissTimer.current)
     dismissTimer.current = setTimeout(() => {
       setVisible(false)
-    }, 5000) // Auto-dismiss after 5 seconds
+    }, 10000) // Auto-dismiss after 10 seconds
   }
 
   if (!visible) return null
