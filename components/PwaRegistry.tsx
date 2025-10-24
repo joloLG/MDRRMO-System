@@ -17,7 +17,6 @@ export function PwaRegistry() {
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
     if ('serviceWorker' in navigator) {
-      // Register immediately to speed up push readiness
       navigator.serviceWorker.register('/sw.js').then(registration => {
         console.log('Service Worker registered: ', registration);
       }).catch(registrationError => {

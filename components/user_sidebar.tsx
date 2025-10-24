@@ -15,10 +15,9 @@ interface UserSidebarProps {
 const menuItems = [
   { id: 'main', icon: AlertTriangle, label: 'Main Dashboard', type: 'internal' },
   { id: 'reportHistory', icon: History, label: 'Report History', type: 'internal' },
-  { id: 'mdrrmoInfo', icon: Info, label: 'MDRRMO-Bulan Info', type: 'internal', path: '/mdrrmo-info' },
-  { id: 'hotlines', icon: Phone, label: 'Bulan Hotlines', type: 'internal', path: '/hotlines' },
-  { id: 'userProfile', icon: User, label: 'User Profile', type: 'internal' },
+  { id: 'mdrrmoInfo', icon: Info, label: 'Bulan Information Hotlines', type: 'internal' },
   { id: 'incidentPosts', icon: AlertTriangle, label: 'MDRRMO Incident Posts', type: 'internal' },
+  { id: 'userProfile', icon: User, label: 'User Profile', type: 'internal' },
   { id: 'sendFeedback', icon: Mail, label: 'Send Feedback', type: 'internal' },
 ];
 
@@ -93,10 +92,12 @@ export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps)
       )}
 
       <aside
-        className={`fixed top-0 left-0 h-full w-64 bg-gray-800 text-white shadow-lg z-50 transform ${
+        className={`fixed top-0 left-0 h-screen w-64 bg-gray-800 text-white shadow-lg z-50 transform transition-transform duration-300 ease-in-out ${
+          // Mobile: slide in/out from left
           isOpen ? 'translate-x-0' : '-translate-x-full'
-        } transition-transform duration-300 ease-in-out lg:static lg:z-auto ${
-          isOpen ? 'lg:translate-x-0' : 'lg:-translate-x-full lg:absolute'
+        } ${
+          // Desktop: always visible, positioned to take full height
+          'lg:translate-x-0'
         }`}
         aria-label="Main navigation"
       >
@@ -105,7 +106,7 @@ export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps)
             <h2 className="text-xl font-bold">Menu</h2>
             <button
               onClick={onClose}
-              className="p-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white lg:hidden"
+              className="p-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white"
               aria-label="Close menu"
             >
               <X className="w-6 h-6" />
@@ -115,31 +116,31 @@ export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps)
             {showIosA2HS && (
               <Button
                 variant="ghost"
-                className="w-full justify-start text-white bg-blue-600 hover:bg-blue-700 hover:text-white"
+                className="w-full justify-start text-white bg-blue-600 hover:bg-blue-700 hover:text-white text-left h-auto py-3"
                 onClick={() => setIosDialogOpen(true)}
               >
-                <Share className="mr-3 h-5 w-5 flex-shrink-0" />
-                <span className="truncate">Add to Home Screen</span>
+                <Share className="mr-3 h-5 w-5 flex-shrink-0 mt-0.5" />
+                <span className="break-words leading-tight">Add to Home Screen</span>
               </Button>
             )}
             {installPromptEvent && (
               <Button
                 variant="ghost"
-                className="w-full justify-start text-white bg-green-600 hover:bg-green-700 hover:text-white"
+                className="w-full justify-start text-white bg-green-600 hover:bg-green-700 hover:text-white text-left h-auto py-3"
                 onClick={handleInstallClick}
               >
-                <Download className="mr-3 h-5 w-5 flex-shrink-0" />
-                <span className="truncate">ADD TO HOME</span>
+                <Download className="mr-3 h-5 w-5 flex-shrink-0 mt-0.5" />
+                <span className="break-words leading-tight">ADD TO HOME</span>
               </Button>
             )}
             {showAndroidDownload && (
               <Button
                 variant="ghost"
-                className="w-full justify-start text-white bg-purple-600 hover:bg-purple-700 hover:text-white"
+                className="w-full justify-start text-white bg-purple-600 hover:bg-purple-700 hover:text-white text-left h-auto py-3"
                 onClick={() => window.open('https://github.com/joloLG/MDRRMO-System/releases/tag/v1.1.6', '_blank', 'noopener,noreferrer')}
               >
-                <Download className="mr-3 h-5 w-5 flex-shrink-0" />
-                <span className="truncate">Download App</span>
+                <Download className="mr-3 h-5 w-5 flex-shrink-0 mt-0.5" />
+                <span className="break-words leading-tight">Download App</span>
               </Button>
             )}
             {menuItems.map((item) => {
@@ -148,13 +149,13 @@ export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps)
                 <Button
                   key={item.id}
                   variant="ghost"
-                  className="w-full justify-start text-white hover:bg-gray-700 hover:text-white"
+                  className="w-full justify-start text-white hover:bg-gray-700 hover:text-white text-left h-auto py-3"
                   onClick={() => handleMenuItemClick(item as any)}
                 >
-                  <Icon className="mr-3 h-5 w-5 flex-shrink-0" />
-                  <span className="truncate">{item.label}</span>
+                  <Icon className="mr-3 h-5 w-5 flex-shrink-0 mt-0.5" />
+                  <span className="break-words leading-tight">{item.label}</span>
                   {item.type === 'external' && (
-                    <span className="ml-auto text-xs text-gray-400">↗</span>
+                    <span className="ml-auto text-xs text-gray-400 flex-shrink-0">↗</span>
                   )}
                 </Button>
               );

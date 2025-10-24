@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { AlertCircle, MapPin, X, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Capacitor } from "@capacitor/core";
 import { App } from "@capacitor/app";
 
@@ -25,7 +25,7 @@ export function LocationPermissionModal({
   const errorMessages: Record<string, string> = {
     location_denied: "You have denied location access. Please enable it in your settings.",
     location_unavailable: "Unable to retrieve your location. Please check your connection.",
-    location_timeout: "Location request timed out. Please try again.",
+    location_timeout: "Location request timed out. GPS signals can be slow indoors or with poor connection. Please try again in an open area.",
     not_supported: "Geolocation is not supported by your browser.",
     location_services_disabled: "Your device's location services (GPS) are turned off. Please enable Location in your device settings.",
     location_error: "An unexpected error occurred while accessing your location. Please try again.",
@@ -130,6 +130,12 @@ export function LocationPermissionModal({
           <DialogTitle className="text-2xl text-center">
             {error ? "Location Access Required" : "Enable Location Services"}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            {error 
+              ? "Location access is required to use emergency reporting features. Please enable location permissions in your device settings."
+              : "This app requires location access to provide accurate emergency services and help responders locate you quickly."
+            }
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex justify-end">

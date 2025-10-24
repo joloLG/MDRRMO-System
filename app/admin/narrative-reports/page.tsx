@@ -27,6 +27,7 @@ interface NarrativeReport {
   created_at: string
   updated_at: string
   published_at: string | null
+  divisions: string[]
 }
 
 interface NarrativeQueryParams {
@@ -48,7 +49,7 @@ const fetchNarratives = async (params: NarrativeQueryParams) => {
 
   let query = supabase
     .from("narrative_reports")
-    .select("id, internal_report_id, title, narrative_text, image_url, status, created_at, updated_at, published_at", {
+    .select("id, internal_report_id, title, narrative_text, image_url, status, created_at, updated_at, published_at, divisions", {
       count: "exact",
     })
     .eq("status", status)
@@ -180,6 +181,7 @@ export default function NarrativeReportsPage() {
           image_url: imageUrl,
           title: selectedReport.title,
           narrative_text: selectedReport.narrative_text,
+          divisions: selectedReport.divisions,
           status: "published",
           published_at: new Date().toISOString(),
         })
@@ -215,6 +217,7 @@ export default function NarrativeReportsPage() {
           image_url: imageUrl,
           title: selectedReport.title,
           narrative_text: selectedReport.narrative_text,
+          divisions: selectedReport.divisions,
         })
         .eq("id", selectedReport.id)
 
@@ -354,6 +357,17 @@ export default function NarrativeReportsPage() {
                     }
                     rows={10}
                   />
+                </div>
+                <div>
+                  <Label className="text-sm font-semibold text-gray-700">Divisions Involved</Label>
+                  <Input
+                    value={selectedReport.divisions ? selectedReport.divisions.join(", ") : ""}
+                    onChange={(event) =>
+                      setSelectedReport((prev) => (prev ? { ...prev, divisions: event.target.value.split(",").map(s => s.trim()).filter(s => s) } : prev))
+                    }
+                    placeholder="e.g. Fire Department, Medical Team"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Enter divisions separated by commas</p>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold text-gray-700">Cover Image</Label>

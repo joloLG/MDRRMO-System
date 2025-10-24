@@ -27,6 +27,7 @@ import { NotificationPermissionBanner } from './NotificationPermissionBanner'
 import { useRouter } from 'next/navigation'
 import { usePushNotifications } from '@/components/providers/PushNotificationsProvider'
 
+
 interface Notification {
   id: string;
   emergency_report_id: string;
@@ -124,6 +125,25 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [isEmergencyActive, setIsEmergencyActive] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+
+  // Desktop detection with proper responsive handling
+  const [isDesktop, setIsDesktop] = useState(false)
+  const [isTabletOrDesktop, setIsTabletOrDesktop] = useState(false)
+  const [isSidebarVisible, setIsSidebarVisible] = useState(false)
+  
+  useEffect(() => {
+    const checkScreenSize = () => {
+      const width = window.innerWidth
+      setIsDesktop(width >= 1024)
+      setIsTabletOrDesktop(width >= 768) // Tablet and desktop (md breakpoint and above)
+    }
+    
+    checkScreenSize()
+    window.addEventListener('resize', checkScreenSize)
+    return () => window.removeEventListener('resize', checkScreenSize)
+  }, [])
+
+  const effectiveSidebarOpen = isDesktop || isSidebarOpen
   const [showSOSConfirm, setShowSOSConfirm] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null)
@@ -253,7 +273,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         navigator.geolocation.getCurrentPosition(
           resolve,
           reject,
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
       });
 
@@ -346,7 +366,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
-  const [currentView, setCurrentView] = useState<'main' | 'reportHistory' | 'mdrrmoInfo' | 'hotlines' | 'userProfile' | 'sendFeedback' | 'incidentPosts'>('main');
+  const [currentView, setCurrentView] = useState<'main' | 'reportHistory' | 'mdrrmoInfo' | 'incidentPosts' | 'userProfile' | 'sendFeedback'>('main');
   const [hasLoadedUserData, setHasLoadedUserData] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [reportPage, setReportPage] = useState<number>(1);
@@ -1820,281 +1840,131 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         error={locationError}
       />
 
-      {/* Header */}
-      <div className="sticky top-0 z-30 bg-orange-500/95 backdrop-blur-sm text-white p-4 shadow-lg">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            {/* Hamburger Menu Button - Always visible */}
-            <button 
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
-              className="p-2 -ml-2 rounded-md hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-white transition-colors"
-              aria-label="Toggle menu"
-            >
-              <Menu className="w-6 h-6" />
-            </button>
-            
-            {/* Desktop Title - Hidden on small screens */}
-            <div className="hidden md:flex items-center space-x-3 ml-2">
-              <span className="font-medium text-lg">BULAN EMERGENCY APP</span>
-            </div>
-          </div>
-
-          <div className="text-center flex-1">
-            <h1 className="text-xl sm:text-2xl font-bold">MDRRMO</h1>
-            <p className="text-sm sm:text-base text-orange-100">Accident Reporting System</p>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            {/* Notifications */}
-            <div className="relative">
-              <button
-                ref={notificationsButtonRef}
-                onClick={() => setShowNotifications(!showNotifications)}
-                className="p-2 hover:bg-orange-600 rounded-full transition-colors relative"
-                aria-label={showNotifications ? 'Hide notifications' : 'Show notifications'}
-                aria-expanded={showNotifications}
+      {/* Desktop Layout with Sidebar */}
+      <div className="relative min-h-screen">
+        {/* Header - Full width */}
+        <div className="sticky top-0 z-30 bg-orange-500/95 backdrop-blur-sm text-white p-4 shadow-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              {/* Hamburger Menu Button - Visible on all screens */}
+              <button 
+                onClick={() => {
+                  if (isTabletOrDesktop) {
+                    setIsSidebarVisible(!isSidebarVisible)
+                  } else {
+                    setIsSidebarOpen(!isSidebarOpen)
+                  }
+                }} 
+                className="p-2 -ml-2 rounded-md hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-white"
+                aria-label="Toggle menu"
               >
-                <Bell className="w-6 h-6" />
-                {unreadNotificationsCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                    {unreadNotificationsCount}
-                  </span>
-                )}
+                <Menu className="w-6 h-6" />
               </button>
-            </div>
-
-            {/* Manual Refresh */}
-            <div className="relative">
-              <button
-                onClick={() => window.location.reload()}
-                className="p-2 hover:bg-orange-600 rounded-full transition-colors"
-                aria-label="Refresh now"
-                title="Refresh now"
-              >
-                <RefreshCcw className="w-6 h-6" />
-              </button>
-            </div>
-
-            {/* User Menu */}
-            <div className="relative">
-              <div
-                className="flex items-center space-x-2 cursor-pointer hover:bg-orange-600 p-2 rounded-full transition-colors"
-                onClick={handleUserMenuClick}
-              >
-                <User className="w-6 h-6" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* User Sidebar Component */}
-      <UserSidebar 
-        isOpen={isSidebarOpen} 
-        onClose={() => setIsSidebarOpen(false)}
-        onChangeView={(view: string) => setCurrentView(view as typeof currentView)}
-      />
-
-      {/* Notifications Dropdown - Positioned relative to header */}
-      {showNotifications && (
-        <div 
-          ref={notificationsRef}
-          className="fixed top-20 right-4 bg-white rounded-lg shadow-xl border border-gray-200 w-72 sm:w-80 max-h-96 overflow-y-auto z-50 animate-in fade-in-50 slide-in-from-top-2"
-        >
-          <div className="sticky top-0 bg-white z-10 p-4 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="font-semibold text-gray-800">Notifications</h3>
-            <button
-              onClick={() => setShowNotifications(false)}
-              className="text-gray-500 hover:text-gray-700 transition-colors p-1 -mr-2"
-              aria-label="Close notifications"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            {(notificationsSource || []).some(n => !n.is_read) && (
-              <Button
-                size="sm"
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs py-1 px-2 rounded-full ml-2"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  markAllAsRead();
-                }}
-              >
-                Mark all as read
-              </Button>
-            )}
-          </div>
-          <div className="max-h-64 overflow-y-auto">
-            {(notificationsSource?.length || 0) === 0 ? (
-              <div className="p-4 text-gray-500 text-center">No notifications</div>
-            ) : (
-              notificationsSource!.map((notification) => (
-                <div
-                  key={notification.id}
-                  className={`p-4 border-b border-gray-100 ${!notification.is_read ? "bg-blue-50" : ""}`}
-                  onClick={async () => {
-                    await markNotificationAsRead(notification.id);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <p className="text-sm text-gray-800">{notification.message}</p>
-                  <p className="text-xs text-gray-500 mt-1">{new Date(notification.created_at).toLocaleString()}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* User Menu Overlay (right side dropdown) - Positioned relative to header */}
-      {showUserMenu && (
-        <div
-          className="fixed inset-0 bg-black/20 flex items-start justify-end pt-16 pr-4 z-40"
-          onClick={() => setShowUserMenu(false)}
-        >
-          <div
-            className="bg-white text-gray-800 rounded-lg shadow-2xl border border-gray-200 w-48 sm:w-56 animate-in slide-in-from-top-2 duration-200"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-lg">
-              <p className="text-sm font-medium text-gray-900">Hi {currentUser?.username || currentUser?.firstName || "User"}!</p>
-              <p className="text-xs text-gray-500">{currentUser?.email || currentUser?.username}</p>
-            </div>
-            <div className="p-2">
-              <div
-                onClick={handleLogout}
-                className="flex items-center space-x-2 w-full p-3 hover:bg-red-50 hover:text-red-600 rounded text-left transition-colors cursor-pointer select-none"
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="font-medium">Logout</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Custom Emergency Type Input Modal */}
-      {showCustomEmergencyInput && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-auto">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <HelpCircle className="w-8 h-8 text-red-600" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Describe Emergency</h3>
-              <p className="text-gray-600 mb-4">
-                Please describe the type of emergency you're reporting.
-              </p>
-              <Textarea
-                value={customEmergencyType}
-                onChange={(e) => setCustomEmergencyType(e.target.value)}
-                placeholder="E.g., Power outage, Gas leak, etc."
-                className="w-full mb-4 min-h-[100px]"
-              />
-              <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
-                <Button 
-                  onClick={() => {
-                    setShowCustomEmergencyInput(false);
-                    setCustomEmergencyType('');
-                  }} 
-                  variant="outline" 
-                  className="flex-1"
-                >
-                  CANCEL
-                </Button>
-                <Button 
-                  onClick={() => {
-                    if (customEmergencyType.trim()) {
-                      setShowCustomEmergencyInput(false);
-                      setShowSOSConfirm(true);
-                    }
-                  }}
-                  disabled={!customEmergencyType.trim()}
-                  className="flex-1 bg-red-500 hover:bg-red-600"
-                >
-                  CONFIRM
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SOS Confirmation Modal */}
-      {showSOSConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-auto">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <AlertTriangle className="w-8 h-8 text-red-600" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Send Emergency Alert?</h3>
-              <p className="text-gray-600 mb-4">
-                This will send your location and details for a <span className="font-bold text-red-700">
-                  {selectedIncidentTypeForConfirmation === 'Others' ? customEmergencyType : selectedIncidentTypeForConfirmation}
-                </span> emergency to MDRRMO emergency responders.
-              </p>
               
-              {/* Casualties Input for relevant emergency types */}
-              {['Medical Emergency', 'Vehicular Incident', 'Public Disturbance'].includes(selectedIncidentTypeForConfirmation || '') && (
-                <div className="mb-4">
-                  <label htmlFor="casualties" className="block text-sm font-medium text-gray-700 mb-1">
-                    Number of Casualties *
-                  </label>
-                  <Input
-                    id="casualties"
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder="Enter number of casualties"
-                    value={casualties}
-                    onChange={(e) => {
-                      // Only allow numeric input
-                      const value = e.target.value;
-                      if (value === '' || /^\d+$/.test(value)) {
-                        setCasualties(value);
-                      }
-                    }}
-                    className="w-full"
-                  />
-                  {!casualties && (
-                    <p className="mt-1 text-sm text-red-600">Please enter the number of casualties</p>
+              {/* Desktop Title - Hidden on small screens */}
+              <div className="hidden md:flex items-center space-x-3 ml-2">
+                <span className="font-medium text-lg">BULAN EMERGENCY APP</span>
+              </div>
+            </div>
+
+            <div className="text-center flex-1">
+              <h1 className="text-xl sm:text-2xl font-bold">MDRRMO</h1>
+              <p className="text-sm sm:text-base text-orange-100">Accident Reporting System</p>
+            </div>
+
+            <div className="flex items-center space-x-4">
+              {/* Notifications */}
+              <div className="relative">
+                <button
+                  ref={notificationsButtonRef}
+                  onClick={() => setShowNotifications(!showNotifications)}
+                  className="p-2 hover:bg-orange-600 rounded-full transition-colors relative"
+                  aria-label={showNotifications ? 'Hide notifications' : 'Show notifications'}
+                  aria-expanded={showNotifications}
+                >
+                  <Bell className="w-6 h-6" />
+                  {unreadNotificationsCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                      {unreadNotificationsCount}
+                    </span>
                   )}
-                </div>
-              )}
-              
-              <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
-                <Button onClick={cancelSOS} variant="outline" className="flex-1 bg-transparent">
-                  NO
-                </Button>
-                <Button 
-                  onClick={() => confirmSOS(selectedIncidentTypeForConfirmation === 'Others' ? customEmergencyType : selectedIncidentTypeForConfirmation!)} 
-                  disabled={['Medical Emergency', 'Vehicular Incident', 'Public Disturbance'].includes(selectedIncidentTypeForConfirmation || '') && !casualties}
-                  className={`flex-1 bg-red-500 ${!['Medical Emergency', 'Vehicular Incident', 'Public Disturbance'].includes(selectedIncidentTypeForConfirmation || '') || casualties ? 'hover:bg-red-600' : 'opacity-50 cursor-not-allowed'}`}
+                </button>
+              </div>
+
+              {/* Manual Refresh */}
+              <div className="relative">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="p-2 hover:bg-orange-600 rounded-full transition-colors"
+                  aria-label="Refresh now"
+                  title="Refresh now"
                 >
-                  YES, SEND ALERT
-                </Button>
+                  <RefreshCcw className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* User Menu */}
+              <div className="relative">
+                <div
+                  className="flex items-center space-x-2 cursor-pointer hover:bg-orange-600 p-2 rounded-full transition-colors"
+                  onClick={handleUserMenuClick}
+                >
+                  <User className="w-6 h-6" />
+                </div>
               </div>
             </div>
           </div>
         </div>
-      )}
 
-      {/* Main Content Area - Adjusted for sidebar on desktop */}
-      <div className="relative z-10 flex-1 flex flex-col items-center p-4 sm:p-8 lg:ml-64">
-        {currentView === 'main' && (
-          <>
-            {/* Welcome Card with Logo */}
-            {activeAdvisory ? (
-              <Card className="w-full max-w-2xl mx-auto mb-6 bg-white/90 backdrop-blur-sm shadow-lg rounded-lg border border-orange-300">
-                <CardHeader className="pb-2 flex flex-col items-center justify-center">
-                  <Megaphone className="w-12 h-12 text-orange-600 mb-2" />
-                  <CardTitle className="text-lg sm:text-xl font-bold text-orange-700 text-center mt-2">{activeAdvisory.title || 'MDRRMO Advisory'}</CardTitle>
-                </CardHeader>
-                <CardContent className="text-center text-gray-700 text-sm sm:text-base whitespace-pre-wrap">
-                  {activeAdvisory.body || ''}
-                </CardContent>
-              </Card>
-            ) : (
+        {/* Main Layout Container */}
+        <div className="flex min-h-[calc(100vh-80px)]">
+          {/* Sidebar Overlay for tablet and desktop */}
+          {isTabletOrDesktop && isSidebarVisible && (
+            <>
+              {/* Overlay background */}
+              <div 
+                className="fixed inset-0 bg-black/50 z-30"
+                onClick={() => setIsSidebarVisible(false)}
+              />
+              {/* Sidebar */}
+              <div className="fixed top-20 left-0 h-[calc(100vh-80px)] w-64 z-40">
+                <UserSidebar 
+                  isOpen={true} 
+                  onClose={() => setIsSidebarVisible(false)}
+                  onChangeView={(view: string) => {
+                    setCurrentView(view as typeof currentView)
+                    setIsSidebarVisible(false) // Close sidebar after navigation
+                  }}
+                />
+              </div>
+            </>
+          )}
+
+          {/* Mobile Sidebar Overlay */}
+          {!isTabletOrDesktop && (
+            <UserSidebar 
+              isOpen={effectiveSidebarOpen} 
+              onClose={() => setIsSidebarOpen(false)}
+              onChangeView={(view: string) => setCurrentView(view as typeof currentView)}
+            />
+          )}
+
+          {/* Main Content Area */}
+          <div className="flex-1 flex flex-col items-center p-4 sm:p-8 min-h-full">
+            {currentView === 'main' && (
+              <>
+                {/* Welcome Card with Logo */}
+                {activeAdvisory ? (
+                  <Card className="w-full max-w-2xl mx-auto mb-6 bg-white/90 backdrop-blur-sm shadow-lg rounded-lg border border-orange-300">
+                    <CardHeader className="pb-2 flex flex-col items-center justify-center">
+                      <Megaphone className="w-12 h-12 text-orange-600 mb-2" />
+                      <CardTitle className="text-lg sm:text-xl font-bold text-orange-700 text-center mt-2">{activeAdvisory.title || 'MDRRMO Advisory'}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-center text-gray-700 text-sm sm:text-base whitespace-pre-wrap">
+                      {activeAdvisory.body || ''}
+                    </CardContent>
+                  </Card>
+                ) : (
               <Card className="w-full max-w-2xl mx-auto mb-6 bg-white/90 backdrop-blur-sm shadow-lg rounded-lg border border-orange-300">
                 <CardHeader className="pb-2 flex flex-col items-center justify-center">
                   <img
@@ -2185,38 +2055,23 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         )}
 
         {currentView === 'reportHistory' && (
-          <Card className="w-full max-w-full lg:max-w-6xl bg-white/90 backdrop-blur-sm shadow-lg rounded-lg p-4 sm:p-6 mb-20">
-            <CardHeader>
-              <CardTitle className="text-xl sm:text-2xl font-bold text-gray-800">Your Report History</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {(reportsSource?.length || 0) === 0 ? (
-                <p className="text-gray-600 text-center py-4">No emergency reports found.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50 sticky top-0 z-10">
-                      <tr>
-                        <th scope="col" className="px-4 py-2 text-left text-xs sm:text-sm font-medium text-gray-500 uppercase tracking-wider">
-                          Type
-                        </th>
-                        <th scope="col" className="px-4 py-2 text-left text-xs sm:text-sm font-medium text-gray-500 uppercase tracking-wider">
-                          Status
-                        </th>
-                        <th scope="col" className="px-4 py-2 text-left text-xs sm:text-sm font-medium text-gray-500 uppercase tracking-wider">
-                          Team Responded
-                        </th>
-                        <th scope="col" className="px-4 py-2 text-left text-xs sm:text-sm font-medium text-gray-500 uppercase tracking-wider">
-                          Time and Date Resolved
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+          <div className="w-full h-full p-1 sm:p-2">
+            <Card className="w-full h-full bg-white/90 backdrop-blur-sm shadow-lg rounded-lg p-2 sm:p-4 flex flex-col">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg sm:text-xl font-bold text-gray-800">Your Report History</CardTitle>
+              </CardHeader>
+              <CardContent className="flex-1 overflow-hidden">
+                {(reportsSource?.length || 0) === 0 ? (
+                  <p className="text-gray-600 text-center py-4">No emergency reports found.</p>
+                ) : (
+                  <>
+                    {/* Mobile List View */}
+                    <div className="block sm:hidden space-y-2">
                       {paginatedReports.map((report: Report) => (
-                        <tr key={report.id}>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{report.emergency_type}</td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm">
-                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                        <div key={report.id} className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="font-medium text-gray-900 text-sm">{report.emergency_type}</span>
+                            <span className={`px-2 py-0.5 text-xs leading-4 font-semibold rounded-full ${
                               report.status.trim().toLowerCase() === 'pending' || report.status.trim().toLowerCase() === 'active'
                                 ? 'bg-red-100 text-red-800'
                                 : report.status.trim().toLowerCase() === 'responded'
@@ -2225,38 +2080,90 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                             }`}>
                               {report.status}
                             </span>
-                          </td>
-                          <td className="px-4 py-3 whitespace-normal text-sm text-gray-500">{report.admin_response || 'N/A'}</td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">{report.resolved_at ? new Date(report.resolved_at).toLocaleString() : 'N/A'}</td>
-                        </tr>
+                          </div>
+                          <div className="text-xs text-gray-600 mb-1">
+                            <span className="font-medium">Response:</span> {report.admin_response || 'N/A'}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            <span className="font-medium">Resolved:</span> {report.resolved_at ? new Date(report.resolved_at).toLocaleString() : 'N/A'}
+                          </div>
+                        </div>
                       ))}
-                    </tbody>
-                  </table>
-                  <div className="flex items-center justify-between mt-4">
-                    <div className="text-sm text-gray-600">
-                      Page {reportPage} of {totalReportPages}
                     </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => setReportPage(p => Math.max(1, p - 1))}
-                        disabled={reportPage <= 1}
-                      >
-                        Previous
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => setReportPage(p => Math.min(totalReportPages, p + 1))}
-                        disabled={reportPage >= totalReportPages}
-                      >
-                        Next
-                      </Button>
+                    
+                    {/* Desktop Table View */}
+                    <div className="hidden sm:block h-full overflow-auto">
+                      <table className="min-w-full divide-y divide-gray-200 text-xs sm:text-sm">
+                        <thead className="bg-gray-50 sticky top-0 z-10">
+                          <tr>
+                            <th scope="col" className="px-2 py-1 text-left font-medium text-gray-500 uppercase tracking-wider w-1/4">
+                              Type
+                            </th>
+                            <th scope="col" className="px-2 py-1 text-left font-medium text-gray-500 uppercase tracking-wider w-1/4">
+                              Status
+                            </th>
+                            <th scope="col" className="px-2 py-1 text-left font-medium text-gray-500 uppercase tracking-wider w-1/3">
+                              Team Responded
+                            </th>
+                            <th scope="col" className="px-2 py-1 text-left font-medium text-gray-500 uppercase tracking-wider w-1/4">
+                              Time and Date Resolved
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {paginatedReports.map((report: Report) => (
+                            <tr key={report.id}>
+                              <td className="px-2 py-2 whitespace-nowrap text-gray-900 font-medium">{report.emergency_type}</td>
+                              <td className="px-2 py-2 whitespace-nowrap">
+                                <span className={`px-1 py-0.5 text-xs leading-4 font-semibold rounded-full ${
+                                  report.status.trim().toLowerCase() === 'pending' || report.status.trim().toLowerCase() === 'active'
+                                    ? 'bg-red-100 text-red-800'
+                                    : report.status.trim().toLowerCase() === 'responded'
+                                      ? 'bg-yellow-100 text-yellow-800'
+                                      : 'bg-green-100 text-green-800'
+                                }`}>
+                                  {report.status}
+                                </span>
+                              </td>
+                              <td className="px-2 py-2 text-gray-500 break-words max-w-0">{report.admin_response || 'N/A'}</td>
+                              <td className="px-2 py-2 whitespace-nowrap text-gray-500">{report.resolved_at ? new Date(report.resolved_at).toLocaleString() : 'N/A'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                    
+                    {/* Pagination */}
+                    <div className="flex items-center justify-between mt-2 px-2">
+                      <div className="text-xs text-gray-600">
+                        Page {reportPage} of {totalReportPages}
+                      </div>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setReportPage(p => Math.max(1, p - 1))}
+                          disabled={reportPage <= 1}
+                          className="text-xs px-2 py-1"
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setReportPage(p => Math.min(totalReportPages, p + 1))}
+                          disabled={reportPage >= totalReportPages}
+                          className="text-xs px-2 py-1"
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         )}
 
         {currentView === 'incidentPosts' && (
@@ -2293,34 +2200,39 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                 ) : (
                   <div className="space-y-5">
                     {incidentPosts.map((post) => (
-                      <div key={post.id} className="rounded-lg border border-gray-200 overflow-hidden shadow-sm bg-white">
-                        {post.image_url ? (
-                          <div className="relative bg-gray-100">
-                            <img
-                              src={post.image_url}
-                              alt={post.title}
-                              className="w-full object-cover"
-                              style={{ maxHeight: 260 }}
-                            />
+                      <Card key={post.id} className="w-full bg-white/95 backdrop-blur-sm shadow-lg rounded-lg overflow-hidden border border-gray-200">
+                        <CardContent className="p-0">
+                          {/* Text Content First */}
+                          <div className="p-4 space-y-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <h3 className="text-lg font-semibold text-gray-900 break-words flex-1">{post.title}</h3>
+                              <Badge variant="outline" className="shrink-0 border-orange-200 bg-orange-50 text-orange-700">
+                                {post.internal_report_id ? `Report #${post.internal_report_id}` : "Incident"}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-gray-500">
+                              {post.published_at
+                                ? `Published ${formatDistanceToNow(new Date(post.published_at), { addSuffix: true })}`
+                                : `Created ${formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}`}
+                            </p>
+                            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700">
+                              {post.narrative_text}
+                            </p>
                           </div>
-                        ) : null}
-                        <div className="p-4 space-y-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <h3 className="text-lg font-semibold text-gray-900 break-words flex-1">{post.title}</h3>
-                            <Badge variant="outline" className="shrink-0 border-orange-200 bg-orange-50 text-orange-700">
-                              {post.internal_report_id ? `Report #${post.internal_report_id}` : "Incident"}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-gray-500">
-                            {post.published_at
-                              ? `Published ${formatDistanceToNow(new Date(post.published_at), { addSuffix: true })}`
-                              : `Created ${formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}`}
-                          </p>
-                          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700">
-                            {post.narrative_text}
-                          </p>
-                        </div>
-                      </div>
+
+                          {/* Image Below Text (Facebook-style) */}
+                          {post.image_url ? (
+                            <div className="relative bg-gray-50 border-t border-gray-100">
+                              <img
+                                src={post.image_url}
+                                alt={post.title}
+                                className="w-full object-contain max-h-64 sm:max-h-80 lg:max-h-96"
+                                style={{ aspectRatio: 'auto' }}
+                              />
+                            </div>
+                          ) : null}
+                        </CardContent>
+                      </Card>
                     ))}
                   </div>
                 )}
@@ -2352,45 +2264,53 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         )}
 
         {currentView === 'mdrrmoInfo' && (
-          <Card className="w-full max-w-full lg:max-w-4xl bg-white/90 backdrop-blur-sm shadow-lg rounded-lg p-4 sm:p-6">
-            <CardHeader>
-              <CardTitle className="text-xl sm:text-2xl font-bold text-gray-800">MDRRMO-Bulan Information</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {mdrrmoInformation ? (
-                <div className="prose max-w-none text-gray-700 text-base sm:text-lg">
-                  <p className="whitespace-pre-wrap">{mdrrmoInformation.content}</p>
-                </div>
-              ) : (
-                <p className="text-gray-600 text-center py-4">No information available yet. Please check back later.</p>
-              )}
-            </CardContent>
-          </Card>
-        )}
+          <div className="space-y-6">
+            {/* MDRRMO Information Section */}
+            <Card className="w-full max-w-full lg:max-w-4xl bg-white/90 backdrop-blur-sm shadow-lg rounded-lg p-4 sm:p-6">
+              <CardHeader>
+                <CardTitle className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center">
+                  <Info className="mr-2 h-6 w-6 text-blue-600" />
+                  Bulan Information
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {mdrrmoInformation ? (
+                  <div className="prose max-w-none text-gray-700 text-base sm:text-lg">
+                    <p className="whitespace-pre-wrap">{mdrrmoInformation.content}</p>
+                  </div>
+                ) : (
+                  <p className="text-gray-600 text-center py-4">No information available yet. Please check back later.</p>
+                )}
+              </CardContent>
+            </Card>
 
-        {currentView === 'hotlines' && (
-          <Card className="w-full max-w-full lg:max-w-3xl bg-white/90 backdrop-blur-sm shadow-lg rounded-lg p-4 sm:p-6">
-            <CardHeader>
-              <CardTitle className="text-xl sm:text-2xl font-bold text-gray-800">Bulan Hotlines</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {bulanHotlines.length === 0 ? (
-                <p className="text-gray-600 text-center py-4">No hotlines available yet. Please check back later.</p>
-              ) : (
-                <div className="space-y-4">
-                  {bulanHotlines.map((hotline) => (
-                    <div key={hotline.id} className="border-b pb-3 last:border-b-0">
-                      <h3 className="text-lg sm:text-xl font-semibold text-gray-800">{hotline.name}</h3>
-                      <p className="text-blue-600 font-medium text-xl sm:text-2xl mt-1">
-                        <a href={`tel:${hotline.number}`} className="hover:underline">{hotline.number}</a>
-                      </p>
-                      {hotline.description && <p className="text-sm sm:text-base text-gray-600 mt-1">{hotline.description}</p>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+            {/* Hotlines Section */}
+            <Card className="w-full max-w-full lg:max-w-4xl bg-white/90 backdrop-blur-sm shadow-lg rounded-lg p-4 sm:p-6">
+              <CardHeader>
+                <CardTitle className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center">
+                  <Phone className="mr-2 h-6 w-6 text-green-600" />
+                  Emergency Hotlines
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {bulanHotlines.length === 0 ? (
+                  <p className="text-gray-600 text-center py-4">No hotlines available yet. Please check back later.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {bulanHotlines.map((hotline) => (
+                      <div key={hotline.id} className="border-b pb-3 last:border-b-0">
+                        <h3 className="text-lg sm:text-xl font-semibold text-gray-800">{hotline.name}</h3>
+                        <p className="text-blue-600 font-medium text-xl sm:text-2xl mt-1">
+                          <a href={`tel:${hotline.number}`} className="hover:underline">{hotline.number}</a>
+                        </p>
+                        {hotline.description && <p className="text-sm sm:text-base text-gray-600 mt-1">{hotline.description}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         )}
 
         {currentView === 'userProfile' && currentUser && (
@@ -2575,12 +2495,198 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         )}
       </div>
 
-      {/* Bottom Navigation - Adjusted for sidebar offset on desktop */}
-      <div className="fixed bottom-0 left-0 right-0 bg-orange-500/95 backdrop-blur-sm text-white p-4 z-10 lg:pl-64">
-        <div className="flex justify-center items-center">
-          <span className="text-xs sm:text-sm font-medium">Copyright © 2025 | Jolo Gracilla</span>
+      {/* Notifications Dropdown - Positioned relative to header */}
+      {showNotifications && (
+        <div 
+          ref={notificationsRef}
+          className="fixed top-20 right-4 bg-white rounded-lg shadow-xl border border-gray-200 w-72 sm:w-80 max-h-96 overflow-y-auto z-50 animate-in fade-in-50 slide-in-from-top-2"
+        >
+          <div className="sticky top-0 bg-white z-10 p-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 className="font-semibold text-gray-800">Notifications</h3>
+            <button
+              onClick={() => setShowNotifications(false)}
+              className="text-gray-500 hover:text-gray-700 transition-colors p-1 -mr-2"
+              aria-label="Close notifications"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            {(notificationsSource || []).some(n => !n.is_read) && (
+              <Button
+                size="sm"
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs py-1 px-2 rounded-full ml-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  markAllAsRead();
+                }}
+              >
+                Mark all as read
+              </Button>
+            )}
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            {(notificationsSource?.length || 0) === 0 ? (
+              <div className="p-4 text-gray-500 text-center">No notifications</div>
+            ) : (
+              notificationsSource!.map((notification) => (
+                <div
+                  key={notification.id}
+                  className={`p-4 border-b border-gray-100 ${!notification.is_read ? "bg-blue-50" : ""}`}
+                  onClick={async () => {
+                    await markNotificationAsRead(notification.id);
+                  }}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <p className="text-sm text-gray-800">{notification.message}</p>
+                  <p className="text-xs text-gray-500 mt-1">{new Date(notification.created_at).toLocaleString()}</p>
+                </div>
+              ))
+            )}
+          </div>
         </div>
+      )}
+
+      {/* User Menu Overlay (right side dropdown) - Positioned relative to header */}
+      {showUserMenu && (
+        <div
+          className="fixed inset-0 bg-black/20 flex items-start justify-end pt-16 pr-4 z-40"
+          onClick={() => setShowUserMenu(false)}
+        >
+          <div
+            className="bg-white text-gray-800 rounded-lg shadow-2xl border border-gray-200 w-48 sm:w-56 animate-in slide-in-from-top-2 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-lg">
+              <p className="text-sm font-medium text-gray-900">Hi {currentUser?.username || currentUser?.firstName || "User"}!</p>
+              <p className="text-xs text-gray-500">{currentUser?.email || currentUser?.username}</p>
+            </div>
+            <div className="p-2">
+              <div
+                onClick={handleLogout}
+                className="flex items-center space-x-2 w-full p-3 hover:bg-red-50 hover:text-red-600 rounded text-left transition-colors cursor-pointer select-none"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="font-medium">Logout</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Emergency Type Input Modal */}
+      {showCustomEmergencyInput && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-auto">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <HelpCircle className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Describe Emergency</h3>
+              <p className="text-gray-600 mb-4">
+                Please describe the type of emergency you're reporting.
+              </p>
+              <Textarea
+                value={customEmergencyType}
+                onChange={(e) => setCustomEmergencyType(e.target.value)}
+                placeholder="E.g., Power outage, Gas leak, etc."
+                className="w-full mb-4 min-h-[100px]"
+              />
+              <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
+                <Button 
+                  onClick={() => {
+                    setShowCustomEmergencyInput(false);
+                    setCustomEmergencyType('');
+                  }} 
+                  variant="outline" 
+                  className="flex-1"
+                >
+                  CANCEL
+                </Button>
+                <Button 
+                  onClick={() => {
+                    if (customEmergencyType.trim()) {
+                      setShowCustomEmergencyInput(false);
+                      setShowSOSConfirm(true);
+                    }
+                  }}
+                  disabled={!customEmergencyType.trim()}
+                  className="flex-1 bg-red-500 hover:bg-red-600"
+                >
+                  CONFIRM
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SOS Confirmation Modal */}
+      {showSOSConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-auto">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Confirm Emergency Alert</h3>
+              <p className="text-gray-600 mb-4">
+                This will send your location and details for a <span className="font-bold text-red-700">
+                  {selectedIncidentTypeForConfirmation === 'Others' ? customEmergencyType : selectedIncidentTypeForConfirmation}
+                </span> emergency to MDRRMO emergency responders.
+              </p>
+              
+              {/* Casualties Input for relevant emergency types */}
+              {['Medical Emergency', 'Vehicular Incident', 'Public Disturbance'].includes(selectedIncidentTypeForConfirmation || '') && (
+                <div className="mb-4">
+                  <label htmlFor="casualties" className="block text-sm font-medium text-gray-700 mb-1">
+                    Bilang ng involve sa insidente
+                  </label>
+                  <Input
+                    id="casualties"
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="Enter number of casualties"
+                    value={casualties}
+                    onChange={(e) => {
+                      // Only allow numeric input
+                      const value = e.target.value;
+                      if (value === '' || /^\d+$/.test(value)) {
+                        setCasualties(value);
+                      }
+                    }}
+                    className="w-full"
+                  />
+                  {!casualties && (
+                    <p className="mt-1 text-sm text-red-600">Ilagay ang bilang ng involve sa insidente.</p>
+                  )}
+                </div>
+              )}
+              
+              <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
+                <Button onClick={cancelSOS} variant="outline" className="flex-1 bg-transparent">
+                  CANCEL
+                </Button>
+                <Button 
+                  onClick={() => confirmSOS(selectedIncidentTypeForConfirmation === 'Others' ? customEmergencyType : selectedIncidentTypeForConfirmation!)} 
+                  disabled={['Medical Emergency', 'Vehicular Incident', 'Public Disturbance'].includes(selectedIncidentTypeForConfirmation || '') && !casualties}
+                  className={`flex-1 bg-red-500 ${!['Medical Emergency', 'Vehicular Incident', 'Public Disturbance'].includes(selectedIncidentTypeForConfirmation || '') || casualties ? 'hover:bg-red-600' : 'opacity-50 cursor-not-allowed'}`}
+                >
+                  OKAY
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+
+    {/* Bottom Navigation */}
+    <div className="fixed bottom-0 left-0 right-0 bg-orange-500/95 backdrop-blur-sm text-white p-4 z-10">
+      <div className="flex justify-center items-center">
+        <span className="text-xs sm:text-sm font-medium">Copyright © 2025 | Jolo Gracilla</span>
       </div>
     </div>
+  </div>
+  </div>
   )
 }

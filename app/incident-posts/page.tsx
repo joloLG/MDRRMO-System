@@ -4,7 +4,7 @@ import React from "react"
 import useSWR from "swr"
 import { formatDistanceToNow } from "date-fns"
 import { useRouter } from "next/navigation"
-import { Loader2, Search } from "lucide-react"
+import { Loader2, Search, Heart } from "lucide-react"
 
 import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,6 +20,9 @@ interface PublishedNarrative {
   internal_report_id: number | null
   published_at: string | null
   created_at: string
+  divisions: string[]
+  likes_count: number
+  user_liked: boolean
 }
 
 interface FetchParams {
@@ -40,7 +43,7 @@ const fetchPublishedNarratives = async ({ page, search }: FetchParams): Promise<
 
   let query = supabase
     .from("narrative_reports")
-    .select("id, title, narrative_text, image_url, internal_report_id, published_at, created_at", { count: "exact" })
+    .select("id, title, narrative_text, image_url, internal_report_id, published_at, created_at, divisions", { count: "exact" })
     .eq("status", "published")
     .order("published_at", { ascending: false })
     .range(from, to)
@@ -50,14 +53,59 @@ const fetchPublishedNarratives = async ({ page, search }: FetchParams): Promise<
     query = query.or(`title.ilike.%${term}%,narrative_text.ilike.%${term}%`)
   }
 
-  const { data, error, count } = await query
+  const { data: postsData, error: postsError, count } = await query
 
-  if (error) {
-    throw new Error(error.message)
+  if (postsError) {
+    throw new Error(postsError.message)
   }
 
+  if (!postsData || postsData.length === 0) {
+    return {
+      records: [],
+      total: count ?? 0,
+    }
+  }
+
+  // Get current user
+  const { data: userData } = await supabase.auth.getUser()
+  const userId = userData.user?.id
+
+  // Get likes count for each post
+  const postIds = postsData.map(post => post.id)
+  const { data: likesData, error: likesError } = await supabase
+    .from("post_likes")
+    .select("post_id, user_id")
+    .in("post_id", postIds)
+
+  if (likesError) {
+    console.error("Error fetching likes:", likesError)
+  }
+
+  // Process likes data
+  const likesMap = new Map<string, { count: number; userLiked: boolean }>()
+  if (likesData) {
+    likesData.forEach(like => {
+      const existing = likesMap.get(like.post_id) || { count: 0, userLiked: false }
+      existing.count++
+      if (like.user_id === userId) {
+        existing.userLiked = true
+      }
+      likesMap.set(like.post_id, existing)
+    })
+  }
+
+  // Combine data
+  const processedData = postsData.map(post => {
+    const likes = likesMap.get(post.id) || { count: 0, userLiked: false }
+    return {
+      ...post,
+      likes_count: likes.count,
+      user_liked: likes.userLiked,
+    }
+  })
+
   return {
-    records: (data as PublishedNarrative[]) || [],
+    records: processedData as PublishedNarrative[],
     total: count ?? 0,
   }
 }
@@ -68,7 +116,7 @@ export default function IncidentPostsPage() {
   const deferredSearch = React.useDeferredValue(searchTerm)
   const [page, setPage] = React.useState(1)
 
-  const { data, error, isLoading } = useSWR({ key: "incident-posts", page, search: deferredSearch }, () =>
+  const { data, error, isLoading, mutate } = useSWR({ key: "incident-posts", page, search: deferredSearch }, () =>
     fetchPublishedNarratives({ page, search: deferredSearch }),
   )
 
@@ -76,9 +124,35 @@ export default function IncidentPostsPage() {
   const total = data?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
-  React.useEffect(() => {
-    setPage(1)
-  }, [deferredSearch])
+  const handleLike = async (postId: string, currentlyLiked: boolean) => {
+    try {
+      if (currentlyLiked) {
+        // Unlike
+        const { error } = await supabase
+          .from("post_likes")
+          .delete()
+          .eq("post_id", postId)
+          .eq("user_id", (await supabase.auth.getUser()).data.user?.id)
+
+        if (error) throw error
+      } else {
+        // Like
+        const { error } = await supabase
+          .from("post_likes")
+          .insert({
+            post_id: postId,
+            user_id: (await supabase.auth.getUser()).data.user?.id,
+          })
+
+        if (error) throw error
+      }
+
+      // Refresh data
+      await mutate()
+    } catch (error) {
+      console.error("Error toggling like:", error)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
@@ -117,16 +191,6 @@ export default function IncidentPostsPage() {
           <div className="space-y-6">
             {records.map((record) => (
               <Card key={record.id} className="overflow-hidden shadow-md">
-                {record.image_url ? (
-                  <div className="relative w-full overflow-hidden bg-gray-200">
-                    <img
-                      src={record.image_url}
-                      alt={record.title}
-                      className="w-full object-cover"
-                      style={{ maxHeight: 280 }}
-                    />
-                  </div>
-                ) : null}
                 <CardHeader className="bg-white pb-2">
                   <div className="flex items-start justify-between gap-2">
                     <CardTitle className="text-xl font-semibold text-gray-900 break-words">
@@ -141,15 +205,45 @@ export default function IncidentPostsPage() {
                       ? `Published ${formatDistanceToNow(new Date(record.published_at), { addSuffix: true })}`
                       : `Created ${formatDistanceToNow(new Date(record.created_at), { addSuffix: true })}`}
                   </p>
+                  {record.divisions && record.divisions.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {record.divisions.map((division, index) => (
+                        <Badge key={index} variant="secondary" className="text-xs">
+                          {division}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </CardHeader>
                 <CardContent className="space-y-3 bg-white">
                   <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700">
                     {record.narrative_text}
                   </p>
-                  <div className="text-xs text-gray-500">
-                    Last updated {formatDistanceToNow(new Date(record.created_at), { addSuffix: true })}
+                  <div className="flex items-center justify-between">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleLike(record.id, record.user_liked)}
+                      className={`flex items-center gap-1 ${record.user_liked ? 'text-red-500' : 'text-gray-500'}`}
+                    >
+                      <Heart className={`h-4 w-4 ${record.user_liked ? 'fill-current' : ''}`} />
+                      {record.likes_count}
+                    </Button>
+                    <div className="text-xs text-gray-500">
+                      Last updated {formatDistanceToNow(new Date(record.created_at), { addSuffix: true })}
+                    </div>
                   </div>
                 </CardContent>
+                {record.image_url ? (
+                  <div className="relative w-full overflow-hidden bg-gray-200">
+                    <img
+                      src={record.image_url}
+                      alt={record.title}
+                      className="w-full object-cover"
+                      style={{ maxHeight: 280 }}
+                    />
+                  </div>
+                ) : null}
               </Card>
             ))}
           </div>
