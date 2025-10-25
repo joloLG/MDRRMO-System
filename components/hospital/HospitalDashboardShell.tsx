@@ -288,9 +288,21 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
       setLoading(true)
       setError(null)
 
-      const { data: authData, error: authError } = await supabase.auth.getUser()
-      if (authError) throw authError
-      const user = authData?.user
+      const {
+        data: sessionData,
+        error: sessionError,
+      } = await supabase.auth.getSession()
+
+      if (sessionError) {
+        if (sessionError.name === "AuthSessionMissingError") {
+          setError("Hospital session not found. Please sign in again.")
+          setLoading(false)
+          return
+        }
+        throw sessionError
+      }
+
+      const user = sessionData.session?.user ?? null
       if (!user) {
         setError("You must be signed in to view hospital data.")
         setLoading(false)
@@ -317,6 +329,7 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
       }).then(async (response) => {
         if (!response.ok) {
           let message = response.statusText
