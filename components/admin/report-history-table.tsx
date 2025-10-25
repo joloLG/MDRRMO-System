@@ -26,15 +26,15 @@ interface InternalReportRow {
   number_of_responders: number | null;
   prepared_by: string;
   created_at: string; // TIMESTAMPTZ
-  patients: ReportPatientSummary[];
+  patients: ReportPatientStatus[];
 }
 
-interface ReportPatientSummary {
-  id: string;
-  patient_name: string | null;
-  receiving_hospital_name: string | null;
-  evacuation_priority: string | null;
-  injury_types: string | null;
+interface ReportPatientStatus {
+  id: string
+  patient_name: string | null
+  current_status: string | null
+  receiving_hospital_id: string | null
+  receiving_hospital_name: string | null
 }
 
 // Define BaseEntry for reference tables (Barangays, Incident Types, ER Teams)
@@ -62,6 +62,7 @@ interface ReportHistoryTableProps {
   setCurrentPage: (page: number) => void;
   totalPages: number;
   totalReports: number;
+  onViewReport: (report: InternalReportRow) => void | Promise<void>;
   // --------------------------------
 }
 
@@ -83,6 +84,7 @@ export function ReportHistoryTable({
   setCurrentPage,
   totalPages,
   totalReports,
+  onViewReport,
 }: ReportHistoryTableProps) {
 
   const router = useRouter()
@@ -453,6 +455,8 @@ export function ReportHistoryTable({
                   <TableHead className="font-semibold text-gray-700">ER Team</TableHead>
                   <TableHead className="font-semibold text-gray-700">Prepared By</TableHead>
                   <TableHead className="font-semibold text-gray-700">Created At</TableHead>
+                  <TableHead className="font-semibold text-gray-700">Hospitals Patient Status</TableHead>
+                  <TableHead className="font-semibold text-gray-700 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -478,6 +482,43 @@ export function ReportHistoryTable({
                     <TableCell className="text-gray-700">{getErTeamName(report.er_team_id)}</TableCell>
                     <TableCell className="text-gray-700">{report.prepared_by}</TableCell>
                     <TableCell className="text-gray-700">{format(new Date(report.created_at), 'PPP HH:mm')}</TableCell>
+                    <TableCell className="text-gray-700">
+                      {report.patients && report.patients.length > 0 ? (
+                        <div className="space-y-1">
+                          {report.patients.slice(0, 2).map((patient) => (
+                            <div key={patient.id} className="flex items-center justify-between gap-4 rounded-md bg-gray-50 px-3 py-2 text-xs">
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate font-medium text-gray-800">{patient.patient_name || "Unnamed patient"}</p>
+                                <p className="truncate text-[11px] text-gray-500">
+                                  {patient.receiving_hospital_name || patient.receiving_hospital_id || "No hospital assigned"}
+                                </p>
+                              </div>
+                              <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-semibold uppercase text-orange-700">
+                                {patient.current_status ? patient.current_status.replace(/_/g, " ") : "pending"}
+                              </span>
+                            </div>
+                          ))}
+                          {report.patients.length > 2 ? (
+                            <p className="text-[11px] font-medium text-gray-500">+{report.patients.length - 2} more patients…</p>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-400">No patients recorded</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-orange-300 text-orange-600 hover:bg-orange-50"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void onViewReport(report);
+                        }}
+                      >
+                        View report
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

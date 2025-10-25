@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
 import { format, formatDistanceToNow } from "date-fns"
 import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -27,6 +28,15 @@ interface HospitalRecord {
   name: string
 }
 
+const HOSPITAL_NAME_OVERRIDES: Record<string, string> = {
+  "Bulan Medicare Hospital / Pawa Hospital": "Bulan Medicare Hospital / Pawa Hospital",
+  "SMMG - Bulan": "SMMG - Bulan",
+  "Sorsogon Provincial Hospital": "Sorsogon Provincial Hospital",
+  "SMMG-HSC (SorDoc)": "SMMG-HSC (SorDoc)",
+  "Irosin District Hospital": "Irosin District Hospital",
+  "Irosin General Hospital / IMAC": "Irosin General Hospital / IMAC",
+}
+
 type PatientStatus =
   | "pending"
   | "critical"
@@ -50,16 +60,9 @@ const PATIENT_STATUS_VALUES: PatientStatus[] = [
 
 const ACTIONABLE_STATUSES: PatientStatus[] = PATIENT_STATUS_VALUES.filter((status) => status !== "pending")
 
-const SUMMARY_STATUS_ORDER: PatientStatus[] = [
-  "pending",
-  "critical",
-  "still_in_hospital",
-  "on_recovery",
-  "healthy",
-  "discharged",
-  "transferred",
-  "dead",
-]
+const SUMMARY_STATUS_ORDER: PatientStatus[] = PATIENT_STATUS_VALUES.filter((status) =>
+  status !== "transferred" && status !== "still_in_hospital"
+)
 
 const STATUS_METADATA: Record<PatientStatus, {
   label: string
@@ -223,6 +226,9 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
   const [actionError, setActionError] = React.useState<string | null>(null)
   const [showActionDialog, setShowActionDialog] = React.useState(false)
   const [lastRefreshedAt, setLastRefreshedAt] = React.useState<Date | null>(null)
+  const [isReportLoading, setIsReportLoading] = React.useState(false)
+  const [reportError, setReportError] = React.useState<string | null>(null)
+  const [selectedPatients, setSelectedPatients] = React.useState<InternalReportPatientRecord[]>([])
 
   const hospitalsById = React.useMemo(() => {
     const map: Record<string, HospitalRecord> = {}
@@ -232,12 +238,26 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
     return map
   }, [hospitals])
 
+  const transferHospitals = React.useMemo(() => {
+    const list = hospital ? hospitals.filter((entry) => entry.id !== hospital.id) : hospitals
+    return list
+  }, [hospital, hospitals])
+
   const getSafeStatus = React.useCallback((status: string | null | undefined) => normalizeStatus(status), [])
 
   const normalizeId = React.useCallback((value: number | string | null | undefined) => {
     if (value === null || value === undefined) return null
     return String(value)
   }, [])
+
+  const getHospitalDisplayName = React.useCallback((value: number | string | null | undefined) => {
+    const normalized = normalizeId(value)
+    if (normalized === null) return "—"
+    const record = hospitalsById[normalized]
+    if (record?.name) return record.name
+    if (HOSPITAL_NAME_OVERRIDES[normalized]) return HOSPITAL_NAME_OVERRIDES[normalized]
+    return "—"
+  }, [hospitalsById, normalizeId])
 
   const getBarangayName = React.useCallback((id: number | string | null | undefined) => {
     const normalized = normalizeId(id)
@@ -292,8 +312,26 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
 
       const hospitalId = mapping.hospital_id
 
-      const [hospitalsRes, barangaysRes, incidentTypesRes, erTeamsRes, patientsRes, historyRes] = await Promise.all([
-        supabase.from("hospitals").select("id, name").order("name", { ascending: true }),
+      const hospitalsPromise = fetch("/api/hospital/hospitals", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }).then(async (response) => {
+        if (!response.ok) {
+          let message = response.statusText
+          try {
+            const payload = await response.json()
+            if (payload?.error) message = payload.error
+          } catch {}
+          throw new Error(message || "Failed to load hospitals")
+        }
+
+        return response.json()
+      })
+
+      const [hospitalsPayload, barangaysRes, incidentTypesRes, erTeamsRes, patientsRes, historyRes] = await Promise.all([
+        hospitalsPromise,
         supabase.from("barangays").select("id, name").order("name", { ascending: true }),
         supabase.from("incident_types").select("id, name").order("name", { ascending: true }),
         supabase.from("er_teams").select("id, name").order("name", { ascending: true }),
@@ -301,7 +339,7 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
           .from("internal_report_patients")
           .select(`
             *,
-            internal_report:internal_report_id (
+            internal_report:internal_reports!internal_report_patients_internal_report_id_fkey (
               id,
               original_report_id,
               incident_type_id,
@@ -336,14 +374,18 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
           .limit(400),
       ])
 
-      if (hospitalsRes.error) throw hospitalsRes.error
       if (barangaysRes.error) throw barangaysRes.error
       if (incidentTypesRes.error) throw incidentTypesRes.error
       if (erTeamsRes.error) throw erTeamsRes.error
       if (patientsRes.error) throw patientsRes.error
       if (historyRes.error) throw historyRes.error
 
-      const hospitalRows = (hospitalsRes.data ?? []) as HospitalRecord[]
+      const hospitalRows = ((hospitalsPayload?.hospitals ?? []) as Array<{ id: string; name: string | null }>).map((row) => ({
+        id: row.id,
+        name: typeof row.name === "string" && row.name.trim().length > 0
+          ? row.name.trim()
+          : HOSPITAL_NAME_OVERRIDES[row.id] ?? row.id,
+      })) as HospitalRecord[]
       setHospitals(hospitalRows)
       const matchedHospital = hospitalRows.find((row) => row.id === hospitalId) ?? null
       setHospital(matchedHospital)
@@ -352,12 +394,15 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
       setIncidentTypes(incidentTypesRes.data as BaseEntry[])
       setErTeams(erTeamsRes.data as BaseEntry[])
 
-      type PatientQueryRow = InternalReportPatientRecord & { internal_report: InternalReportRecord | null }
+      type PatientQueryRow = InternalReportPatientRecord & { internal_report: InternalReportRecord | InternalReportRecord[] | null }
       const patientEntries: PatientWithReport[] = (patientsRes.data ?? []).map((row) => {
         const { internal_report, ...patientData } = row as unknown as PatientQueryRow
+        const normalizedReport = Array.isArray(internal_report)
+          ? internal_report[0] ?? null
+          : internal_report ?? null
         return {
           patient: patientData,
-          report: internal_report ?? null,
+          report: normalizedReport,
         }
       })
       setPatients(patientEntries)
@@ -387,6 +432,12 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
     setActionTransferHospitalId(selectedActionPatient.patient.current_transfer_hospital_id ?? "")
     setActionError(null)
   }, [selectedActionPatient])
+
+  React.useEffect(() => {
+    if (actionStatus !== "transferred") {
+      setActionTransferHospitalId("")
+    }
+  }, [actionStatus])
 
   const statusCounts = React.useMemo(() => {
     const counts = PATIENT_STATUS_VALUES.reduce<Record<PatientStatus, number>>((acc, status) => {
@@ -441,18 +492,75 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
     return map
   }, [historyEntries])
 
+  const fetchReportDetail = React.useCallback(
+    async (reportId: number) => {
+      setIsReportLoading(true)
+      setReportError(null)
+
+      try {
+        const response = await fetch(`/api/hospital/internal-reports/${reportId}`)
+        if (!response.ok) {
+          let message = response.statusText || "Failed to load report detail"
+          try {
+            const payload = await response.json()
+            if (payload?.error) message = payload.error
+          } catch {}
+          throw new Error(message)
+        }
+
+        const payload = (await response.json()) as {
+          report: InternalReportRecord
+          patients: InternalReportPatientRecord[]
+          barangay: string
+          incidentType: string
+          erTeam: string
+        }
+
+        setSelectedReport(payload.report)
+        setSelectedMeta({
+          barangay: payload.barangay,
+          incidentType: payload.incidentType,
+          erTeam: payload.erTeam,
+        })
+        setSelectedPatients(payload.patients)
+      } catch (error: any) {
+        console.error("Failed to fetch report detail", error)
+        setReportError(error?.message || "Failed to load report detail. Please try again.")
+      } finally {
+        setIsReportLoading(false)
+      }
+    },
+    [],
+  )
+
   const openReportForPatient = (patient: PatientWithReport) => {
-    if (!patient.report) return
-    setSelectedReport(patient.report)
+    setReportError(null)
+    const report = patient.report
+    if (!report) {
+      setReportError("Report detail unavailable for this patient.")
+      setSelectedReport(null)
+      setSelectedPatients([])
+      setIsReportLoading(false)
+      return
+    }
+
+    setSelectedReport(report)
     setSelectedMeta({
-      barangay: getBarangayName(patient.report.barangay_id),
-      incidentType: getIncidentTypeName(patient.report.incident_type_id),
-      erTeam: getErTeamName(patient.report.er_team_id),
+      barangay: getBarangayName(report.barangay_id),
+      incidentType: getIncidentTypeName(report.incident_type_id),
+      erTeam: getErTeamName(report.er_team_id),
     })
+
+    const initialPatients = getPatientsForReport(report.id)
+    setSelectedPatients(initialPatients)
+    void fetchReportDetail(report.id)
   }
 
   const closeReportDialog = () => {
     setSelectedReport(null)
+    setSelectedPatients([])
+    setReportError(null)
+    setIsReportLoading(false)
   }
 
   const openActionDialog = (patient: PatientWithReport) => {
@@ -477,32 +585,65 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
       return
     }
 
+    const previousHospitalId = patient.receiving_hospital_id
+
     const isTransfer = actionStatus === "transferred"
     if (isTransfer && !actionTransferHospitalId) {
       setActionError("Please choose the receiving hospital for the transfer.")
       return
     }
+    if (isTransfer && hospital && actionTransferHospitalId === hospital.id) {
+      setActionError("Please select a different hospital when transferring a patient.")
+      return
+    }
+
+    const trimmedNotes = actionNotes.trim()
 
     setIsSubmittingAction(true)
     setActionError(null)
 
     try {
-      await supabase.from("patient_status_history").insert({
-        internal_report_patient_id: patient.id,
-        hospital_id: patient.receiving_hospital_id,
-        status: actionStatus,
-        notes: actionNotes.trim() ? actionNotes.trim() : null,
-        transfer_hospital_id: isTransfer ? actionTransferHospitalId || null : null,
-      })
-
-      await supabase
-        .from("internal_report_patients")
-        .update({
-          current_status: actionStatus,
-          current_status_notes: actionNotes.trim() ? actionNotes.trim() : null,
-          current_transfer_hospital_id: isTransfer ? actionTransferHospitalId || null : null,
+      if (isTransfer) {
+        const response = await fetch("/api/hospital/transfer-patient", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            patientId: patient.id,
+            targetHospitalId: actionTransferHospitalId,
+            notes: trimmedNotes || null,
+          }),
         })
-        .eq("id", patient.id)
+
+        if (!response.ok) {
+          let message = response.statusText
+          try {
+            const payload = await response.json()
+            if (payload?.error) {
+              message = payload.error
+            }
+          } catch {}
+          throw new Error(message || "Failed to transfer patient")
+        }
+      } else {
+        await supabase.from("patient_status_history").insert({
+          internal_report_patient_id: patient.id,
+          hospital_id: previousHospitalId,
+          status: actionStatus,
+          notes: trimmedNotes ? trimmedNotes : null,
+          transfer_hospital_id: null,
+        })
+
+        await supabase
+          .from("internal_report_patients")
+          .update({
+            current_status: actionStatus,
+            current_status_notes: trimmedNotes ? trimmedNotes : null,
+            current_transfer_hospital_id: null,
+          })
+          .eq("id", patient.id)
+      }
 
       closeActionDialog()
       await loadHospitalData()
@@ -519,26 +660,41 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
     void loadHospitalData()
   }
 
-  const summaryCards = (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      {SUMMARY_STATUS_ORDER.map((status) => {
-        const meta = STATUS_METADATA[status]
-        const Icon = meta.icon
-        return (
-          <Card key={status} className={cn("border bg-white shadow-sm", meta.cardBorderClass)}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">{meta.label}</CardTitle>
-              <Icon className={cn("h-5 w-5", meta.iconClass)} />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-gray-900">{statusCounts[status]}</div>
-              <p className="text-xs text-gray-500">{meta.description}</p>
-            </CardContent>
-          </Card>
-        )
-      })}
-    </div>
-  )
+  React.useEffect(() => {
+    if (!hospital) return
+
+    const channel = supabase
+      .channel(`hospital-dashboard-${hospital.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "internal_report_patients",
+          filter: `receiving_hospital_id=eq.${hospital.id}`,
+        },
+        () => {
+          void loadHospitalData()
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "patient_status_history",
+          filter: `hospital_id=eq.${hospital.id}`,
+        },
+        () => {
+          void loadHospitalData()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [hospital, loadHospitalData])
 
   const pendingView = (
     <Card className="border-none shadow-lg">
@@ -682,8 +838,8 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
                   const patient = entry.patient
                   const latestHistory = latestHistoryByPatient.get(patient.id) ?? null
                   const status = getSafeStatus(patient.current_status)
-                  const transferHospital = patient.current_transfer_hospital_id
-                    ? hospitalsById[patient.current_transfer_hospital_id]?.name ?? patient.current_transfer_hospital_id
+                  const transferHospital = status === "transferred"
+                    ? getHospitalDisplayName(patient.current_transfer_hospital_id)
                     : null
 
                   return (
@@ -705,7 +861,7 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
                         {latestHistory?.notes ? latestHistory.notes : <span className="text-gray-400">No notes</span>}
                       </TableCell>
                       <TableCell className="text-sm text-gray-700">
-                        {status === "transferred" ? transferHospital ?? "—" : "—"}
+                        {transferHospital}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
@@ -775,17 +931,39 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
       <div className="relative flex min-h-screen flex-col">
         <header className="sticky top-0 z-30 bg-orange-500/95 backdrop-blur-sm text-white px-4 py-6 shadow-lg sm:px-6 lg:px-10">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-sm uppercase tracking-wide text-orange-100">MDRRMO Patient Transfer Portal</p>
-              <h1 className="text-2xl font-bold">{hospital.name} Dashboard</h1>
+            <div className="flex items-center gap-4">
+              <Image
+                src="/images/logo.png"
+                alt="MDRRMO Bulan logo"
+                width={84}
+                height={84}
+                className="h-20 w-20 rounded-full bg-white/90 p-2 object-contain shadow-sm"
+                priority
+              />
+              <div>
+                <p className="text-sm uppercase tracking-wide text-orange-100">MDRRMO Patient Transfer Portal</p>
+                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{hospital ? `${hospital.name} Dashboard` : "Hospital Operations Dashboard"}</h1>
+                <span className="mt-1 inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-white">
+                  <ArrowRight className="h-3.5 w-3.5" />
+                  Empowering hospital coordination across Bulan
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-4 text-sm text-orange-100">
+            <div className="flex items-center gap-3 text-sm text-orange-100">
               {onLogout ? (
                 <Button variant="outline" className="border-white bg-white text-gray-900 hover:bg-white/90" onClick={onLogout}>
                   <LogOut className="mr-2 h-4 w-4 text-gray-900" />
                   Logout
                 </Button>
               ) : null}
+              <Image
+                src="/images/bulan-logo.png"
+                alt="Bulan Municipality logo"
+                width={84}
+                height={84}
+                className="h-20 w-20 rounded-full bg-white/90 p-2 object-contain shadow-sm"
+                priority
+              />
             </div>
           </div>
         </header>
@@ -824,7 +1002,24 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
             </aside>
 
             <section className="flex-1 space-y-8 rounded-2xl bg-white/95 p-6 shadow-xl backdrop-blur lg:min-w-0 lg:p-8">
-              {summaryCards}
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {SUMMARY_STATUS_ORDER.map((status) => {
+                  const meta = STATUS_METADATA[status]
+                  const Icon = meta.icon
+                  return (
+                    <Card key={status} className={cn("border bg-white shadow-sm", meta.cardBorderClass)}>
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium text-gray-500">{meta.label}</CardTitle>
+                        <Icon className={cn("h-5 w-5", meta.iconClass)} />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-gray-900">{statusCounts[status]}</div>
+                        <p className="text-xs text-gray-500">{meta.description}</p>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
               {activeView === "pending" ? pendingView : historyView}
             </section>
           </div>
@@ -846,18 +1041,28 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
             View the patient transfer report and body map diagrams.
           </DialogDescription>
           {selectedReport ? (
-            <div className="h-full overflow-y-auto p-6">
+            <div className="h-full overflow-y-auto p-6 space-y-4">
+              {reportError ? (
+                <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {reportError}
+                </div>
+              ) : null}
               <InternalReportDetail
                 report={selectedReport}
-                patients={getPatientsForReport(selectedReport.id)}
+                patients={selectedPatients}
                 barangayName={selectedMeta.barangay}
                 incidentTypeName={selectedMeta.incidentType}
                 erTeamName={selectedMeta.erTeam}
                 restrictToPatientView
               />
+              {isReportLoading ? (
+                <p className="text-center text-sm text-gray-500">Refreshing latest report data…</p>
+              ) : null}
             </div>
-          ) : (
+          ) : isReportLoading ? (
             <div className="flex h-48 items-center justify-center text-gray-600">Loading report…</div>
+          ) : (
+            <div className="flex h-48 items-center justify-center text-gray-600">Report detail unavailable.</div>
           )}
         </DialogContent>
       </Dialog>
@@ -910,9 +1115,9 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
                         <SelectValue placeholder="Select receiving hospital" />
                       </SelectTrigger>
                       <SelectContent>
-                        {hospitals.map((option) => (
+                        {transferHospitals.map((option) => (
                           <SelectItem key={option.id} value={option.id}>
-                            {option.name}
+                            {getHospitalDisplayName(option.id)}
                           </SelectItem>
                         ))}
                       </SelectContent>
