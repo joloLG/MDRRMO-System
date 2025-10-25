@@ -664,7 +664,6 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
               <TableRow>
                 <TableHead>Patient</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Incident</TableHead>
                 <TableHead>Updated</TableHead>
                 <TableHead>Notes</TableHead>
                 <TableHead>Transfer</TableHead>
@@ -695,10 +694,6 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={status} />
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-700">
-                        {latestHistory?.incident_type_id ? getIncidentTypeName(latestHistory.incident_type_id) : "—"}
-                        <div className="text-xs text-gray-500">{patient.report ? getBarangayName(patient.report.barangay_id) : ""}</div>
                       </TableCell>
                       <TableCell className="text-sm text-gray-700">
                         {formatDateTime(patient.status_updated_at)}
