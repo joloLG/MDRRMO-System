@@ -2406,11 +2406,11 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         )}
 
         {currentView === 'sendFeedback' && currentUser && (
-          <Card className="w-full max-w-xl bg-white/90 backdrop-blur-sm shadow-lg rounded-lg p-4 sm:p-6">
-            <CardHeader>
-              <CardTitle className="text-xl sm:text-2xl font-bold text-gray-800">Send Feedback</CardTitle>
+          <Card className="w-full max-w-full sm:max-w-2xl bg-white/90 backdrop-blur-sm shadow-lg rounded-lg p-4 sm:p-6 md:p-8 mx-auto">
+            <CardHeader className="w-full px-3 sm:px-6 md:px-8 pb-2 sm:pb-4">
+              <CardTitle className="text-base sm:text-2xl font-bold text-gray-800">Send Feedback</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="w-full space-y-4 sm:space-y-5 px-3 sm:px-6 md:px-8">
               {feedbackSentMessage && (
                 <Alert className="border-green-300 bg-green-50">
                   <AlertTitle className="text-green-700">Success</AlertTitle>
@@ -2424,7 +2424,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                 </Alert>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
                   <Select value={feedbackCategory} onValueChange={(v: any) => setFeedbackCategory(v)}>
@@ -2441,13 +2441,13 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Rating (optional)</label>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                     {[1,2,3,4,5].map(n => (
                       <button
                         key={n}
                         type="button"
                         onClick={() => setFeedbackRating(n === feedbackRating ? 0 : n)}
-                        className="p-1"
+                        className="p-1.5 sm:p-2"
                         aria-label={`rate ${n}`}
                       >
                         <Star className={n <= feedbackRating ? 'w-6 h-6 fill-yellow-400 stroke-yellow-500' : 'w-6 h-6 text-gray-300'} />
@@ -2460,7 +2460,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label htmlFor="feedback" className="block text-sm font-medium text-gray-700">Your Feedback</label>
-                  <span className={`text-xs ${feedbackText.length > FEEDBACK_MAX || feedbackTooShort ? 'text-red-600' : 'text-gray-500'}`}>{feedbackText.length}/{FEEDBACK_MAX}</span>
+                  <span className={`text-[11px] sm:text-xs ${feedbackText.length > FEEDBACK_MAX || feedbackTooShort ? 'text-red-600' : 'text-gray-500'}`}>{feedbackText.length}/{FEEDBACK_MAX}</span>
                 </div>
                 <Textarea
                   id="feedback"
@@ -2468,16 +2468,34 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                   onChange={(e) => setFeedbackText(e.target.value.slice(0, FEEDBACK_MAX))}
                   rows={6}
                   placeholder="Describe the issue or request in detail..."
-                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${feedbackTooShort ? 'focus:ring-red-500 border-red-300' : 'focus:ring-orange-500 border-gray-200'}`}
+                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 min-h-[160px] sm:min-h-[180px] text-sm sm:text-base ${feedbackTooShort ? 'focus:ring-red-500 border-red-300' : 'focus:ring-orange-500 border-gray-200'}`}
                 />
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setFeedbackText(prev => (prev ? `${prev}\n` : '') + 'Bug: Steps to reproduce... Expected vs actual behavior...')}>
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full sm:w-auto justify-start sm:justify-center"
+                    onClick={() => setFeedbackText(prev => (prev ? `${prev}\n` : '') + 'Bug: Steps to reproduce... Expected vs actual behavior...')}
+                  >
                     <Wand2 className="h-4 w-4 mr-1" /> Bug template
                   </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setFeedbackText(prev => (prev ? `${prev}\n` : '') + 'Feature Request: I would like to... Because...')}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full sm:w-auto justify-start sm:justify-center"
+                    onClick={() => setFeedbackText(prev => (prev ? `${prev}\n` : '') + 'Feature Request: I would like to... Because...')}
+                  >
                     <Wand2 className="h-4 w-4 mr-1" /> Feature template
                   </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setFeedbackText(prev => (prev ? `${prev}\n` : '') + 'Question: ...')}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full sm:w-auto justify-start sm:justify-center"
+                    onClick={() => setFeedbackText(prev => (prev ? `${prev}\n` : '') + 'Question: ...')}
+                  >
                     <Wand2 className="h-4 w-4 mr-1" /> Question template
                   </Button>
                 </div>
@@ -2487,7 +2505,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                 {isSendingFeedback ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...</>) : (<><Send className="mr-2 h-4 w-4" /> Send Feedback</>)}
               </Button>
 
-              <div className="mt-8">
+              <div className="mt-6 sm:mt-8">
                 <FeedbackHistory userId={currentUser.id} />
               </div>
             </CardContent>
