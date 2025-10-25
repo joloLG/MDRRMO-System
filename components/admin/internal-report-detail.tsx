@@ -419,6 +419,10 @@ export interface InternalReportPatientRecord {
   emt_ert_date: string | null
   created_at?: string | null
   updated_at?: string | null
+  current_status?: string | null
+  current_status_notes?: string | null
+  current_transfer_hospital_id?: string | null
+  status_updated_at?: string | null
 }
 
 interface ReportDetailProps {

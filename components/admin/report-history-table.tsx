@@ -87,9 +87,28 @@ export function ReportHistoryTable({
 
   const router = useRouter()
 
-  const getBarangayName = (id: number) => barangays.find(b => b.id === id)?.name || 'N/A';
-  const getIncidentTypeName = (id: number) => incidentTypes.find(it => it.id === id)?.name || 'N/A';
-  const getErTeamName = (id: number) => erTeams.find(et => et.id === id)?.name || 'N/A'; 
+  const normalizeId = (value: number | string | null | undefined) => {
+    if (value === null || value === undefined) return null
+    return String(value)
+  }
+
+  const getBarangayName = (id: number | string) => {
+    const normalized = normalizeId(id)
+    if (normalized === null) return 'N/A'
+    return barangays.find((b) => normalizeId(b.id) === normalized)?.name || 'N/A'
+  }
+
+  const getIncidentTypeName = (id: number | string) => {
+    const normalized = normalizeId(id)
+    if (normalized === null) return 'N/A'
+    return incidentTypes.find((it) => normalizeId(it.id) === normalized)?.name || 'N/A'
+  }
+
+  const getErTeamName = (id: number | string) => {
+    const normalized = normalizeId(id)
+    if (normalized === null) return 'N/A'
+    return erTeams.find((et) => normalizeId(et.id) === normalized)?.name || 'N/A'
+  }
 
   // Handlers for pagination buttons
   const goToNextPage = () => {

@@ -193,7 +193,11 @@ const StatusBadge = ({ status }: { status: PatientStatus }) => {
   )
 }
 
-export default function HospitalDashboardPage() {
+export interface HospitalDashboardShellProps {
+  onLogout?: () => void
+}
+
+export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps) {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [hospital, setHospital] = React.useState<HospitalRecord | null>(null)
@@ -562,7 +566,6 @@ export default function HospitalDashboardPage() {
               <TableRow>
                 <TableHead>Patient</TableHead>
                 <TableHead>Priority</TableHead>
-                <TableHead>Incident</TableHead>
                 <TableHead>Received</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -595,10 +598,6 @@ export default function HospitalDashboardPage() {
                         ) : (
                           <span className="text-sm text-gray-500">—</span>
                         )}
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-700">
-                        {report ? getIncidentTypeName(report.incident_type_id) : "—"}
-                        <div className="text-xs text-gray-500">{report ? getBarangayName(report.barangay_id) : ""}</div>
                       </TableCell>
                       <TableCell className="text-sm text-gray-700">
                         {formatDateTime(patient.created_at)}
@@ -665,6 +664,7 @@ export default function HospitalDashboardPage() {
               <TableRow>
                 <TableHead>Patient</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Incident</TableHead>
                 <TableHead>Updated</TableHead>
                 <TableHead>Notes</TableHead>
                 <TableHead>Transfer</TableHead>
@@ -695,6 +695,10 @@ export default function HospitalDashboardPage() {
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={status} />
+                      </TableCell>
+                      <TableCell className="text-sm text-gray-700">
+                        {latestHistory?.incident_type_id ? getIncidentTypeName(latestHistory.incident_type_id) : "—"}
+                        <div className="text-xs text-gray-500">{patient.report ? getBarangayName(patient.report.barangay_id) : ""}</div>
                       </TableCell>
                       <TableCell className="text-sm text-gray-700">
                         {formatDateTime(patient.status_updated_at)}
@@ -775,21 +779,25 @@ export default function HospitalDashboardPage() {
 
       <div className="relative flex min-h-screen flex-col">
         <header className="sticky top-0 z-30 bg-orange-500/95 backdrop-blur-sm text-white px-4 py-6 shadow-lg sm:px-6 lg:px-10">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-sm uppercase tracking-wide text-orange-100">MDRRMO Patient Transfer Portal</p>
               <h1 className="text-2xl font-bold">{hospital.name} Dashboard</h1>
             </div>
-            <div className="text-right text-sm text-orange-100">
-              <p>Signed-in hospital view</p>
-              <p>{lastRefreshedAt ? `Updated ${formatDistanceToNow(lastRefreshedAt, { addSuffix: true })}` : "Awaiting sync"}</p>
+            <div className="flex items-center gap-4 text-sm text-orange-100">
+              {onLogout ? (
+                <Button variant="outline" className="border-white bg-white text-gray-900 hover:bg-white/90" onClick={onLogout}>
+                  <LogOut className="mr-2 h-4 w-4 text-gray-900" />
+                  Logout
+                </Button>
+              ) : null}
             </div>
           </div>
         </header>
 
         <main className="flex-1 w-full py-10">
           <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-8 px-4 sm:px-6 lg:flex-row lg:px-12 xl:gap-12">
-            <aside className="w-full space-y-6 rounded-2xl bg-white/90 p-4 shadow-lg backdrop-blur lg:sticky lg:top-32 lg:w-80">
+            <aside className="w-full space-y-4 rounded-2xl bg-white/90 p-4 shadow-lg backdrop-blur lg:sticky lg:top-32 lg:w-80">
               <div className="space-y-2">
                 <h2 className="text-base font-semibold text-gray-900">Navigation</h2>
                 {SIDEBAR_ITEMS.map((item) => {
@@ -817,22 +825,6 @@ export default function HospitalDashboardPage() {
                     </button>
                   )
                 })}
-              </div>
-
-              <div className="space-y-3 rounded-xl border border-orange-200 bg-white/80 p-4 text-sm text-gray-700 shadow-sm">
-                <h3 className="text-base font-semibold text-gray-900">Quick tips</h3>
-                <p className="flex items-start gap-2">
-                  <ArrowRight className="mt-0.5 h-4 w-4 text-orange-500" />
-                  Pending patients appear here immediately after MDRRMO endorsement.
-                </p>
-                <p className="flex items-start gap-2">
-                  <ArrowRight className="mt-0.5 h-4 w-4 text-orange-500" />
-                  Recording an action automatically archives the patient into history.
-                </p>
-                <p className="flex items-start gap-2">
-                  <ArrowRight className="mt-0.5 h-4 w-4 text-orange-500" />
-                  Transferred patients require selecting the receiving hospital.
-                </p>
               </div>
             </aside>
 
@@ -961,4 +953,3 @@ export default function HospitalDashboardPage() {
     </div>
   )
 }
-

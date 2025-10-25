@@ -234,7 +234,7 @@ export function RoleSelection({ onRoleSelected, onBack }: RoleSelectionProps) {
                 </div>
               )}
 
-              <div className="flex gap-3 pt-4">
+              <div className="flex flex-col gap-3 pt-4 sm:flex-row">
                 <Button
                   type="button"
                   variant="outline"
