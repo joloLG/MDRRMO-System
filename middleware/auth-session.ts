@@ -56,7 +56,14 @@ export async function authSessionMiddleware(request: NextRequest, response: Next
     }
 
     try {
-      const { data: userProfile, error: roleError } = await supabase
+      // Use service role client to bypass RLS for role checking
+      const { createClient } = require('@supabase/supabase-js');
+      const serviceClient = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
+
+      const { data: userProfile, error: roleError } = await serviceClient
         .from('users')
         .select('user_type')
         .eq('id', session.user.id)

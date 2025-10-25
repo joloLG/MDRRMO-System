@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Loader2, LogOut, Info } from "lucide-react" // Removed Ban, CheckCircle, CalendarIcon
+import { Loader2, LogOut, Info, CheckCircle, XCircle, Clock } from "lucide-react" // Removed Ban, CheckCircle, CalendarIcon
 import { userQueries, hospitalQueries, type User, type Hospital, supabase } from "@/lib/supabase"
 import { robustSignOut } from "@/lib/auth"
 import { cn } from "@/lib/utils"
@@ -64,6 +64,40 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
   const [hospitals, setHospitals] = useState<Hospital[]>([])
   const [hospitalAssignments, setHospitalAssignments] = useState<Record<string, string | null>>({})
 
+  // Approval requests state
+  type ApprovalRequest = {
+    id: string
+    user_id: string
+    requested_role: 'admin' | 'hospital'
+    requested_at: string
+    reviewed_at?: string
+    reviewed_by?: string
+    status: 'pending' | 'approved' | 'rejected'
+    notes?: string | null
+    hospital_id?: string
+    er_team_id?: number
+    er_team?: {
+      name: string
+    }
+    user?: {
+      firstName: string
+      lastName: string
+      email: string
+      mobileNumber?: string
+    }
+    isSynthetic?: boolean
+  }
+  const [approvalRequests, setApprovalRequests] = useState<ApprovalRequest[]>([])
+  const [isLoadingApprovals, setIsLoadingApprovals] = useState(false)
+  const [approvalFilter, setApprovalFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending')
+
+  // Approval action dialogs
+  const [showApprovalDialog, setShowApprovalDialog] = useState(false)
+  const [approvalTarget, setApprovalTarget] = useState<ApprovalRequest | null>(null)
+  const [approvalAction, setApprovalAction] = useState<'approve' | 'reject'>('approve')
+  const [approvalNotes, setApprovalNotes] = useState('')
+  const [isSubmittingApproval, setIsSubmittingApproval] = useState(false)
+
   // Fetch all users
   const fetchUsers = async () => {
     try {
@@ -98,10 +132,217 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
     }
   }
 
+  const fetchApprovalRequests = async () => {
+    try {
+      setIsLoadingApprovals(true)
+      const [requestsResult, pendingUsersResult] = await Promise.all([
+        supabase
+          .from('admin_approval_requests')
+          .select(`
+            *,
+            user:user_id (
+              firstName,
+              lastName,
+              email,
+              mobileNumber
+            ),
+            er_team:er_team_id (
+              name
+            )
+          `)
+          .order('requested_at', { ascending: false }),
+        supabase
+          .from('users')
+          .select('id, firstName, lastName, email, mobileNumber, status, requested_role, created_at')
+          .in('status', ['pending_admin', 'pending_hospital'])
+      ])
+
+      if (requestsResult.error) throw requestsResult.error
+      if (pendingUsersResult.error) throw pendingUsersResult.error
+
+      const fetchedRequests = (requestsResult.data || []) as ApprovalRequest[]
+      const existingUserIds = new Set(fetchedRequests.map((req) => req.user_id))
+
+      const syntheticRequests: ApprovalRequest[] = (pendingUsersResult.data || [])
+        .filter((pendingUser) => !existingUserIds.has(pendingUser.id))
+        .map((pendingUser) => {
+          const requestedRole = (pendingUser.requested_role === 'hospital' || pendingUser.status === 'pending_hospital')
+            ? 'hospital'
+            : 'admin'
+
+          return {
+            id: `pending-${pendingUser.id}`,
+            user_id: pendingUser.id,
+            requested_role: requestedRole,
+            requested_at: pendingUser.created_at ?? new Date().toISOString(),
+            status: 'pending',
+            notes: null,
+            isSynthetic: true,
+            user: {
+              firstName: pendingUser.firstName,
+              lastName: pendingUser.lastName,
+              email: pendingUser.email,
+              mobileNumber: pendingUser.mobileNumber ?? undefined,
+            },
+          }
+        })
+
+      const combinedRequests = [...fetchedRequests, ...syntheticRequests].sort((a, b) =>
+        new Date(b.requested_at).getTime() - new Date(a.requested_at).getTime()
+      )
+
+      setApprovalRequests(combinedRequests)
+    } catch (err) {
+      console.error("Error fetching approval requests:", err)
+      setError("Failed to load approval requests. Please try again later.")
+    } finally {
+      setIsLoadingApprovals(false)
+    }
+  }
+
+  const handleApprovalAction = async (requestId: string, action: 'approve' | 'reject', notes?: string) => {
+    try {
+      const existingRequest = approvalRequests.find(r => r.id === requestId)
+      if (!existingRequest) return
+
+      let workingRequest: ApprovalRequest = existingRequest
+
+      // If this is a synthetic request, create a formal record first
+      if (existingRequest.isSynthetic) {
+        const hospitalId = existingRequest.requested_role === 'hospital'
+          ? hospitalAssignments[existingRequest.user_id] ?? null
+          : null
+
+        const { data: createdRequest, error: createError } = await supabase
+          .from('admin_approval_requests')
+          .insert({
+            user_id: existingRequest.user_id,
+            requested_role: existingRequest.requested_role,
+            status: 'pending',
+            hospital_id: hospitalId,
+            notes: notes || null,
+          })
+          .select(`
+            *,
+            user:user_id (
+              firstName,
+              lastName,
+              email,
+              mobileNumber
+            ),
+            er_team:er_team_id (
+              name
+            )
+          `)
+          .single()
+
+        if (createError || !createdRequest) throw createError
+
+        workingRequest = {
+          ...createdRequest,
+          isSynthetic: false,
+        }
+      }
+
+      const { data: authUser } = await supabase.auth.getUser()
+
+      const targetRequestId = workingRequest.id
+
+      // Update the approval request with the chosen action
+      const { error: updateError } = await supabase
+        .from('admin_approval_requests')
+        .update({
+          status: action === 'approve' ? 'approved' : 'rejected',
+          reviewed_at: new Date().toISOString(),
+          reviewed_by: authUser?.user?.id ?? null,
+          notes: notes || null
+        })
+        .eq('id', targetRequestId)
+
+      if (updateError) throw updateError
+
+      // If approving, update the user's status and role
+      if (action === 'approve') {
+        const isHospitalRequest = workingRequest.requested_role === 'hospital'
+        const userType = isHospitalRequest ? 'hospital' : 'admin'
+        const status = 'active'
+
+        const { error: userUpdateError } = await supabase
+          .from('users')
+          .update({
+            user_type: userType,
+            status: status,
+            requested_role: null,
+          })
+          .eq('id', workingRequest.user_id)
+
+        if (userUpdateError) throw userUpdateError
+
+        // If hospital request, assign hospital automatically
+        if (isHospitalRequest) {
+          const hospitalId = workingRequest.hospital_id || hospitalAssignments[workingRequest.user_id] || null
+          if (hospitalId) {
+            try {
+              await supabase
+                .from('hospital_users')
+                .upsert({
+                  user_id: workingRequest.user_id,
+                  hospital_id: hospitalId,
+                }, { onConflict: 'user_id' })
+            } catch (e) {
+              console.warn('Failed to automatically assign hospital', e)
+            }
+          }
+        }
+
+        // Create notification for the user
+        try {
+          await supabase.from('user_notifications').insert({
+            user_id: workingRequest.user_id,
+            emergency_report_id: null,
+            message: `Your ${workingRequest.requested_role} account request has been approved! You can now log in with your new role.`,
+          })
+        } catch (e) {
+          console.warn('Failed to create approval notification', e)
+        }
+      } else {
+        // If rejecting, set status back to active user
+        const { error: userUpdateError } = await supabase
+          .from('users')
+          .update({
+            status: 'active',
+            user_type: 'user'
+          })
+          .eq('id', workingRequest.user_id)
+
+        if (userUpdateError) throw userUpdateError
+
+        // Create notification for the user
+        try {
+          await supabase.from('user_notifications').insert({
+            user_id: workingRequest.user_id,
+            emergency_report_id: null,
+            message: `Your ${workingRequest.requested_role} account request has been rejected. Reason: ${notes || 'No reason provided.'}`,
+          })
+        } catch (e) {
+          console.warn('Failed to create rejection notification', e)
+        }
+      }
+
+      // Refresh data
+      await Promise.all([fetchUsers(), fetchApprovalRequests(), fetchHospitalsAndAssignments()])
+
+    } catch (err) {
+      console.error("Error handling approval action:", err)
+      setError(`Failed to ${action} request. Please try again.`)
+    }
+  }
+
   // Set up real-time subscription for user updates
   useEffect(() => {
     fetchUsers();
     fetchHospitalsAndAssignments();
+    fetchApprovalRequests();
     
     // Subscribe to user updates (still useful for role changes or external ban updates)
     const userSubscription = supabase
@@ -368,6 +609,33 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
 
   // Removed toggleBanUser, handleBanDateChange, handleBanReasonChange as they are no longer needed.
 
+  const openApprovalDialog = (request: ApprovalRequest, action: 'approve' | 'reject') => {
+    setApprovalTarget(request)
+    setApprovalAction(action)
+    setApprovalNotes('')
+    setShowApprovalDialog(true)
+  }
+
+  const handleSubmitApproval = async () => {
+    if (!approvalTarget) return
+
+    setIsSubmittingApproval(true)
+    try {
+      await handleApprovalAction(approvalTarget.id, approvalAction, approvalNotes.trim() || undefined)
+      setShowApprovalDialog(false)
+      setApprovalTarget(null)
+    } catch (err) {
+      // Error is handled in handleApprovalAction
+    } finally {
+      setIsSubmittingApproval(false)
+    }
+  }
+
+  const filteredApprovalRequests = useMemo(() => {
+    if (approvalFilter === 'all') return approvalRequests
+    return approvalRequests.filter(request => request.status === approvalFilter)
+  }, [approvalRequests, approvalFilter])
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -594,6 +862,131 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
         </Card>
       </main>
 
+      {/* Approval Requests Section */}
+      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <CardTitle>Account Approval Requests</CardTitle>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <Select value={approvalFilter} onValueChange={(v) => setApprovalFilter(v as typeof approvalFilter)}>
+                  <SelectTrigger className="sm:w-48">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Requests</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {isLoadingApprovals ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin" />
+              </div>
+            ) : filteredApprovalRequests.length === 0 ? (
+              <div className="py-8 text-center text-sm text-gray-500">
+                No {approvalFilter === 'all' ? '' : approvalFilter} approval requests found.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead>Requested Role</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Requested Date</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredApprovalRequests.map((request) => (
+                    <TableRow key={request.id}>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">
+                            {request.user?.firstName} {request.user?.lastName}
+                          </div>
+                          <div className="text-sm text-gray-500">{request.user?.email}</div>
+                          {request.hospital_id && (
+                            <div className="text-xs text-blue-600 mt-1">
+                              Hospital: {hospitals.find(h => h.id === request.hospital_id)?.name || 'Unknown'}
+                            </div>
+                          )}
+                          {request.er_team_id && (
+                            <div className="text-xs text-green-600 mt-1">
+                              ER Team: {request.er_team?.name || 'Unknown'}
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className={cn(
+                          "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+                          request.requested_role === 'admin' 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : 'bg-green-100 text-green-800'
+                        )}>
+                          {request.requested_role === 'admin' ? 'Admin Account' : 'Hospital Account'}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {request.status === 'pending' && <Clock className="h-4 w-4 text-yellow-500" />}
+                          {request.status === 'approved' && <CheckCircle className="h-4 w-4 text-green-500" />}
+                          {request.status === 'rejected' && <XCircle className="h-4 w-4 text-red-500" />}
+                          <span className={cn(
+                            "text-sm font-medium",
+                            request.status === 'pending' ? 'text-yellow-700' :
+                            request.status === 'approved' ? 'text-green-700' : 'text-red-700'
+                          )}>
+                            {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {new Date(request.requested_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          {request.status === 'pending' && (
+                            <>
+                              <Button 
+                                size="sm" 
+                                onClick={() => openApprovalDialog(request, 'approve')}
+                                className="bg-green-600 hover:bg-green-700 text-white"
+                              >
+                                Approve
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="destructive" 
+                                onClick={() => openApprovalDialog(request, 'reject')}
+                              >
+                                Reject
+                              </Button>
+                            </>
+                          )}
+                          {request.status !== 'pending' && (
+                            <span className="text-sm text-gray-500">
+                              {request.reviewed_at ? `Reviewed ${new Date(request.reviewed_at).toLocaleDateString()}` : 'Reviewed'}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </main>
+
       {/* Ban Dialog */}
       <Dialog open={showBanModal} onOpenChange={setShowBanModal}>
         <DialogContent className="sm:max-w-[520px]">
@@ -670,6 +1063,56 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
               <Button variant="outline" onClick={() => setShowUnbanModal(false)} disabled={isSubmittingUnban}>Cancel</Button>
               <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={handleUnban} disabled={isSubmittingUnban || !unbanReason.trim()}>
                 {isSubmittingUnban ? 'Unbanning...' : 'Confirm Unban'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Approval Action Dialog */}
+      <Dialog open={showApprovalDialog} onOpenChange={setShowApprovalDialog}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>
+              {approvalAction === 'approve' ? 'Approve' : 'Reject'} Account Request
+            </DialogTitle>
+            <DialogDescription>
+              {approvalAction === 'approve' 
+                ? 'Confirm that you want to approve this account request.' 
+                : 'Provide a reason for rejecting this account request.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="text-sm text-gray-700">
+              User: {approvalTarget ? `${approvalTarget.user?.firstName} ${approvalTarget.user?.lastName} (${approvalTarget.user?.email})` : ''}
+            </div>
+            <div className="text-sm text-gray-700">
+              Requested Role: <span className="font-medium capitalize">{approvalTarget?.requested_role} Account</span>
+            </div>
+            {approvalAction === 'reject' && (
+              <div>
+                <label className="text-sm font-medium">Reason for Rejection</label>
+                <Textarea 
+                  rows={3} 
+                  value={approvalNotes} 
+                  onChange={(e) => setApprovalNotes(e.target.value)} 
+                  placeholder="Please provide a reason for rejecting this request..."
+                  className="mt-1"
+                />
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowApprovalDialog(false)} disabled={isSubmittingApproval}>
+                Cancel
+              </Button>
+              <Button 
+                className={approvalAction === 'approve' ? "bg-green-600 hover:bg-green-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"}
+                onClick={handleSubmitApproval} 
+                disabled={isSubmittingApproval || (approvalAction === 'reject' && !approvalNotes.trim())}
+              >
+                {isSubmittingApproval 
+                  ? (approvalAction === 'approve' ? 'Approving...' : 'Rejecting...') 
+                  : (approvalAction === 'approve' ? 'Approve' : 'Reject')}
               </Button>
             </div>
           </div>

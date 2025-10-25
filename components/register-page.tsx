@@ -6,17 +6,23 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
-import { Eye, EyeOff, AlertCircle, Check, X } from "lucide-react"
+import { Eye, EyeOff, AlertCircle, Check, X, UserPlus, Shield, XCircle, AlertTriangle, Lock, Languages, ScrollText } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import Link from "next/link"
 
 interface RegisterPageProps {
   onRegistrationSuccess: () => void
   onGoToLogin: () => void
+  selectedRoleData?: {
+    category: 'hospital' | 'er_team'
+    hospitalId?: string
+    erTeamId?: string
+  }
 }
 
-export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPageProps) {
+export function RegisterPage({ onRegistrationSuccess, onGoToLogin, selectedRoleData }: RegisterPageProps) {
   const OTP_ENABLED = false
   const [formData, setFormData] = useState({
     firstName: "",
@@ -35,6 +41,20 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [showTerms, setShowTerms] = useState(false)
+  const [language, setLanguage] = useState<'en' | 'tl'>('tl')
+  const [readingProgress, setReadingProgress] = useState(0)
+  const [requestedRole, setRequestedRole] = useState<'user' | 'admin' | 'hospital'>('user')
+
+  // Initialize with selected role data if provided
+  useEffect(() => {
+    if (selectedRoleData) {
+      if (selectedRoleData.category === 'hospital') {
+        setRequestedRole('hospital')
+      } else if (selectedRoleData.category === 'er_team') {
+        setRequestedRole('admin') // ER team members request admin access
+      }
+    }
+  }, [selectedRoleData])
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [ageVerified, setAgeVerified] = useState(false)
@@ -48,20 +68,89 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
   const [otpSuccess, setOtpSuccess] = useState("")
   const [resendTimer, setResendTimer] = useState(0)
 
+  const translations = {
+    en: {
+      title: "Terms and Conditions",
+      description: "Please read these terms and conditions carefully before using our service.",
+      sections: [
+        {
+          title: "1. Account Registration",
+          content: "You must provide accurate and complete information when creating an account. You are responsible for maintaining the confidentiality of your account credentials.",
+          icon: UserPlus
+        },
+        {
+          title: "2. User Responsibilities",
+          content: "You agree to use this service only for legitimate emergency reporting purposes. You must not use false information or impersonate others.",
+          icon: Shield
+        },
+        {
+          title: "3. Prohibited Activities",
+          content: "Creating fake or misleading emergency reports, Using the service for non-emergency purposes, Harassing or abusing other users or emergency responders, Violating any laws or regulations",
+          icon: XCircle
+        },
+        {
+          title: "4. Consequences of Misuse",
+          content: "Any violation of these terms may result in immediate account suspension or termination, and may be reported to the appropriate authorities.",
+          icon: AlertTriangle
+        },
+        {
+          title: "5. Privacy",
+          content: "Your personal information will be handled in accordance with our Privacy Policy. Emergency reports may be shared with appropriate authorities as needed.",
+          icon: Lock
+        }
+      ],
+      close: "Close",
+      accept: "I Accept"
+    },
+    tl: {
+      title: "Mga Tuntunin at Kundisyon",
+      description: "Mangyaring basahin ang mga tuntunin at kundisyon na ito nang mabuti bago gamitin ang aming serbisyo.",
+      sections: [
+        {
+          title: "1. Pagrehistro ng Account",
+          content: "Kailangan mong magbigay ng tumpak at kumpletong impormasyon sa paglikha ng account. Ikaw ang responsable sa pagpapanatili ng pagiging kumpidensyal ng iyong mga kredensyal sa account.",
+          icon: UserPlus
+        },
+        {
+          title: "2. Mga Responsibilidad ng User",
+          content: "Sumasang-ayon kang gamitin ang serbisyo na ito lamang para sa lehitimong layunin ng pag-uulat ng emerhensiya. Hindi ka dapat gumamit ng maling impormasyon o magpanggap na iba.",
+          icon: Shield
+        },
+        {
+          title: "3. Mga Pinagbabawal na Gawain",
+          content: "Paglikha ng pekeng o mapanlinlang na mga ulat ng emerhensiya, Paggamit ng serbisyo para sa mga layuning hindi emerhensiya, Pag-harass o pag-abuso sa ibang mga user o responder ng emerhensiya, Paglabag sa anumang mga batas o regulasyon",
+          icon: XCircle
+        },
+        {
+          title: "4. Mga Konsekwensya ng Maling Paggamit",
+          content: "Ang anumang paglabag sa mga tuntunin na ito ay maaaring magresulta sa agarang suspensyon o pagtatapos ng account, at maaaring ireport sa mga naaangkop na awtoridad.",
+          icon: AlertTriangle
+        },
+        {
+          title: "5. Privacy",
+          content: "Ang iyong personal na impormasyon ay haharapin ayon sa aming Patakaran sa Privacy. Ang mga ulat ng emerhensiya ay maaaring ibahagi sa mga naaangkop na awtoridad kung kinakailangan.",
+          icon: Lock
+        }
+      ],
+      close: "Isara",
+      accept: "Tinatanggap Ko"
+    }
+  }
+
   // Derived validations for password and confirmation
   const password = formData.password
   const confirmPassword = formData.confirmPassword
   const passwordTooShort = password.length > 0 && password.length < 6
   const passwordMissingUpper = password.length > 0 && !/[A-Z]/.test(password)
   const passwordMissingNumber = password.length > 0 && !/[0-9]/.test(password)
-  const passwordHasSpecial = password.length > 0 && /[^a-zA-Z0-9]/.test(password)
-  const passwordInvalid = password.length > 0 && (passwordTooShort || passwordMissingUpper || passwordMissingNumber || passwordHasSpecial)
+  const passwordMissingSpecial = password.length > 0 && !/[^a-zA-Z0-9]/.test(password)
+  const passwordInvalid = password.length > 0 && (passwordTooShort || passwordMissingUpper || passwordMissingNumber || passwordMissingSpecial)
   const passwordsMismatch = confirmPassword.length > 0 && password !== confirmPassword
   // Rule booleans for checklist
   const hasMinLength = password.length >= 6
   const hasUppercase = /[A-Z]/.test(password)
   const hasNumber = /[0-9]/.test(password)
-  const hasNoSpecial = !/[^a-zA-Z0-9]/.test(password)
+  const hasSpecial = /[^a-zA-Z0-9]/.test(password)
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
@@ -133,9 +222,9 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
       return
     }
     // Regex to check for special characters (anything not a letter, number, or common punctuation)
-    // For this policy, we explicitly disallow special characters
-    if (/[^a-zA-Z0-9]/.test(formData.password)) {
-      setError("Password must not contain special characters.")
+    // For this policy, we now require at least one special character
+    if (!/[^a-zA-Z0-9]/.test(formData.password)) {
+      setError("Password must contain at least one special character.")
       return
     }
 
@@ -161,6 +250,18 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
       }
 
       if (authData.user) {
+        // Determine user type and status based on requested role
+        let userType = 'user'
+        let status = 'active'
+        
+        if (requestedRole === 'admin') {
+          userType = 'admin'
+          status = 'pending_admin'
+        } else if (requestedRole === 'hospital') {
+          userType = 'user' // Hospital accounts are still 'user' type but with hospital mapping
+          status = 'pending_hospital'
+        }
+
         // 2. Create user profile
         const profilePayload = {
           id: authData.user.id,
@@ -171,7 +272,9 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
           username: formData.username,
           birthday: formData.birthday || null,
           mobileNumber: formData.mobileNumber,
-          user_type: 'user',
+          user_type: userType,
+          status: status,
+          requested_role: requestedRole !== 'user' ? requestedRole : null,
         }
 
         const { error: profileError } = await supabase
@@ -183,8 +286,40 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
           return
         }
 
-        setShowSuccessModal(true)
-        setSuccess("Successfully sent to your email, check your email to verify the account")
+        // 3. If requesting special role, create approval request
+        if (requestedRole !== 'user') {
+          const approvalPayload: any = {
+            user_id: authData.user.id,
+            requested_role: requestedRole,
+          }
+
+          // Add role-specific data
+          if (selectedRoleData) {
+            if (selectedRoleData.category === 'hospital' && selectedRoleData.hospitalId) {
+              approvalPayload.hospital_id = selectedRoleData.hospitalId
+            } else if (selectedRoleData.category === 'er_team') {
+              approvalPayload.er_team_id = selectedRoleData.erTeamId
+            }
+          }
+
+          const { error: approvalError } = await supabase
+            .from('admin_approval_requests')
+            .insert(approvalPayload)
+
+          if (approvalError) {
+            console.error("Approval request creation failed:", approvalError)
+            // Don't fail registration, just log the error
+          }
+        }
+
+        if (status === 'active') {
+          setShowSuccessModal(true)
+          setSuccess("Successfully sent to your email, check your email to verify the account")
+        } else {
+          // Show pending approval message
+          setSuccess(`Account created successfully! Your ${requestedRole} account request has been sent to the MDRRMO Super Admin for approval.`)
+          setShowSuccessModal(true)
+        }
         setOtpCode("")
         setOtpMessageId(null)
         setIsOtpVerified(false)
@@ -215,7 +350,7 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
       age--;
     }
     return age;
-  };
+  }
 
   useEffect(() => {
     if (resendTimer <= 0) {
@@ -226,6 +361,25 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
     }, 1000)
     return () => clearInterval(timer)
   }, [resendTimer])
+
+  // Track reading progress in terms dialog
+  useEffect(() => {
+    if (!showTerms) return
+
+    const handleScroll = (e: Event) => {
+      const target = e.target as HTMLElement
+      const scrollTop = target.scrollTop
+      const scrollHeight = target.scrollHeight - target.clientHeight
+      const progress = Math.min((scrollTop / scrollHeight) * 100, 100)
+      setReadingProgress(progress)
+    }
+
+    const scrollContainer = document.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement
+    if (scrollContainer) {
+      scrollContainer.addEventListener('scroll', handleScroll)
+      return () => scrollContainer.removeEventListener('scroll', handleScroll)
+    }
+  }, [showTerms])
 
   const handleSendOtp = async () => {
     if (!/^09\d{9}$/.test(formData.mobileNumber)) {
@@ -517,24 +671,34 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
                     {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                   </button>
                 </div>
-                <ul id="password-rules" className="mt-2 space-y-1 text-sm">
-                  <li className="flex items-center gap-2">
-                    {hasMinLength ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
-                    <span className={hasMinLength ? 'text-green-700' : 'text-red-700'}>At least 6 characters</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    {hasUppercase ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
-                    <span className={hasUppercase ? 'text-green-700' : 'text-red-700'}>Contains an uppercase letter</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    {hasNumber ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
-                    <span className={hasNumber ? 'text-green-700' : 'text-red-700'}>Contains a number</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    {hasNoSpecial ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
-                    <span className={hasNoSpecial ? 'text-green-700' : 'text-red-700'}>No special characters</span>
-                  </li>
-                </ul>
+                {password.length > 0 && (
+                  <ul id="password-rules" className="mt-2 space-y-1 text-sm">
+                    {!hasMinLength && (
+                      <li className="flex items-center gap-2">
+                        <X className="h-4 w-4 text-red-600" />
+                        <span className="text-red-700">At least 6 characters</span>
+                      </li>
+                    )}
+                    {!hasUppercase && (
+                      <li className="flex items-center gap-2">
+                        <X className="h-4 w-4 text-red-600" />
+                        <span className="text-red-700">Contains an uppercase letter</span>
+                      </li>
+                    )}
+                    {!hasNumber && (
+                      <li className="flex items-center gap-2">
+                        <X className="h-4 w-4 text-red-600" />
+                        <span className="text-red-700">Contains a number</span>
+                      </li>
+                    )}
+                    {!hasSpecial && (
+                      <li className="flex items-center gap-2">
+                        <X className="h-4 w-4 text-red-600" />
+                        <span className="text-red-700">Contains a special character</span>
+                      </li>
+                    )}
+                  </ul>
+                )}
                 {passwordsMismatch && (
                   <p id="password-mismatch" className="text-sm text-red-500 mt-1">Your password didn't match, please match them</p>
                 )}
@@ -609,6 +773,7 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
               </div>
             </div>
 
+
             <Button
               type="submit"
               disabled={isLoading || !ageVerified || !acceptedTerms || passwordInvalid || passwordsMismatch || (OTP_ENABLED && !isOtpVerified)}
@@ -636,72 +801,141 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin }: RegisterPag
             <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
               <Check className="h-8 w-8 text-green-600" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Registration Successful!</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              {requestedRole === 'user' ? 'Registration Successful!' : 'Account Request Submitted!'}
+            </h3>
             <p className="text-gray-600 mb-6">{success}</p>
-            <Button 
-              asChild 
-              className="w-full bg-orange-500 hover:bg-orange-600 text-white"
-              onClick={() => {
-                window.location.href = '/';
-              }}
-            >
-              <button>Okay</button>
-            </Button>
+            {requestedRole !== 'user' ? (
+              <div className="w-full space-y-3">
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-orange-500 mt-0.5 flex-shrink-0" />
+                    <div className="text-left">
+                      <p className="text-sm font-medium text-orange-800">Still Waiting for MDRRMO Super Admin Approval</p>
+                      <p className="text-xs text-orange-700 mt-1">Kindly wait for a while. Thank you for your patience!</p>
+                    </div>
+                  </div>
+                </div>
+                <Button 
+                  asChild 
+                  className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+                  onClick={() => {
+                    setShowSuccessModal(false)
+                    onGoToLogin()
+                  }}
+                >
+                  <button>Go Back to Login</button>
+                </Button>
+              </div>
+            ) : (
+              <Button 
+                asChild 
+                className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+                onClick={() => {
+                  window.location.href = '/';
+                }}
+              >
+                <button>Okay</button>
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Terms and Conditions Dialog */}
       <Dialog open={showTerms} onOpenChange={setShowTerms}>
-        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold text-gray-800">Terms and Conditions</DialogTitle>
-            <DialogDescription className="text-gray-600">
-              Please read these terms and conditions carefully before using our service.
+        <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-hidden bg-white">
+          {/* Progress Bar */}
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gray-200">
+            <div
+              className="h-full bg-orange-500 transition-all duration-300 ease-out"
+              style={{ width: `${readingProgress}%` }}
+            />
+          </div>
+
+          {/* Header */}
+          <DialogHeader className="pt-6 pb-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <ScrollText className="h-6 w-6 text-orange-500" />
+                <DialogTitle className="text-2xl font-bold text-gray-800">
+                  {translations[language].title}
+                </DialogTitle>
+              </div>
+              <Select value={language} onValueChange={(value: 'en' | 'tl') => setLanguage(value)}>
+                <SelectTrigger className="w-auto border-orange-500 text-orange-500 hover:bg-orange-50 h-8 px-3">
+                  <Languages className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Language" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="tl">Tagalog</SelectItem>
+                  <SelectItem value="en">English</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogDescription className="text-gray-600 text-base leading-relaxed">
+              {translations[language].description}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4 text-gray-700">
-            <div className="space-y-2">
-              <h3 className="font-semibold text-gray-800">1. Account Registration</h3>
-              <p>You must provide accurate and complete information when creating an account. You are responsible for maintaining the confidentiality of your account credentials.</p>
-            </div>
-            
-            <div className="space-y-2">
-              <h3 className="font-semibold text-gray-800">2. User Responsibilities</h3>
-              <p>You agree to use this service only for legitimate emergency reporting purposes. You must not use false information or impersonate others.</p>
-            </div>
-            
-            <div className="space-y-2">
-              <h3 className="font-semibold text-gray-800">3. Prohibited Activities</h3>
-              <ul className="list-disc pl-5 space-y-1">
-                <li>Creating fake or misleading emergency reports</li>
-                <li>Using the service for non-emergency purposes</li>
-                <li>Harassing or abusing other users or emergency responders</li>
-                <li>Violating any laws or regulations</li>
-              </ul>
-            </div>
-            
-            <div className="space-y-2">
-              <h3 className="font-semibold text-gray-800">4. Consequences of Misuse</h3>
-              <p>Any violation of these terms may result in immediate account suspension or termination, and may be reported to the appropriate authorities.</p>
-            </div>
-            
-            <div className="space-y-2">
-              <h3 className="font-semibold text-gray-800">5. Privacy</h3>
-              <p>Your personal information will be handled in accordance with our Privacy Policy. Emergency reports may be shared with appropriate authorities as needed.</p>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto px-1 py-2 max-h-[50vh]">
+            <div className="space-y-6">
+              {translations[language].sections.map((section, index) => {
+                const IconComponent = section.icon
+                return (
+                  <div key={index} className="bg-gray-50 rounded-lg p-5 border border-gray-200 hover:shadow-md transition-shadow">
+                    <div className="flex items-start gap-4">
+                      <div className="flex-shrink-0">
+                        <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
+                          <IconComponent className="h-5 w-5 text-orange-600" />
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-3 leading-tight">
+                          {section.title}
+                        </h3>
+                        {index === 2 ? (
+                          <ul className="space-y-2 text-gray-700 leading-relaxed">
+                            {section.content.split(', ').map((item, i) => (
+                              <li key={i} className="flex items-start gap-2">
+                                <XCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                                <span className="text-sm">{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-gray-700 leading-relaxed text-sm">
+                            {section.content}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
-          <DialogFooter>
-            <Button 
-              type="button" 
-              variant="outline" 
+
+          {/* Footer */}
+          <DialogFooter className="flex gap-3 pt-4 border-t border-gray-200">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowTerms(false)}
+              className="flex-1 border-gray-300 text-gray-700 hover:bg-gray-50"
+            >
+              {translations[language].close}
+            </Button>
+            <Button
+              type="button"
               onClick={() => {
                 setAcceptedTerms(true)
                 setShowTerms(false)
               }}
-              className="border-orange-500 text-orange-500 hover:bg-orange-50"
+              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-medium"
             >
-              Close
+              {translations[language].accept}
             </Button>
           </DialogFooter>
         </DialogContent>

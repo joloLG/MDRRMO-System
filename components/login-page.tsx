@@ -12,9 +12,10 @@ import { Eye, EyeOff } from "lucide-react" // Import icons from lucide-react
 interface LoginPageProps {
   onLoginSuccess: (userData: any) => void
   onGoToRegister: () => void
+  onGoToRoleSelection?: () => void
 }
 
-export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
+export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection }: LoginPageProps) {
   const [loginData, setLoginData] = useState({
     email: "",
     password: "",
@@ -28,6 +29,19 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
   const [forgotPasswordMessage, setForgotPasswordMessage] = useState("") // Message for forgot password flow
   // If a user is banned, show message immediately after sign-in instead of proceeding
   const [banInfo, setBanInfo] = useState<{ reason?: string; until?: string | null } | null>(null)
+  const [logoClicks, setLogoClicks] = useState(0) // Secret toggle for role selection
+
+  const handleLogoClick = () => {
+    setLogoClicks(prev => prev + 1)
+  }
+
+  // Handle navigation after render cycle
+  useEffect(() => {
+    if (logoClicks >= 7 && onGoToRoleSelection) {
+      onGoToRoleSelection()
+      setLogoClicks(0)
+    }
+  }, [logoClicks, onGoToRoleSelection])
 
   // Show any pending single-session conflict error
   useEffect(() => {
@@ -125,6 +139,21 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
           return
         }
 
+        // Check if account is pending approval
+        const status = profile.status || 'active'
+        if (status === 'pending_admin' || status === 'pending_hospital') {
+          setError(`Your ${status === 'pending_admin' ? 'admin' : 'hospital'} account request is still waiting for MDRRMO Super Admin approval. Kindly wait for a while. Thank you for your patience!`)
+          try { await supabase.auth.signOut() } catch {}
+          return
+        }
+
+        // Check if account was rejected
+        if (status === 'rejected') {
+          setError("Your account request has been rejected by the MDRRMO Super Admin. Please contact support for more information.")
+          try { await supabase.auth.signOut() } catch {}
+          return
+        }
+
         // Include the user_type in the profile data
         const userWithType = {
           ...profile,
@@ -203,7 +232,10 @@ export function LoginPage({ onLoginSuccess, onGoToRegister }: LoginPageProps) {
         </CardHeader>
         <CardContent className="p-8 space-y-6">
           <div className="text-center mb-6">
-            <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div 
+              className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4 cursor-pointer hover:bg-orange-200 transition-colors"
+              onClick={handleLogoClick}
+            >
               <span className="text-3xl">🚨</span>
             </div>
             <h3 className="text-lg font-semibold text-gray-700">Welcome Back</h3>

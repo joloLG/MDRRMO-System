@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { RegisterPage } from "./components/register-page"
 import { LoginPage } from "./components/login-page"
+import { RoleSelection } from "./components/role-selection"
 import { Dashboard } from "./components/dashboard"
 import { AdminDashboard } from './components/admin-dashboard'
 import { SuperadminDashboard } from "./components/superadmin-dashboard"
@@ -12,9 +13,10 @@ import { supabase } from "@/lib/supabase"
 import { robustSignOut } from "@/lib/auth"
 
 export default function MobileApp() {
-  const [currentScreen, setCurrentScreen] = useState<"login" | "register" | "dashboard" | "admin" | "superadmin" | "hospital">("login")
+  const [currentScreen, setCurrentScreen] = useState<"login" | "register" | "role-selection" | "dashboard" | "admin" | "superadmin" | "hospital">("login")
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [userData, setUserData] = useState<any>(null)
+  const [selectedRoleData, setSelectedRoleData] = useState<any>(null)
 
   useEffect(() => {
     // Check for active session conflict redirect
@@ -90,6 +92,17 @@ export default function MobileApp() {
     setCurrentScreen("login")
   }
 
+  // Handle role selection
+  const handleRoleSelected = (roleData: any) => {
+    setSelectedRoleData(roleData)
+    setCurrentScreen("register")
+  }
+
+  // Handle navigation to role selection
+  const handleGoToRoleSelection = () => {
+    setCurrentScreen("role-selection")
+  }
+
   // Handle logout
   const handleLogout = async () => {
     try {
@@ -127,10 +140,20 @@ export default function MobileApp() {
 
   // Show login or register based on current screen
   switch (currentScreen) {
+    case "role-selection":
+      return <RoleSelection onRoleSelected={handleRoleSelected} onBack={handleGoToLogin} />
     case "register":
-      return <RegisterPage onRegistrationSuccess={handleRegistrationSuccess} onGoToLogin={handleGoToLogin} />
+      return <RegisterPage
+        onRegistrationSuccess={handleRegistrationSuccess}
+        onGoToLogin={handleGoToLogin}
+        selectedRoleData={selectedRoleData}
+      />
     case "login":
     default:
-      return <LoginPage onLoginSuccess={handleLoginSuccess} onGoToRegister={handleGoToRegister} />
+      return <LoginPage 
+        onLoginSuccess={handleLoginSuccess} 
+        onGoToRegister={handleGoToRegister}
+        onGoToRoleSelection={handleGoToRoleSelection}
+      />
   }
 }
