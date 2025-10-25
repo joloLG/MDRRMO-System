@@ -61,11 +61,10 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: "Report not found" }, { status: 404 })
     }
 
-    const { data: patientRows, error: patientsError } = await supabaseAdmin
+    const { data: allPatientRows, error: patientsError } = await supabaseAdmin
       .from("internal_report_patients")
       .select("*")
       .eq("internal_report_id", reportId)
-      .eq("receiving_hospital_id", hospitalId)
       .order("created_at", { ascending: true })
 
     if (patientsError) {
@@ -73,8 +72,14 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: "Failed to load patients" }, { status: 500 })
     }
 
-    if (!patientRows || patientRows.length === 0) {
-      return NextResponse.json({ error: "Report not available for this hospital" }, { status: 404 })
+    const patientRows = (allPatientRows ?? []).filter((row: any) => {
+      const receiving = row?.receiving_hospital_id
+      const pendingTransfer = row?.current_transfer_hospital_id
+      return receiving === hospitalId || pendingTransfer === hospitalId
+    })
+
+    if (patientRows.length === 0) {
+      return NextResponse.json({ error: "Report not available for this hospital" }, { status: 403 })
     }
 
     const [barangayRes, incidentTypeRes, erTeamRes] = await Promise.all([
