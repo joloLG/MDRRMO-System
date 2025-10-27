@@ -266,55 +266,68 @@ export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection 
             <>
               {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">{error}</div>}
 
-              <div>
-                <Label htmlFor="email" className="text-gray-700 font-medium">
-                  Email Address
-                </Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={loginData.email}
-                  onChange={(e) => handleInputChange("email", e.target.value)}
-                  className="border-orange-200 focus:border-orange-500 mt-1"
-                  placeholder="Enter your email"
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="password" className="text-gray-700 font-medium">
-                  Password
-                </Label>
-                <div className="relative mt-1">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!isLoading) {
+                    handleLogin();
+                  }
+                }}
+                className="space-y-4"
+                noValidate
+              >
+                <div>
+                  <Label htmlFor="email" className="text-gray-700 font-medium">
+                    Email Address
+                  </Label>
                   <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    value={loginData.password}
-                    onChange={(e) => handleInputChange("password", e.target.value)}
-                    className="border-orange-200 focus:border-orange-500 pr-10"
-                    placeholder="Enter password"
+                    id="email"
+                    type="email"
+                    value={loginData.email}
+                    onChange={(e) => handleInputChange("email", e.target.value)}
+                    className="border-orange-200 focus:border-orange-500 mt-1"
+                    placeholder="Enter your email"
                     required
                     disabled={isLoading}
+                    autoComplete="email"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700"
-                    disabled={isLoading}
-                  >
-                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </button>
                 </div>
-              </div>
 
-              <Button
-                onClick={handleLogin}
-                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 text-lg"
-                disabled={isLoading}
-              >
-                {isLoading ? "Logging in..." : "LOGIN"}
-              </Button>
+                <div>
+                  <Label htmlFor="password" className="text-gray-700 font-medium">
+                    Password
+                  </Label>
+                  <div className="relative mt-1">
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      value={loginData.password}
+                      onChange={(e) => handleInputChange("password", e.target.value)}
+                      className="border-orange-200 focus:border-orange-500 pr-10"
+                      placeholder="Enter password"
+                      required
+                      disabled={isLoading}
+                      autoComplete="current-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700"
+                      disabled={isLoading}
+                    >
+                      {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                    </button>
+                  </div>
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 text-lg"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Logging in..." : "LOGIN"}
+                </Button>
+              </form>
 
               <div className="text-center space-y-2">
                 <p className="text-sm text-gray-600">

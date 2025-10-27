@@ -57,6 +57,27 @@ function MakeReportContent() {
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasCachedData, setHasCachedData] = useState(false);
+
+  const cacheKey = useCallback((suffix: string) => `mdrrmo_form_${suffix}`, []);
+
+  const readCache = useCallback((key: string) => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const writeCache = useCallback((key: string, value: unknown) => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {}
+  }, []);
 
   const fetchErTeams = useCallback(async () => {
     const { data, error } = await supabase
@@ -65,10 +86,9 @@ function MakeReportContent() {
       .order('name', { ascending: true });
     if (error) {
       console.error("Error fetching ER Teams:", error);
-      setError(`Failed to load ER Teams: ${error.message}`);
-      return [];
+      throw error;
     }
-    return data as ERTeam[] || [];
+    return (data as ERTeam[] | null) ?? [];
   }, []);
 
   const fetchBarangays = useCallback(async () => {
@@ -78,10 +98,9 @@ function MakeReportContent() {
       .order('name', { ascending: true });
     if (error) {
       console.error("Error fetching Barangays:", error);
-      setError(`Failed to load Barangays: ${error.message}`);
-      return [];
+      throw error;
     }
-    return data as Barangay[] || [];
+    return (data as Barangay[] | null) ?? [];
   }, []);
 
   const fetchIncidentTypes = useCallback(async () => {
@@ -91,10 +110,9 @@ function MakeReportContent() {
       .order('name', { ascending: true });
     if (error) {
       console.error("Error fetching Incident Types:", error);
-      setError(`Failed to load Incident Types: ${error.message}`);
-      return [];
+      throw error;
     }
-    return data as IncidentType[] || [];
+    return (data as IncidentType[] | null) ?? [];
   }, []);
 
   const fetchHospitals = useCallback(async () => {
@@ -104,16 +122,18 @@ function MakeReportContent() {
       .order('name', { ascending: true });
     if (error) {
       console.error("Error fetching Hospitals:", error);
-      setError(`Failed to load Hospitals: ${error.message}`);
-      return [];
+      throw error;
     }
-    return data as Hospital[] || [];
+    return (data as Hospital[] | null) ?? [];
   }, []);
 
   useEffect(() => {
     const loadFormData = async () => {
-      setLoading(true);
+      const cachedAvailable = hasCachedData;
       setError(null);
+      if (!cachedAvailable) {
+        setLoading(true);
+      }
       try {
         const [erTeamsData, barangaysData, incidentTypesData] = await Promise.all([
           fetchErTeams(),
@@ -123,9 +143,13 @@ function MakeReportContent() {
         setErTeams(erTeamsData);
         setBarangays(barangaysData);
         setIncidentTypes(incidentTypesData);
+        writeCache(cacheKey('er_teams'), erTeamsData);
+        writeCache(cacheKey('barangays'), barangaysData);
+        writeCache(cacheKey('incident_types'), incidentTypesData);
 
         const hospitalsData = await fetchHospitals();
         setHospitals(hospitalsData);
+        writeCache(cacheKey('hospitals'), hospitalsData);
 
         if (incidentId) {
           const { data: reportData, error: reportError } = await supabase
@@ -137,14 +161,49 @@ function MakeReportContent() {
           if (reportError) throw reportError;
           setSelectedReport(reportData as Report);
         }
+        setHasCachedData(true);
       } catch (err: any) {
         console.error("Error loading form data:", err);
-        setError(`Failed to load form data: ${err.message}`);
+        if (!hasCachedData) {
+          setError(`Failed to load form data: ${err.message}`);
+        }
       } finally {
         setLoading(false);
       }
     };
 
+    let cancelled = false;
+    const applyCache = () => {
+      if (typeof window === "undefined" || cancelled) return false;
+      let found = false;
+      const cachedErTeams = readCache(cacheKey('er_teams'));
+      if (!cancelled && Array.isArray(cachedErTeams) && cachedErTeams.length) {
+        setErTeams(cachedErTeams as ERTeam[]);
+        found = true;
+      }
+      const cachedBarangays = readCache(cacheKey('barangays'));
+      if (!cancelled && Array.isArray(cachedBarangays) && cachedBarangays.length) {
+        setBarangays(cachedBarangays as Barangay[]);
+        found = true;
+      }
+      const cachedIncidentTypes = readCache(cacheKey('incident_types'));
+      if (!cancelled && Array.isArray(cachedIncidentTypes) && cachedIncidentTypes.length) {
+        setIncidentTypes(cachedIncidentTypes as IncidentType[]);
+        found = true;
+      }
+      const cachedHospitals = readCache(cacheKey('hospitals'));
+      if (!cancelled && Array.isArray(cachedHospitals) && cachedHospitals.length) {
+        setHospitals(cachedHospitals as Hospital[]);
+        found = true;
+      }
+      if (!cancelled && found) {
+        setHasCachedData(true);
+        setLoading(false);
+      }
+      return found;
+    };
+
+    const cached = applyCache();
     loadFormData();
 
     const erTeamsChannel = supabase.channel('report-er-teams-channel')
@@ -158,11 +217,12 @@ function MakeReportContent() {
       .subscribe();
 
     return () => {
+      cancelled = true;
       supabase.removeChannel(erTeamsChannel);
       supabase.removeChannel(barangaysChannel);
       supabase.removeChannel(incidentTypesChannel);
     };
-  }, [incidentId, fetchErTeams, fetchBarangays, fetchIncidentTypes]);
+  }, [incidentId, fetchErTeams, fetchBarangays, fetchIncidentTypes, fetchHospitals, cacheKey, readCache, writeCache, hasCachedData]);
 
 
   if (loading) {

@@ -4,7 +4,6 @@
 import { Capacitor } from "@capacitor/core"
 import type { PluginListenerHandle } from "@capacitor/core"
 import { App } from "@capacitor/app"
-import { Geolocation } from "@capacitor/geolocation"
   import { Button } from "@/components/ui/button"
 import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Mail, X, Send, FireExtinguisher, HeartPulse, Car, CloudRain, LandPlot, HelpCircle, Swords, PersonStanding, MapPin, RefreshCcw, Megaphone, Star, Loader2, Wand2, Search } from "lucide-react" // Added Swords for Armed Conflict
   import { UserSidebar } from "./user_sidebar"
@@ -21,11 +20,11 @@ import { Badge } from "@/components/ui/badge"
   import { FeedbackHistory } from "@/components/feedback-history"
 import { ReportDetailModal } from "@/components/ReportDetailModal"
 import { useAppStore } from '@/lib/store'
-import { NotificationPermissionBanner } from './NotificationPermissionBanner'
   import type { AppState } from '@/lib/store'
   import { initMobileState, destroyMobileState, notifications$, userReports$ as mobileUserReports$, type MobileNotification, type MobileReport } from '@/lib/mobileState'
 import { useRouter } from 'next/navigation'
 import { usePushNotifications } from '@/components/providers/PushNotificationsProvider'
+import { useLocationPermission } from '@/lib/hooks/useLocationPermission'
 
 
 interface Notification {
@@ -77,6 +76,14 @@ interface Advisory {
   expires_at: string | null;
   created_at: string | null;
   created_by: string | null;
+}
+
+interface QueuedReport {
+  id: string;
+  createdAt: string;
+  emergencyType: string;
+  location: string;
+  queueTimestamp: number;
 }
 
 interface DashboardProps {
@@ -146,223 +153,19 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const effectiveSidebarOpen = isDesktop || isSidebarOpen
   const [showSOSConfirm, setShowSOSConfirm] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
-  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null)
-  const [showLocationModal, setShowLocationModal] = useState(false)
-  const [locationError, setLocationError] = useState<string | null>(null)
+
+  const {
+    location,
+    locationError,
+    showLocationModal,
+    setShowLocationModal,
+    ensureLocationReady,
+    requestPermission: requestLocationPermission,
+    getFreshLocation,
+  } = useLocationPermission({ userId: currentUser?.id });
 
   // Enhanced location permission handling
   const isNativePlatform = useMemo(() => Capacitor.isNativePlatform(), []);
-  const locationPermissionGrantedRef = useRef<boolean>(false);
-  const locationWatchIdRef = useRef<string | number | null>(null);
-
-  const stopLocationWatch = useCallback(() => {
-    if (locationWatchIdRef.current == null) return;
-    if (isNativePlatform) {
-      Geolocation.clearWatch({ id: locationWatchIdRef.current as string }).catch(() => {});
-    } else if (typeof navigator !== 'undefined' && navigator.geolocation?.clearWatch) {
-      navigator.geolocation.clearWatch(locationWatchIdRef.current as number);
-    }
-    locationWatchIdRef.current = null;
-  }, [isNativePlatform]);
-
-  const startLocationWatch = useCallback(() => {
-    if (locationWatchIdRef.current != null) return;
-    if (isNativePlatform) {
-      Geolocation.watchPosition({ enableHighAccuracy: true, maximumAge: 1000 }, (position, err) => {
-        if (err) {
-          console.warn('Native geolocation watch error:', err);
-          locationPermissionGrantedRef.current = false;
-          if ((err as any)?.code === 1) {
-            setLocationError('location_denied');
-            setShowLocationModal(true);
-          }
-          void stopLocationWatch();
-          return;
-        }
-        if (position?.coords) {
-          setLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
-          setLocationError(null);
-          locationPermissionGrantedRef.current = true;
-        }
-      })
-        .then(id => {
-          locationWatchIdRef.current = id;
-        })
-        .catch(error => {
-          console.warn('Failed to start native geolocation watch:', error);
-        });
-    } else if (typeof navigator !== 'undefined' && navigator.geolocation?.watchPosition) {
-      const watchId = navigator.geolocation.watchPosition(
-        pos => {
-          setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-          setLocationError(null);
-          locationPermissionGrantedRef.current = true;
-        },
-        err => {
-          console.warn('Browser geolocation watch error:', err);
-          if (err.code === err.PERMISSION_DENIED) {
-            locationPermissionGrantedRef.current = false;
-            setLocationError('location_denied');
-            setShowLocationModal(true);
-            stopLocationWatch();
-          }
-        },
-        { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
-      );
-      locationWatchIdRef.current = watchId;
-    }
-  }, [isNativePlatform, stopLocationWatch]);
-
-  const checkLocationPermission = useCallback(async (): Promise<boolean> => {
-    if (isNativePlatform) {
-      try {
-        const permission = await Geolocation.checkPermissions();
-        const locationPermission = permission.location;
-
-        const ensurePermissionGranted = async () => {
-          if (locationPermission === 'granted') {
-            return true;
-          }
-
-          const requestResult = await Geolocation.requestPermissions();
-          const requestedLocationPermission = requestResult.location;
-          return requestedLocationPermission === 'granted';
-        };
-
-        const granted = await ensurePermissionGranted();
-        if (!granted) {
-            setLocationError('location_denied');
-            setShowLocationModal(true);
-            locationPermissionGrantedRef.current = false;
-            stopLocationWatch();
-            return false;
-        }
-
-        locationPermissionGrantedRef.current = true;
-        startLocationWatch();
-        const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
-        setLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
-        setLocationError(null);
-        setShowLocationModal(false);
-        return true;
-      } catch (error: any) {
-        console.error('Capacitor geolocation error:', error);
-        const message = typeof error?.message === 'string' ? error.message.toLowerCase() : '';
-        if (message.includes('location services are not enabled') || message.includes('location service needs to be enabled')) {
-          setLocationError('location_services_disabled');
-        } else {
-          setLocationError('location_error');
-        }
-        setShowLocationModal(true);
-        locationPermissionGrantedRef.current = false;
-        stopLocationWatch();
-        return false;
-      }
-    }
-
-    if (!navigator.geolocation) {
-      setLocationError('not_supported');
-      setShowLocationModal(true);
-      locationPermissionGrantedRef.current = false;
-      stopLocationWatch();
-      return false;
-    }
-
-    try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-          resolve,
-          reject,
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-        );
-      });
-
-      setLocation({
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-      });
-      setLocationError(null);
-      setShowLocationModal(false);
-      locationPermissionGrantedRef.current = true;
-      startLocationWatch();
-      return true;
-    } catch (error: any) {
-      console.error('Error getting location:', error);
-
-      if (error.code === error.PERMISSION_DENIED) {
-        setLocationError('location_denied');
-      } else if (error.code === error.POSITION_UNAVAILABLE) {
-        setLocationError('location_unavailable');
-      } else if (error.code === error.TIMEOUT) {
-        setLocationError('location_timeout');
-      } else {
-        setLocationError('location_error');
-      }
-
-      setShowLocationModal(true);
-      locationPermissionGrantedRef.current = false;
-      stopLocationWatch();
-      return false;
-    }
-  }, [isNativePlatform, startLocationWatch, stopLocationWatch]);
-
-  const ensureLocationReady = useCallback(async () => {
-    if (locationPermissionGrantedRef.current) {
-      startLocationWatch();
-    } else {
-      await checkLocationPermission();
-    }
-  }, [checkLocationPermission, startLocationWatch]);
-
-  // Handle location permission request from modal
-  const handleRequestLocation = useCallback(async (): Promise<boolean> => {
-    if (isNativePlatform) {
-      return checkLocationPermission();
-    }
-
-    if (!navigator.permissions) {
-      // Fallback for browsers that don't support the Permissions API
-      return checkLocationPermission();
-    }
-
-    try {
-      const permissionStatus = await navigator.permissions.query({ 
-        name: 'geolocation' as PermissionName 
-      });
-
-      const handlePermissionChange = () => {
-        if (permissionStatus.state === 'granted') {
-          void checkLocationPermission();
-        } else if (permissionStatus.state === 'denied') {
-          setLocationError('location_denied');
-          setShowLocationModal(true);
-        }
-      };
-
-      permissionStatus.onchange = handlePermissionChange;
-
-      if (permissionStatus.state === 'granted') {
-        return checkLocationPermission();
-      }
-
-      if (permissionStatus.state === 'prompt') {
-        setShowLocationModal(true);
-        const granted = await checkLocationPermission();
-        if (!granted) {
-          setShowLocationModal(true);
-        }
-        return granted;
-      }
-
-      setLocationError('location_denied');
-      setShowLocationModal(true);
-      return false;
-    } catch (error) {
-      console.error('Error checking location permission:', error);
-      setShowLocationModal(true);
-      return false;
-    }
-  }, [checkLocationPermission, isNativePlatform]);
 
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
@@ -389,6 +192,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
   // Minimal Zustand sync (currentUser provisioning for other components if needed)
   const setStoreCurrentUser = useAppStore((s: AppState) => s.setCurrentUser)
+  const isOnline = useAppStore((s: AppState) => s.isOnline)
+  const connectionType = useAppStore((s: AppState) => s.connectionType)
 
   // Refs for click outside detection
   const notificationsRef = useRef<HTMLDivElement>(null);
@@ -501,8 +306,23 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [mdrrmoInformation, setMdrrmoInformation] = useState<MdrrmoInfo | null>(null);
   const [bulanHotlines, setBulanHotlines] = useState<Hotline[]>([]);
   const [activeAdvisory, setActiveAdvisory] = useState<Advisory | null>(null);
+  const [queuedReports, setQueuedReports] = useState<QueuedReport[]>([]);
+  const queuedReportsKey = useMemo(() => currentUser?.id ? `mdrrmo_${currentUser.id}_queuedReports` : null, [currentUser?.id]);
+  const flushNoticeKey = useMemo(() => currentUser?.id ? `mdrrmo_${currentUser.id}_queueFlushNotice` : null, [currentUser?.id]);
+  const [showQueuedNotice, setShowQueuedNotice] = useState(false);
 
   const reportsSource = userReports;
+  const isProduction = useMemo(() => process.env.NODE_ENV === 'production', [])
+  const reliableConnection = useMemo(() => {
+    if (!isProduction) return true
+    if (!isOnline) return false
+    const normalized = (connectionType || '').toLowerCase()
+    if (!normalized || normalized === 'unknown' || normalized === 'other') return true
+    if (normalized === 'wifi' || normalized === 'ethernet') return true
+    const degradedTokens = ['cellular', '2g', '3g', '4g', '5g', 'slow', 'bluetooth', 'wimax']
+    return !degradedTokens.some(token => normalized.includes(token))
+  }, [isProduction, isOnline, connectionType])
+
   const notificationsSource = notifications;
   const unreadNotificationsCount = useMemo(() => (notificationsSource || []).filter(n => !n.is_read).length, [notificationsSource]);
   const totalReportPages = useMemo(() => Math.max(1, Math.ceil((reportsSource?.length || 0) / PAGE_SIZE)), [reportsSource?.length]);
@@ -604,6 +424,143 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       setCooldownActive(false);
     }
   }, [creditConsumptionTimes]);
+
+  const persistQueuedReports = useCallback((items: QueuedReport[]) => {
+    if (!queuedReportsKey) return;
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(queuedReportsKey, JSON.stringify(items));
+    } catch {}
+  }, [queuedReportsKey]);
+
+  const addQueuedReport = useCallback((report: QueuedReport) => {
+    setShowQueuedNotice(false);
+    setQueuedReports(prev => {
+      const existing = prev.filter(item => item.id !== report.id);
+      const next = [report, ...existing].sort((a, b) => {
+        const tsDiff = (b.queueTimestamp ?? 0) - (a.queueTimestamp ?? 0);
+        if (tsDiff !== 0) return tsDiff;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+      persistQueuedReports(next);
+      return next;
+    });
+  }, [persistQueuedReports]);
+
+  const removeQueuedReports = useCallback((ids: string[]) => {
+    if (!ids.length) return;
+    setQueuedReports(prev => {
+      const next = prev.filter(item => !ids.includes(item.id));
+      persistQueuedReports(next);
+      return next;
+    });
+  }, [persistQueuedReports]);
+
+  const loadQueuedReports = useCallback(() => {
+    if (!queuedReportsKey) {
+      setQueuedReports([]);
+      return;
+    }
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem(queuedReportsKey);
+      if (!raw) {
+        setQueuedReports([]);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const sanitized = parsed.map((item: any) => {
+          const createdAt = typeof item?.createdAt === 'string' ? item.createdAt : new Date().toISOString();
+          const queueTimestamp = typeof item?.queueTimestamp === 'number' && Number.isFinite(item.queueTimestamp)
+            ? item.queueTimestamp
+            : new Date(createdAt).getTime() || Date.now();
+          return {
+            id: String(item?.id ?? `queued-${queueTimestamp}`),
+            createdAt,
+            emergencyType: String(item?.emergencyType ?? 'Emergency'),
+            location: String(item?.location ?? 'Unknown location'),
+            queueTimestamp,
+          } as QueuedReport;
+        }).sort((a, b) => (b.queueTimestamp ?? 0) - (a.queueTimestamp ?? 0));
+        setQueuedReports(sanitized);
+      }
+    } catch {
+      setQueuedReports([]);
+    }
+  }, [queuedReportsKey]);
+
+  const finalizeQueuedReports = useCallback((entries: Array<{ queueId?: string | null; queueTimestamp?: number | null }>) => {
+    if (!entries?.length) return;
+    const idSet = new Set<string>();
+    const tsSet = new Set<number>();
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') continue;
+      const queueId = entry.queueId;
+      const queueTimestamp = entry.queueTimestamp;
+      if (queueId) idSet.add(String(queueId));
+      if (typeof queueTimestamp === 'number' && Number.isFinite(queueTimestamp)) {
+        tsSet.add(queueTimestamp);
+      }
+    }
+    if (idSet.size === 0 && tsSet.size === 0) return;
+    setQueuedReports(prev => {
+      const next = prev.filter(item => !idSet.has(item.id) && !tsSet.has(item.queueTimestamp));
+      persistQueuedReports(next);
+      return next;
+    });
+    if (flushNoticeKey && typeof window !== 'undefined') {
+      try { localStorage.setItem(flushNoticeKey, String(Date.now())); } catch {}
+    }
+    setShowQueuedNotice(true);
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        setShowQueuedNotice(false);
+      }, 5000);
+    }
+  }, [persistQueuedReports, flushNoticeKey]);
+
+  const handleFlushQueued = useCallback(() => {
+    if (typeof navigator === 'undefined') return;
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.ready.then(registration => {
+      registration.active?.postMessage({ type: 'FLUSH_QUEUE' });
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadQueuedReports();
+    if (!flushNoticeKey || typeof window === 'undefined') {
+      return;
+    }
+    try {
+      const lastSuccess = localStorage.getItem(flushNoticeKey);
+      if (lastSuccess) {
+        setShowQueuedNotice(true);
+      }
+    } catch {}
+  }, [loadQueuedReports, flushNoticeKey]);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const handler = (event: MessageEvent) => {
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.type === 'QUEUE_FLUSHED') {
+        finalizeQueuedReports(Array.isArray(data.entries) ? data.entries : []);
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', handler);
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handler);
+    };
+  }, [finalizeQueuedReports]);
+
+  useEffect(() => {
+    if (isOnline && queuedReports.length > 0) {
+      handleFlushQueued();
+    }
+  }, [isOnline, queuedReports.length, handleFlushQueued]);
 
   useEffect(() => {
     if (activeCooldowns.length === 0) {
@@ -1000,6 +957,10 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   }, [RESUME_COOLDOWN_MS, onLogout, loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines, loadActiveAdvisory, isNativePlatform]);
 
+  const handleRequestLocation = useCallback(async () => {
+    return requestLocationPermission();
+  }, [requestLocationPermission]);
+
   const quickRefresh = useCallback(async () => {
     await runRefresh(true);
   }, [runRefresh]);
@@ -1035,7 +996,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       setupRealtime(userId);
 
       // Try to refresh location silently
-      await checkLocationPermission();
+      await ensureLocationReady();
 
       // Reconcile credits/cooldowns
       reconcileCooldownsAndCredits();
@@ -1044,7 +1005,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     } finally {
       setIsRefreshing(false);
     }
-  }, [onLogout, refreshUserData, setupRealtime, checkLocationPermission, reconcileCooldownsAndCredits]);
+  }, [onLogout, refreshUserData, setupRealtime, ensureLocationReady, reconcileCooldownsAndCredits]);
 
   // Removed old generic, non-user-scoped localStorage loader to prevent resets across app restarts
 
@@ -1306,20 +1267,9 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     // Ensure we have a fresh location right before sending
     let effectiveLocation = location;
     if (!effectiveLocation) {
-      try {
-        if (isNativePlatform) {
-          const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
-          effectiveLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          setLocation(effectiveLocation);
-        } else if (navigator.geolocation) {
-          const pos: GeolocationPosition = await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
-          });
-          effectiveLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          setLocation(effectiveLocation);
-        }
-      } catch (e) {
-        console.error('Unable to acquire location for SOS:', e);
+      effectiveLocation = await getFreshLocation(10000);
+      if (!effectiveLocation) {
+        console.error('Unable to acquire location for SOS');
       }
     }
     if (!effectiveLocation) {
@@ -1390,104 +1340,114 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     } catch {}
 
     try {
-      let locationAddress = "Location unavailable";
-      try {
-        // Use our local API endpoint to avoid CORS issues
-        const response = await fetch(
-          `/api/geocode?lat=${effectiveLocation.lat}&lon=${effectiveLocation.lng}`
-        );
-        
-        if (!response.ok) {
-          throw new Error(`Geocoding API error: ${response.status}`);
+      let locationAddress = `${effectiveLocation.lat.toFixed(6)}, ${effectiveLocation.lng.toFixed(6)}`;
+      if (isOnline) {
+        try {
+          const response = await fetch(
+            `/api/geocode?lat=${effectiveLocation.lat}&lon=${effectiveLocation.lng}`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            locationAddress = data.display_name || locationAddress;
+          }
+        } catch (err) {
+          console.error("Geocoding error:", err);
         }
-        
-        const data = await response.json();
-        locationAddress = data.display_name || `${effectiveLocation.lat}, ${effectiveLocation.lng}`;
-      } catch (err) {
-        console.error("Geocoding error:", err);
-        // Fallback to coordinates if geocoding fails
-        locationAddress = `${effectiveLocation.lat.toFixed(6)}, ${effectiveLocation.lng.toFixed(6)}`;
       }
 
-      // Determine the emergency type to store
       const reportEmergencyType = selectedIncidentTypeForConfirmation === 'Others' 
         ? `Other: ${customEmergencyType}` 
         : emergencyType;
 
-      // Check if casualties are required for this emergency type
       const requiresCasualties = [
         'Medical Emergency', 
         'Vehicular Incident', 
         'Public Disturbance'
       ].includes(selectedIncidentTypeForConfirmation || '');
 
-      // Prepare report data with type assertion to include casualties
-      const reportPayload: Omit<Report, 'id'> = {
-        user_id: currentUser.id,
-        firstName: currentUser.firstName,
-        middleName: currentUser.middleName || null,
-        lastName: currentUser.lastName,
-        mobileNumber: currentUser.mobileNumber,
-        latitude: effectiveLocation.lat,
-        longitude: effectiveLocation.lng,
-        location_address: locationAddress,
-        emergency_type: reportEmergencyType,
-        status: "active",
-        created_at: new Date().toISOString(),
-        reportedAt: new Date().toISOString(),
-        reporterMobile: currentUser.mobileNumber,
+      const casualtiesNumber = requiresCasualties && casualties
+        ? Number.parseInt(casualties, 10)
+        : undefined;
+
+      const queueTimestamp = Date.now();
+      const queueId = `queued-${queueTimestamp}`;
+      const clientTimestamp = new Date(consumptionTime).toISOString();
+
+      const resetAfterSubmit = () => {
+        setSelectedIncidentTypeForConfirmation(null);
+        setCustomEmergencyType('');
+        setShowCustomEmergencyInput(false);
+        setCasualties('');
+        setTimeout(() => {
+          setIsEmergencyActive(false);
+        }, 5000);
       };
 
-      // Add casualties to report if required
-      if (requiresCasualties && casualties) {
-        // Use type assertion to add casualties
-        (reportPayload as any).casualties = parseInt(casualties) || 0;
+      const payload: Record<string, any> = {
+        emergencyType: reportEmergencyType,
+        latitude: effectiveLocation.lat,
+        longitude: effectiveLocation.lng,
+        locationAddress,
+        clientTimestamp,
+      };
+
+      if (typeof casualtiesNumber === 'number' && Number.isFinite(casualtiesNumber)) {
+        payload.casualties = casualtiesNumber;
       }
 
-      const { data: reportData, error: reportError } = await supabase
-        .from("emergency_reports")
-        .insert(reportPayload)
-        .select()
-        .single()
+      try {
+        const response = await fetch('/api/emergency/report', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
 
-      if (reportError) {
-        console.error("Error creating report:", reportError);
-        console.error("Supabase Report Insert Error Details:", reportError);
-        console.error("Failed to send emergency alert: Please check Supabase RLS policies for 'emergency_reports' INSERT operation, or schema constraints.");
-        setIsEmergencyActive(false); // Deactivate if report fails
-        // Refund credit if report fails
+        if (response.ok) {
+          try {
+            await response.json();
+          } catch {}
+          resetAfterSubmit();
+          return;
+        }
+
+        if (response.status === 202) {
+          let queuedInfo: any = null;
+          try {
+            queuedInfo = await response.json();
+          } catch {}
+          const storedTimestamp = typeof queuedInfo?.queueTimestamp === 'number' ? queuedInfo.queueTimestamp : queueTimestamp;
+          const storedId = queuedInfo?.queueId ? String(queuedInfo.queueId) : queueId;
+          addQueuedReport({
+            id: storedId,
+            createdAt: clientTimestamp,
+            queueTimestamp: storedTimestamp,
+            emergencyType: reportEmergencyType,
+            location: locationAddress,
+          });
+          resetAfterSubmit();
+          return;
+        }
+
+        const errorPayload = await response.json().catch(() => ({}));
+        console.error('Error creating report:', errorPayload);
+        setIsEmergencyActive(false);
         setCreditConsumptionTimes(prev => prev.filter(t => t !== consumptionTime));
         setReportCredits(prev => Math.min(3, prev + 1));
         return;
+      } catch (error: any) {
+        console.error('SOS Error:', error);
+        addQueuedReport({
+          id: queueId,
+          createdAt: clientTimestamp,
+          queueTimestamp,
+          emergencyType: reportEmergencyType,
+          location: locationAddress,
+        });
+        resetAfterSubmit();
+        return;
       }
-
-      await supabase.from("admin_notifications").insert({
-        emergency_report_id: reportData.id,
-        message: `🚨 NEW EMERGENCY ALERT: ${currentUser.firstName} ${currentUser.lastName} reported: ${reportEmergencyType} at ${locationAddress}`,
-        is_read: false,
-        type: 'new_report',
-        created_at: new Date().toISOString(),
-      });
-
-      console.log(`Emergency alert for ${reportEmergencyType} sent successfully!`);
-
-      await supabase.from("user_notifications").insert({
-        user_id: currentUser.id,
-        emergency_report_id: reportData.id,
-        message: `Your emergency alert for "${reportEmergencyType}" has been sent. Help is on the way!`,
-        is_read: false,
-        created_at: new Date().toISOString(),
-      });
-
-      // Reset the form after successful submission
-      setSelectedIncidentTypeForConfirmation(null);
-      setCustomEmergencyType('');
-      setShowCustomEmergencyInput(false);
-
-      // Visual active state for 5 seconds
-      setTimeout(() => {
-        setIsEmergencyActive(false);
-      }, 5000);
     } catch (error: any) {
       console.error("SOS Error:", error);
       console.error("Failed to send emergency alert: " + error.message);
@@ -1844,6 +1804,49 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       <div className="relative min-h-screen">
         {/* Header - Full width */}
         <div className="sticky top-0 z-30 bg-orange-500/95 backdrop-blur-sm text-white p-4 shadow-lg">
+          {(queuedReports.length > 0 || showQueuedNotice) && (
+            <Alert
+              variant="default"
+              className={`mb-3 ${queuedReports.length > 0 ? 'bg-orange-100 text-orange-900' : 'bg-green-100 text-green-900'}`}
+            >
+              <AlertTitle className="flex items-center justify-between">
+                <span>
+                  {queuedReports.length > 0
+                    ? `${queuedReports.length} pending emergency ${queuedReports.length === 1 ? 'report' : 'reports'} ready to send`
+                    : 'Offline emergency reports synced successfully'}
+                </span>
+                {queuedReports.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="bg-white text-orange-600 border-orange-400"
+                    onClick={handleFlushQueued}
+                    disabled={!isOnline}
+                  >
+                    {isOnline ? 'Sync now' : 'Waiting for connection'}
+                  </Button>
+                )}
+              </AlertTitle>
+              {queuedReports.length > 0 && (
+                <AlertDescription className="mt-2 space-y-1">
+                  {queuedReports.slice(0, 3).map(item => (
+                    <div key={item.id} className="flex items-center justify-between text-sm">
+                      <div className="truncate pr-2">
+                        <span className="font-semibold">{item.emergencyType}</span>
+                        <span className="ml-2 text-xs opacity-80">{item.location}</span>
+                      </div>
+                      <span className="text-xs opacity-80">
+                        {formatDistanceToNowStrict(new Date(item.createdAt), { addSuffix: true })}
+                      </span>
+                    </div>
+                  ))}
+                  {queuedReports.length > 3 && (
+                    <div className="text-xs opacity-80">+{queuedReports.length - 3} more</div>
+                  )}
+                </AlertDescription>
+              )}
+            </Alert>
+          )}
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               {/* Hamburger Menu Button - Visible on all screens */}
@@ -2293,7 +2296,11 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {bulanHotlines.length === 0 ? (
+                {!reliableConnection ? (
+                  <div className="text-center py-4 text-sm text-gray-600">
+                    Hotlines are hidden while offline or on limited connectivity. Reconnect on Wi-Fi or wired network to view contact numbers.
+                  </div>
+                ) : bulanHotlines.length === 0 ? (
                   <p className="text-gray-600 text-center py-4">No hotlines available yet. Please check back later.</p>
                 ) : (
                   <div className="space-y-4">

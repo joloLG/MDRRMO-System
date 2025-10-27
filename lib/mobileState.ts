@@ -33,6 +33,7 @@ let teardown: (() => void) | null = null
 let lastResumeAt = 0
 const RESUME_COOLDOWN_MS = 1000
 let notificationActionHandle: PluginListenerHandle | null = null
+let networkListenerHandle: PluginListenerHandle | { remove: () => Promise<void> } | null = null
 
 let notificationPermissionGranted = false
 let permissionRequest: Promise<boolean> | null = null
@@ -218,6 +219,38 @@ async function fetchUserReports(userId: string) {
   }
 }
 
+interface ConnectionStatus {
+  connected: boolean
+  connectionType?: string
+}
+
+type NetworkPlugin = {
+  getStatus?: () => Promise<ConnectionStatus>
+  addListener?: (
+    eventName: 'networkStatusChange',
+    listenerFunc: (status: ConnectionStatus) => void
+  ) => Promise<PluginListenerHandle | { remove: () => Promise<void> } | void>
+}
+
+const getNetworkPlugin = (): NetworkPlugin | null => {
+  const capAny = Capacitor as any
+  if (capAny?.Network) return capAny.Network as NetworkPlugin
+  if (capAny?.Plugins?.Network) return capAny.Plugins.Network as NetworkPlugin
+  return null
+}
+
+const supportsNetworkPlugin = () => {
+  const plugin = getNetworkPlugin()
+  return !!plugin?.getStatus
+}
+
+const refreshOnReconnect = async (userId: string) => {
+  await Promise.allSettled([
+    fetchNotifications(userId),
+    fetchUserReports(userId),
+  ])
+}
+
 export function initMobileState(userId: string) {
   if (!Capacitor.isNativePlatform()) return
   if (initializedFor === userId && teardown) return
@@ -278,12 +311,38 @@ export function initMobileState(userId: string) {
   let resumeHandle: any
   App.addListener('resume', () => { void resume() }).then(h => { resumeHandle = h }).catch(() => {})
 
+  if (supportsNetworkPlugin()) {
+    const plugin = getNetworkPlugin()
+    plugin?.getStatus?.().then((status: ConnectionStatus) => {
+      if (status.connected) {
+        void refreshOnReconnect(userId)
+      }
+    }).catch(() => {})
+    plugin?.addListener?.('networkStatusChange', (status: ConnectionStatus) => {
+      if (status.connected) {
+        void refreshOnReconnect(userId)
+      }
+    }).then(handle => {
+      if (handle && typeof (handle as PluginListenerHandle).remove === 'function') {
+        networkListenerHandle = handle as PluginListenerHandle
+      } else if (handle && typeof (handle as { remove: () => Promise<void> }).remove === 'function') {
+        networkListenerHandle = handle as { remove: () => Promise<void> }
+      }
+    }).catch(() => {})
+  }
+
   teardown = () => {
     try { supabase.removeChannel(notifsCh) } catch {}
     try { supabase.removeChannel(reportsCh) } catch {}
     try { resumeHandle?.remove?.() } catch {}
     try { notificationActionHandle?.remove?.() } catch {}
+    try {
+      if (networkListenerHandle && typeof networkListenerHandle.remove === 'function') {
+        networkListenerHandle.remove().catch(() => {})
+      }
+    } catch {}
     notificationActionHandle = null
+    networkListenerHandle = null
   }
 }
 
