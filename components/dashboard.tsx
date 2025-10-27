@@ -312,16 +312,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [showQueuedNotice, setShowQueuedNotice] = useState(false);
 
   const reportsSource = userReports;
-  const isProduction = useMemo(() => process.env.NODE_ENV === 'production', [])
-  const reliableConnection = useMemo(() => {
-    if (!isProduction) return true
-    if (!isOnline) return false
-    const normalized = (connectionType || '').toLowerCase()
-    if (!normalized || normalized === 'unknown' || normalized === 'other') return true
-    if (normalized === 'wifi' || normalized === 'ethernet') return true
-    const degradedTokens = ['cellular', '2g', '3g', '4g', '5g', 'slow', 'bluetooth', 'wimax']
-    return !degradedTokens.some(token => normalized.includes(token))
-  }, [isProduction, isOnline, connectionType])
+  const reliableConnection = useMemo(() => true, [])
 
   const notificationsSource = notifications;
   const unreadNotificationsCount = useMemo(() => (notificationsSource || []).filter(n => !n.is_read).length, [notificationsSource]);
@@ -2296,11 +2287,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {!reliableConnection ? (
-                  <div className="text-center py-4 text-sm text-gray-600">
-                    Hotlines are hidden while offline or on limited connectivity. Reconnect on Wi-Fi or wired network to view contact numbers.
-                  </div>
-                ) : bulanHotlines.length === 0 ? (
+                {bulanHotlines.length === 0 ? (
                   <p className="text-gray-600 text-center py-4">No hotlines available yet. Please check back later.</p>
                 ) : (
                   <div className="space-y-4">
