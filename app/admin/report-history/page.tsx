@@ -34,6 +34,44 @@ interface BaseEntry {
   id: number;
   name: string;
 }
+
+interface HospitalEntry {
+  id: string;
+  name: string;
+}
+
+const mapReportsWithHospitalNames = (
+  reports: InternalReport[],
+  hospitals: HospitalEntry[],
+): InternalReport[] => {
+  if (!reports || reports.length === 0) {
+    return reports ?? [];
+  }
+
+  if (!hospitals || hospitals.length === 0) {
+    return reports.map((report) => ({
+      ...report,
+      patients: report.patients.map((patient) => ({ ...patient })),
+    }));
+  }
+
+  const hospitalMap = new Map<string, string>();
+  hospitals.forEach((hospital) => {
+    hospitalMap.set(String(hospital.id), hospital.name);
+  });
+
+  return reports.map((report) => ({
+    ...report,
+    patients: report.patients.map((patient) => {
+      const hospitalId = patient.receiving_hospital_id ? String(patient.receiving_hospital_id) : null;
+      const fallbackName = hospitalId ? hospitalMap.get(hospitalId) ?? null : null;
+      return {
+        ...patient,
+        receiving_hospital_name: patient.receiving_hospital_name ?? fallbackName,
+      };
+    }),
+  }));
+};
 const REPORTS_PER_PAGE = 10;
 
 export default function ReportHistoryPage() {
@@ -41,6 +79,7 @@ export default function ReportHistoryPage() {
   const [barangays, setBarangays] = useState<BaseEntry[]>([]);
   const [incidentTypes, setIncidentTypes] = useState<BaseEntry[]>([]);
   const [erTeams, setErTeams] = useState<BaseEntry[]>([]);
+  const [hospitalsCache, setHospitalsCache] = useState<HospitalEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
@@ -53,6 +92,13 @@ export default function ReportHistoryPage() {
     incidentType: "",
     erTeam: "",
   });
+  const hospitalNameLookup = useMemo(() => {
+    const map: Record<string, string> = {};
+    hospitalsCache.forEach((hospital) => {
+      map[String(hospital.id)] = hospital.name;
+    });
+    return map;
+  }, [hospitalsCache]);
 
   // State for Search and Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -117,6 +163,19 @@ export default function ReportHistoryPage() {
     return data as BaseEntry[] || [];
   }, []);
 
+  const fetchHospitals = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('hospitals')
+      .select('id, name')
+      .order('name', { ascending: true });
+    if (error) {
+      console.error("Error fetching Hospitals:", error);
+      setError(`Failed to load Hospitals: ${error.message}`);
+      return [];
+    }
+    return (data as HospitalEntry[] | null) ?? [];
+  }, []);
+
   // Function to fetch Incident Types
   const fetchIncidentTypes = useCallback(async () => {
     const { data, error } = await supabase
@@ -155,18 +214,21 @@ export default function ReportHistoryPage() {
           reportsData,
           barangaysData,
           incidentTypesData,
-          erTeamsData
+          erTeamsData,
+          hospitalsData
         ] = await Promise.all([
           fetchInternalReports(),
           fetchBarangays(),
           fetchIncidentTypes(),
-          fetchErTeams()
+          fetchErTeams(),
+          fetchHospitals()
         ]);
 
-        setInternalReports(reportsData);
+        setInternalReports(mapReportsWithHospitalNames(reportsData, hospitalsData));
         setBarangays(barangaysData);
         setIncidentTypes(incidentTypesData);
         setErTeams(erTeamsData);
+        setHospitalsCache(hospitalsData);
 
       } catch (err: any) {
         console.error("Error loading report history data:", err);
@@ -184,7 +246,14 @@ export default function ReportHistoryPage() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'internal_reports' },
-        () => { fetchInternalReports().then(setInternalReports); }
+        () => {
+          Promise.all([fetchInternalReports(), fetchHospitals()])
+            .then(([reports, hospitals]) => {
+              setHospitalsCache(hospitals);
+              setInternalReports(mapReportsWithHospitalNames(reports, hospitals));
+            })
+            .catch((err) => console.error("Error refreshing reports with hospitals:", err));
+        }
       )
       .subscribe();
 
@@ -215,13 +284,30 @@ export default function ReportHistoryPage() {
       )
       .subscribe();
 
+    const hospitalsChannel = supabase
+      .channel('report-history-hospitals-channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'hospitals' },
+        () => {
+          Promise.all([fetchHospitals(), fetchInternalReports()])
+            .then(([hospitals, reports]) => {
+              setHospitalsCache(hospitals);
+              setInternalReports(mapReportsWithHospitalNames(reports, hospitals));
+            })
+            .catch((err) => console.error("Error refreshing hospitals:", err));
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(internalReportsChannel);
       supabase.removeChannel(barangaysChannel);
       supabase.removeChannel(incidentTypesChannel);
       supabase.removeChannel(erTeamsChannel);
+      supabase.removeChannel(hospitalsChannel);
     };
-  }, [fetchInternalReports, fetchBarangays, fetchIncidentTypes, fetchErTeams]);
+  }, [fetchInternalReports, fetchBarangays, fetchIncidentTypes, fetchErTeams, fetchHospitals]);
 
   const getBarangayNameById = useCallback(
     (id: number | null | undefined) => {
@@ -280,9 +366,37 @@ export default function ReportHistoryPage() {
           } as InternalReportPatientRecord;
         });
 
+        let hospitalsToUse = hospitalsCache;
+        if (!hospitalsToUse || hospitalsToUse.length === 0) {
+          hospitalsToUse = await fetchHospitals();
+          setHospitalsCache(hospitalsToUse);
+        }
+
+        const hospitalLookup = new Map<string, string>();
+        hospitalsToUse.forEach((hospital) => {
+          hospitalLookup.set(String(hospital.id), hospital.name);
+        });
+
+        const patientsWithHospitalNames = patientRows.map((patient) => {
+          if (patient.receiving_hospital_name) {
+            return patient;
+          }
+
+          const hospitalId = patient.receiving_hospital_id ? String(patient.receiving_hospital_id) : null;
+          if (!hospitalId) {
+            return patient;
+          }
+
+          const fallbackName = hospitalLookup.get(hospitalId) ?? null;
+          return {
+            ...patient,
+            receiving_hospital_name: fallbackName,
+          };
+        });
+
         const reportDetail = reportRes.data as InternalReportRecord;
         setSelectedReportDetail(reportDetail);
-        setSelectedPatients(patientRows);
+        setSelectedPatients(patientsWithHospitalNames);
         setSelectedMeta({
           barangay: getBarangayNameById(reportDetail.barangay_id),
           incidentType: getIncidentTypeNameById(reportDetail.incident_type_id),
@@ -295,7 +409,7 @@ export default function ReportHistoryPage() {
         setViewLoading(false);
       }
     },
-    [getBarangayNameById, getIncidentTypeNameById, getErTeamNameById],
+    [getBarangayNameById, getIncidentTypeNameById, getErTeamNameById, hospitalsCache, fetchHospitals],
   );
 
   const handleCloseViewDialog = useCallback(() => {
@@ -368,11 +482,12 @@ export default function ReportHistoryPage() {
   return (
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
       <h1 className="text-3xl font-bold text-gray-800 mb-8">Admin Report History</h1>
-      <ReportHistoryTable
+      <ReportHistoryTable 
         internalReports={paginatedReports} 
-        barangays={barangays}
-        incidentTypes={incidentTypes}
+        barangays={barangays} 
+        incidentTypes={incidentTypes} 
         erTeams={erTeams}
+        hospitalNameLookup={hospitalNameLookup}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
         selectedIncidentType={selectedIncidentType}
@@ -406,6 +521,7 @@ export default function ReportHistoryPage() {
                 barangayName={selectedMeta.barangay}
                 incidentTypeName={selectedMeta.incidentType}
                 erTeamName={selectedMeta.erTeam}
+                hospitalNameLookup={hospitalNameLookup}
               />
             </div>
           ) : (

@@ -415,6 +415,23 @@ export interface InternalReportPatientRecord {
   injury_types: string | null
   incident_location: string | null
   moi_poi_toi: string | null
+  noi: string | null
+  signs_symptoms: string | null
+  gcs_eye: number | null
+  gcs_verbal: number | null
+  gcs_motor: number | null
+  gcs_total: number | null
+  gcs_other: string | null
+  loc_avpu: string | null
+  pulse_rate: string | null
+  blood_pressure: string | null
+  bpm: string | null
+  oxygen_saturation: string | null
+  pain_scale: string | null
+  temperature: string | null
+  respiratory_rate: string | null
+  blood_loss_level: string | null
+  estimated_blood_loss: number | null
   receiving_hospital_date: string | null
   emt_ert_date: string | null
   created_at?: string | null
@@ -431,6 +448,7 @@ interface ReportDetailProps {
   barangayName: string
   incidentTypeName: string
   erTeamName: string
+  hospitalNameLookup?: Record<string, string>
   restrictToPatientView?: boolean
 }
 
@@ -442,13 +460,26 @@ const parseCommaSeparated = (value: string | null | undefined) => {
     .filter(Boolean)
 }
 
-export function InternalReportDetail({ report, patients, barangayName, incidentTypeName, erTeamName, restrictToPatientView = false }: ReportDetailProps) {
+export function InternalReportDetail({ report, patients, barangayName, incidentTypeName, erTeamName, hospitalNameLookup, restrictToPatientView = false }: ReportDetailProps) {
   const wrapperRef = React.useRef<HTMLDivElement | null>(null)
   const headerRef = React.useRef<HTMLDivElement | null>(null)
   const bodyRef = React.useRef<HTMLDivElement | null>(null)
   const [responsiveScale, setResponsiveScale] = React.useState(1)
 
   const [activePatientId, setActivePatientId] = React.useState<string | null>(() => patients[0]?.id ?? null)
+
+  const hospitalNameMap = React.useMemo(() => {
+    const map = new Map<string, string>()
+    if (!hospitalNameLookup) return map
+
+    Object.entries(hospitalNameLookup).forEach(([key, value]) => {
+      if (value) {
+        map.set(String(key), value)
+      }
+    })
+
+    return map
+  }, [hospitalNameLookup])
 
   React.useEffect(() => {
     if (!patients || patients.length === 0) {
@@ -461,94 +492,100 @@ export function InternalReportDetail({ report, patients, barangayName, incidentT
     }
   }, [patients, activePatientId])
 
-  const activePatient = React.useMemo(() => {
-    if (!patients || patients.length === 0) return null
-    if (!activePatientId) return patients[0]
-    return patients.find((patient) => patient.id === activePatientId) ?? patients[0]
-  }, [patients, activePatientId])
+  const activePatient = React.useMemo(() => patients.find((patient) => patient.id === activePatientId) ?? patients[0] ?? null, [patients, activePatientId])
+  const activePatientIndex = React.useMemo(() => patients.findIndex((patient) => patient.id === activePatient?.id), [patients, activePatient?.id])
 
-  const activePatientIndex = React.useMemo(() => {
-    if (!activePatient) return -1
-    return patients.findIndex((patient) => patient.id === activePatient.id)
-  }, [patients, activePatient])
-
-  const frontRegions = React.useMemo(
-    () => parseBodySummary(activePatient?.body_parts_front ?? null),
-    [activePatient?.body_parts_front]
+  const resolveHospitalName = React.useCallback(
+    (patient: InternalReportPatientRecord | null | undefined): string => {
+      if (!patient) return "—"
+      const hospitalId = patient.receiving_hospital_id ? String(patient.receiving_hospital_id) : null
+      if (hospitalId) {
+        const lookupName = hospitalNameMap.get(hospitalId)
+        if (lookupName) return lookupName
+      }
+      if (patient.receiving_hospital_name) return patient.receiving_hospital_name
+      if (hospitalId) return hospitalId
+      return "No hospital assigned"
+    },
+    [hospitalNameMap],
   )
-  const backRegions = React.useMemo(
-    () => parseBodySummary(activePatient?.body_parts_back ?? null),
-    [activePatient?.body_parts_back]
-  )
-
-  const uniqueInjuryCodes = React.useMemo(() => {
-    const codes = new Set<string>()
-    frontRegions.forEach((injuries) => injuries.forEach((code) => codes.add(code)))
-    backRegions.forEach((injuries) => injuries.forEach((code) => codes.add(code)))
-    return Array.from(codes)
-  }, [frontRegions, backRegions])
-
-  const collectUnique = React.useCallback((values: (string | null | undefined)[]) => {
-    const unique = new Set<string>()
-    values.forEach((value) => {
-      const trimmed = value?.trim()
-      if (trimmed) unique.add(trimmed)
-    })
-    return Array.from(unique)
-  }, [])
-
-  const incidentLocations = React.useMemo(
-    () => collectUnique([report.incident_location, ...patients.map((patient) => patient.incident_location)]),
-    [collectUnique, patients, report.incident_location],
-  )
-
-  const moiPoiToiEntries = React.useMemo(
-    () => collectUnique([report.moi_poi_toi, ...patients.map((patient) => patient.moi_poi_toi)]),
-    [collectUnique, patients, report.moi_poi_toi],
-  )
-
-  const incidentLocationDisplay = incidentLocations.length > 0 ? incidentLocations.join("; ") : "—"
-  const moiPoiToiDisplay = moiPoiToiEntries.length > 0 ? moiPoiToiEntries.join("\n\n") : "—"
-
-  const legendItems = React.useMemo(
-    () =>
-      uniqueInjuryCodes.map((code) => ({
-        code,
-        label: INJURY_TYPE_LOOKUP[code]?.label ?? code,
-        color: INJURY_TYPE_COLOR_MAP[code] ?? "#2563eb",
-      })),
-    [uniqueInjuryCodes]
-  )
-
-  const regionLegendEntries = React.useMemo(() => {
-    const entries: {
-      key: string
-      orientation: "front" | "back"
-      label: string
-      color: string
-      injuries: string[]
-    }[] = []
-
-    const processMap = (map: Map<string, string[]>, orientation: "front" | "back") => {
-      map.forEach((codes, regionId) => {
-        if (!codes || codes.length === 0) return
-        const label = REGION_LABELS[regionId] ?? regionId
-        const color = getRegionFillColor(codes)
-        const injuries = codes.map((code) => INJURY_TYPE_LOOKUP[code]?.label ?? code)
-        entries.push({ key: `${orientation}-${regionId}`, orientation, label, color, injuries })
-      })
-    }
-
-    processMap(frontRegions, "front")
-    processMap(backRegions, "back")
-
-    return entries
-  }, [frontRegions, backRegions])
 
   const emergencyCategories = React.useMemo(
     () => parseCommaSeparated(activePatient?.emergency_category ?? null),
     [activePatient?.emergency_category]
   )
+
+  const incidentLocationDisplay = React.useMemo(() => {
+    if (!report.incident_location) return "—"
+    return report.incident_location.trim() || "—"
+  }, [report.incident_location])
+
+  const moiPoiToiDisplay = React.useMemo(() => {
+    const source = restrictToPatientView ? report.moi_poi_toi : report.moi_poi_toi
+    if (!source) return "—"
+    return source.trim() || "—"
+  }, [report.moi_poi_toi, restrictToPatientView])
+
+  const gcsEyeScore = activePatient?.gcs_eye ?? null
+  const gcsVerbalScore = activePatient?.gcs_verbal ?? null
+  const gcsMotorScore = activePatient?.gcs_motor ?? null
+  const gcsTotalScore = activePatient?.gcs_total ?? ((gcsEyeScore ?? 0) + (gcsVerbalScore ?? 0) + (gcsMotorScore ?? 0) || null)
+
+  const vitalSigns: Array<{ label: string; value: string | number | null }> = [
+    { label: "LOC / AVPU", value: activePatient?.loc_avpu ?? null },
+    { label: "Pulse Rate", value: activePatient?.pulse_rate ?? null },
+    { label: "BP", value: activePatient?.blood_pressure ?? null },
+    { label: "BPM", value: activePatient?.bpm ?? null },
+    { label: "O₂ Saturation", value: activePatient?.oxygen_saturation ?? null },
+    { label: "Pain (1-10)", value: activePatient?.pain_scale ?? null },
+    { label: "Temperature", value: activePatient?.temperature ?? null },
+    { label: "Respiratory Rate", value: activePatient?.respiratory_rate ?? null },
+  ]
+
+  const frontRegions = React.useMemo(
+    () => parseBodySummary(activePatient?.body_parts_front ?? null),
+    [activePatient?.body_parts_front],
+  )
+  const backRegions = React.useMemo(
+    () => parseBodySummary(activePatient?.body_parts_back ?? null),
+    [activePatient?.body_parts_back],
+  )
+
+  const regionLegendEntries = React.useMemo(() => {
+    const entries: Array<{ key: string; label: string; color: string; orientation: "front" | "back"; injuries: string[] }> = []
+
+    const pushEntries = (map: Map<string, string[]>, orientation: "front" | "back") => {
+      map.forEach((injuries, regionId) => {
+        const label = REGION_LABELS[regionId] ?? regionId
+        const color = getRegionFillColor(injuries)
+        entries.push({ key: `${orientation}-${regionId}`, label, color, orientation, injuries })
+      })
+    }
+
+    pushEntries(frontRegions, "front")
+    pushEntries(backRegions, "back")
+    return entries
+  }, [frontRegions, backRegions])
+
+  const injuryTypeLegendItems = React.useMemo(() => {
+    const codes = new Set<string>()
+    regionLegendEntries.forEach((entry) => {
+      entry.injuries.forEach((code) => codes.add(code))
+    })
+
+    return Array.from(codes)
+      .map((code) => {
+        const info = INJURY_TYPE_LOOKUP[code]
+        if (!info) return null
+        return {
+          code,
+          label: info.label,
+          color: INJURY_TYPE_COLOR_MAP[code] ?? REGION_DEFAULT_FILL,
+        }
+      })
+      .filter((item): item is { code: string; label: string; color: string } => Boolean(item))
+  }, [regionLegendEntries])
+
   const airwayInterventions = React.useMemo(
     () => parseCommaSeparated(activePatient?.airway_interventions ?? null),
     [activePatient?.airway_interventions]
@@ -592,26 +629,55 @@ export function InternalReportDetail({ report, patients, barangayName, incidentT
 
     const wrapperEl = wrapperRef.current
     let previousFontSize: string | null = null
+    let previousBodyFontSize: string | null = null
 
     try {
       if (restrictToPatientView && wrapperEl) {
         previousFontSize = wrapperEl.style.fontSize || null
-        wrapperEl.style.fontSize = "1rem"
-        await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
+        wrapperEl.style.fontSize = ""
+        if (bodyRef.current) {
+          previousBodyFontSize = bodyRef.current.style.fontSize || null
+          // Setting a temporary font size here before the main change
+          // This line is part of existing logic for 'restrictToPatientView'
+          bodyRef.current.style.fontSize = "12px" 
+        }
       }
 
-      const pdf = new jsPDF("p", "mm", "legal")
+      // Set font size for PDF export - set to standard for bond paper look
+      if (bodyRef.current) {
+        if (!previousBodyFontSize) {
+          previousBodyFontSize = bodyRef.current.style.fontSize || null
+        }
+        bodyRef.current.style.fontSize = "10px" // Smaller body font to match header
+      }
+
+      if (wrapperEl) {
+        if (!previousFontSize) {
+          previousFontSize = wrapperEl.style.fontSize || null
+        }
+        wrapperEl.style.fontSize = "12px" // Ensure consistent 12px font for PDF
+      }
+
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        format: "legal", // Long bond paper size 8.5x14 inches
+      })
+
       const pageWidth = pdf.internal.pageSize.getWidth()
       const pageHeight = pdf.internal.pageSize.getHeight()
-      const marginX = 12
-      const marginTop = 12
+      const marginX = 10 // Adjusted to 10mm for professional spacing
+      const marginTop = 10 // Adjusted to 10mm for professional spacing
       const usableWidth = pageWidth - marginX * 2
 
       const headerCanvas = await html2canvas(headerRef.current, { scale: 2 })
       const headerImgData = headerCanvas.toDataURL("image/png")
       const headerHeightMm = (headerCanvas.height * usableWidth) / headerCanvas.width
 
-      const bodyCanvas = await html2canvas(bodyRef.current, { scale: 2 })
+      const bodyCanvas = await html2canvas(bodyRef.current, {
+        scale: 2,
+        windowWidth: bodyRef.current.scrollWidth,
+        windowHeight: bodyRef.current.scrollHeight,
+      })
       const pxPerMm = bodyCanvas.width / usableWidth
       const availableHeightMm = pageHeight - marginTop - headerHeightMm - 8
       const availableHeightPx = availableHeightMm * pxPerMm
@@ -626,7 +692,28 @@ export function InternalReportDetail({ report, patients, barangayName, incidentT
 
         pdf.addImage(headerImgData, "PNG", marginX, marginTop, usableWidth, headerHeightMm)
 
-        const sliceHeightPx = Math.min(availableHeightPx, bodyCanvas.height - yOffset)
+        let sliceHeightPx = Math.min(availableHeightPx, bodyCanvas.height - yOffset)
+
+        if (sliceHeightPx < availableHeightPx && yOffset + sliceHeightPx < bodyCanvas.height) {
+          const pageContent = bodyRef.current
+          if (pageContent) {
+            const childNodes = Array.from(pageContent.children)
+            const targetY = yOffset + sliceHeightPx
+            for (const child of childNodes) {
+              const element = child as HTMLElement
+              if (!element) continue
+              const { offsetTop, offsetHeight } = element
+              if (offsetTop <= targetY && offsetTop + offsetHeight > targetY) {
+                const breakBefore = element.dataset.pdfBreakBefore === "true"
+                if (breakBefore) {
+                  sliceHeightPx = Math.max(0, offsetTop - yOffset)
+                }
+                break
+              }
+            }
+          }
+        }
+
         const sliceCanvas = document.createElement("canvas")
         sliceCanvas.width = bodyCanvas.width
         sliceCanvas.height = sliceHeightPx
@@ -662,8 +749,11 @@ export function InternalReportDetail({ report, patients, barangayName, incidentT
 
       pdf.save(`internal-report-${report.id}.pdf`)
     } finally {
-      if (restrictToPatientView && wrapperEl) {
-        wrapperEl.style.fontSize = previousFontSize ?? ""
+      if (wrapperEl && previousFontSize !== null) {
+        wrapperEl.style.fontSize = previousFontSize
+      }
+      if (bodyRef.current && previousBodyFontSize !== null) {
+        bodyRef.current.style.fontSize = previousBodyFontSize
       }
     }
   }, [report.id, restrictToPatientView])
@@ -758,14 +848,6 @@ export function InternalReportDetail({ report, patients, barangayName, incidentT
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Time Responded</p>
                   <p className="text-base text-gray-800">{formatDateTime(report.time_responded, true)}</p>
                 </div>
-                <div className="sm:col-span-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Incident Location</p>
-                  <p className="text-base text-gray-800 whitespace-pre-line">{incidentLocationDisplay}</p>
-                </div>
-                <div className="sm:col-span-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">MOI/POI/TOI</p>
-                  <p className="text-base text-gray-800 whitespace-pre-line">{moiPoiToiDisplay}</p>
-                </div>
               </div>
             </section>
           )}
@@ -794,20 +876,12 @@ export function InternalReportDetail({ report, patients, barangayName, incidentT
                   <p className="font-medium text-gray-900">{erTeamName || "—"}</p>
                 </div>
                 <div>
-                  <p className="text-xs font-medium uppercase text-gray-500">Incident Location</p>
-                  <p className="font-medium text-gray-900 whitespace-pre-line">{incidentLocationDisplay}</p>
-                </div>
-                <div>
                   <p className="text-xs font-medium uppercase text-gray-500">Persons Involved</p>
                   <p className="font-medium text-gray-900">{report.persons_involved ?? "—"}</p>
                 </div>
                 <div>
                   <p className="text-xs font-medium uppercase text-gray-500">Responders</p>
                   <p className="font-medium text-gray-900">{report.number_of_responders ?? "—"}</p>
-                </div>
-                <div className="sm:col-span-2">
-                  <p className="text-xs font-medium uppercase text-gray-500">MOI / POI / TOI</p>
-                  <p className="font-medium text-gray-900 whitespace-pre-line">{moiPoiToiDisplay}</p>
                 </div>
               </div>
             </section>
@@ -962,70 +1036,159 @@ export function InternalReportDetail({ report, patients, barangayName, incidentT
 
               <section>
                 <h3 className="text-lg font-semibold text-gray-900">Injury Overview</h3>
-                <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                  <div className="space-y-3">
-                    <p className="text-sm font-semibold text-gray-700">Front View</p>
-                    <ReadOnlyBodyDiagram view="front" regionMap={frontRegions} />
-                    <p className="text-xs text-gray-600">Highlighted regions correspond to confirmed injuries on the patient's front body.</p>
-                  </div>
-                  <div className="space-y-3">
-                    <p className="text-sm font-semibold text-gray-700">Back View</p>
-                    <ReadOnlyBodyDiagram view="back" regionMap={backRegions} />
-                    <p className="text-xs text-gray-600">Highlighted regions correspond to confirmed injuries on the patient's back body.</p>
-                  </div>
-                </div>
 
-                <div className="mt-6">
-                  <h4 className="text-sm font-semibold text-gray-700">Body Region Legend</h4>
-                  <div className="mt-2 grid gap-2">
-                    {regionLegendEntries.length > 0 ? (
-                      regionLegendEntries.map(({ key, orientation, label, color, injuries }) => (
-                        <div key={key} className="flex items-start gap-3 rounded border border-gray-200 bg-white p-3 text-sm shadow-sm">
-                          <span className="mt-0.5 h-4 w-4 rounded-full" style={{ backgroundColor: color }} />
-                          <div>
-                            <p className="font-semibold text-gray-800">
-                              {label}
-                              <span className="ml-2 text-xs font-medium uppercase text-gray-500">{orientation}</span>
-                            </p>
-                            <p className="text-xs text-gray-600">
-                              {injuries.length > 0 ? injuries.join(", ") : "No specific injury noted"}
-                            </p>
+                {(activePatient?.moi_poi_toi || activePatient?.noi || activePatient?.signs_symptoms) && (
+                  <div className="mt-4 grid gap-4 text-sm sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-medium uppercase text-gray-500">MOI / POI / TOI</p>
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Notes</p>
+                      <p className="whitespace-pre-line font-medium text-gray-900">{activePatient?.moi_poi_toi || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase text-gray-500">NOI (Nature of Injury)</p>
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Notes</p>
+                      <p className="whitespace-pre-line font-medium text-gray-900">{activePatient?.noi || "—"}</p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-xs font-medium uppercase text-gray-500">Signs &amp; Symptoms</p>
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Notes</p>
+                      <p className="whitespace-pre-line font-medium text-gray-900">{activePatient?.signs_symptoms || "—"}</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-6 space-y-6" data-pdf-break-before="true">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700">Body Region Legend</h4>
+                    <div className="mt-2 grid gap-2 grid-cols-6">
+                      {regionLegendEntries.length > 0 ? (
+                        regionLegendEntries.map(({ key, orientation, label, color, injuries }) => (
+                          <div
+                            key={key}
+                            className="flex items-start gap-3 rounded border border-gray-200 p-3 text-xs shadow-sm text-white"
+                            style={{ backgroundColor: color }}
+                          >
+                            <div>
+                              <p className="font-semibold">
+                                {label}
+                                <span className="ml-2 text-xs font-medium uppercase">{orientation}</span>
+                              </p>
+                              <p className="text-xs">
+                                {injuries.length > 0 ? injuries.join(", ") : "No specific injury noted"}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-gray-600">No highlighted body regions recorded for this patient.</p>
-                    )}
+                        ))
+                      ) : (
+                        <p className="text-sm text-gray-600">No highlighted body regions recorded for this patient.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-6 grid-cols-2">
+                    <div className="space-y-3">
+                      <p className="text-sm font-semibold text-gray-700">Front View</p>
+                      <ReadOnlyBodyDiagram view="front" regionMap={frontRegions} />
+                    </div>
+                    <div className="space-y-3">
+                      <p className="text-sm font-semibold text-gray-700">Back View</p>
+                      <ReadOnlyBodyDiagram view="back" regionMap={backRegions} />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 text-sm sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-medium uppercase text-gray-500">Front Summary</p>
+                      <p className="whitespace-pre-line font-medium text-gray-900">{activePatient.body_parts_front || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase text-gray-500">Back Summary</p>
+                      <p className="whitespace-pre-line font-medium text-gray-900">{activePatient.body_parts_back || "—"}</p>
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-6">
-                  <h4 className="text-sm font-semibold text-gray-700">Injury Type Legend</h4>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    {legendItems.length > 0 ? (
-                      legendItems.map((item) => (
+                {!restrictToPatientView && injuryTypeLegendItems.length > 0 && (
+                  <div className="mt-6">
+                    <h4 className="text-sm font-semibold text-gray-700">Injury Type Legend</h4>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      {injuryTypeLegendItems.map((item) => (
                         <div key={item.code} className="flex items-center gap-3 rounded border border-gray-200 bg-gray-50 p-3 text-sm">
                           <span className="h-4 w-4 rounded-full" style={{ backgroundColor: item.color }} />
                           <span className="font-medium text-gray-800">{item.label}</span>
                         </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-gray-600">No injuries recorded for this patient.</p>
-                    )}
+                      ))}
+                    </div>
                   </div>
-                </div>
-
-                <div className="mt-6 grid gap-4 text-sm sm:grid-cols-2">
-                  <div>
-                    <p className="text-xs font-medium uppercase text-gray-500">Front Summary</p>
-                    <p className="whitespace-pre-line font-medium text-gray-900">{activePatient.body_parts_front || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium uppercase text-gray-500">Back Summary</p>
-                    <p className="whitespace-pre-line font-medium text-gray-900">{activePatient.body_parts_back || "—"}</p>
-                  </div>
-                </div>
+                )}
               </section>
+
+              {(gcsEyeScore !== null || gcsVerbalScore !== null || gcsMotorScore !== null || activePatient?.gcs_other) && (
+                <section data-pdf-break-before="true"> {/* ADDED: Ensures this section starts on a new page if split */}
+                  <h3 className="text-lg font-semibold text-gray-900">Neurological Assessment (GCS)</h3>
+                  <div className="mt-3 overflow-hidden rounded-lg border border-gray-200">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                        <tr>
+                          <th className="px-4 py-2 text-left">Component</th>
+                          <th className="px-4 py-2 text-left">Score</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-t border-gray-200">
+                          <td className="px-4 py-2 text-gray-600">Eye</td>
+                          <td className="px-4 py-2 font-medium text-gray-900">{gcsEyeScore ?? "—"}</td>
+                        </tr>
+                        <tr className="border-t border-gray-200">
+                          <td className="px-4 py-2 text-gray-600">Verbal</td>
+                          <td className="px-4 py-2 font-medium text-gray-900">{gcsVerbalScore ?? "—"}</td>
+                        </tr>
+                        <tr className="border-t border-gray-200">
+                          <td className="px-4 py-2 text-gray-600">Motor</td>
+                          <td className="px-4 py-2 font-medium text-gray-900">{gcsMotorScore ?? "—"}</td>
+                        </tr>
+                        <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
+                          <td className="px-4 py-2 text-gray-700">Total GCS</td>
+                          <td className="px-4 py-2 text-gray-900">{gcsTotalScore ?? "—"}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  {activePatient?.gcs_other ? (
+                    <p className="mt-3 text-sm text-gray-700"><span className="font-semibold">Remarks:</span> {activePatient.gcs_other}</p>
+                  ) : null}
+                </section>
+              )}
+
+              {vitalSigns.some((entry) => entry.value) && (
+                <section data-pdf-break-before="true"> {/* ADDED: Ensures this section starts on a new page if split */}
+                  <h3 className="text-lg font-semibold text-gray-900">Vital Signs</h3>
+                  <div className="mt-3 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                    {vitalSigns.map((entry) => (
+                      <div key={entry.label}>
+                        <p className="text-xs font-medium uppercase text-gray-500">{entry.label}</p>
+                        <p className="font-medium text-gray-900">{entry.value && `${entry.value}`.trim().length > 0 ? entry.value : "—"}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {(activePatient?.blood_loss_level || activePatient?.estimated_blood_loss !== null) && (
+                <section data-pdf-break-before="true"> {/* ADDED: Ensures this section starts on a new page if split */}
+                  <h3 className="text-lg font-semibold text-gray-900">Blood Loss</h3>
+                  <div className="mt-3 grid gap-4 text-sm sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-medium uppercase text-gray-500">Severity</p>
+                      <p className="font-medium text-gray-900">{activePatient?.blood_loss_level || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase text-gray-500">Estimated Quantity (Liters)</p>
+                      <p className="font-medium text-gray-900">{typeof activePatient?.estimated_blood_loss === "number" ? activePatient.estimated_blood_loss : activePatient?.estimated_blood_loss ?? "—"}</p>
+                    </div>
+                  </div>
+                </section>
+              )}
 
               {!restrictToPatientView && (
                 <section>
@@ -1033,7 +1196,7 @@ export function InternalReportDetail({ report, patients, barangayName, incidentT
                   <div className="mt-3 grid gap-4 text-sm sm:grid-cols-2">
                     <div>
                       <p className="text-xs font-medium uppercase text-gray-500">Receiving Hospital</p>
-                      <p className="font-medium text-gray-900">{activePatient.receiving_hospital_name || activePatient.receiving_hospital_id || "—"}</p>
+                      <p className="font-medium text-gray-900">{resolveHospitalName(activePatient)}</p>
                     </div>
                     <div>
                       <p className="text-xs font-medium uppercase text-gray-500">Receiving Date</p>
@@ -1046,6 +1209,10 @@ export function InternalReportDetail({ report, patients, barangayName, incidentT
                     <div>
                       <p className="text-xs font-medium uppercase text-gray-500">Injury Types Summary</p>
                       <p className="font-medium text-gray-900">{activePatient.injury_types || "—"}</p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-xs font-medium uppercase text-gray-500">Incident Location (Patient)</p>
+                      <p className="font-medium text-gray-900 whitespace-pre-line">{activePatient.incident_location?.trim() || "—"}</p>
                     </div>
                   </div>
                 </section>

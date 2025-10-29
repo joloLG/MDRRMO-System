@@ -293,16 +293,25 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
         error: sessionError,
       } = await supabase.auth.getSession()
 
-      if (sessionError) {
-        if (sessionError.name === "AuthSessionMissingError") {
-          setError("Hospital session not found. Please sign in again.")
+      let session = sessionData?.session ?? null
+
+      if (sessionError || !session) {
+        const {
+          data: refreshData,
+          error: refreshError,
+        } = await supabase.auth.refreshSession()
+
+        if (refreshError || !refreshData?.session) {
+          await supabase.auth.signOut()
+          setError("Your hospital session expired. Please sign in again.")
           setLoading(false)
           return
         }
-        throw sessionError
+
+        session = refreshData.session
       }
 
-      const user = sessionData.session?.user ?? null
+      const user = session?.user ?? null
       if (!user) {
         setError("You must be signed in to view hospital data.")
         setLoading(false)
@@ -906,15 +915,31 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
     )
   }
 
+  React.useEffect(() => {
+    if (!error) return
+
+    const timeout = window.setTimeout(() => {
+      void handleRefresh()
+    }, 3000)
+
+    return () => window.clearTimeout(timeout)
+  }, [error, handleRefresh])
+
   if (error) {
+    if (error.includes("No hospital assignment")) {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100 px-6 text-center text-gray-700">
+          <AlertTriangle className="h-12 w-12 text-orange-500" />
+          <h1 className="mt-4 text-xl font-semibold text-gray-900">Hospital assignment missing</h1>
+          <p className="mt-2 max-w-sm text-sm text-gray-600">{error}</p>
+        </div>
+      )
+    }
+
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100 px-6 text-center text-gray-700">
-        <AlertTriangle className="h-12 w-12 text-red-500" />
-        <h1 className="mt-4 text-xl font-semibold text-gray-900">We hit a snag</h1>
-        <p className="mt-2 max-w-sm text-sm text-gray-600">{error}</p>
-        <Button className="mt-6 bg-orange-500 hover:bg-orange-600" onClick={handleRefresh}>
-          Try again
-        </Button>
+      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100 text-orange-600">
+        <Loader2 className="h-10 w-10 animate-spin" />
+        <p className="mt-3 text-sm font-medium">Refreshing your hospital session…</p>
       </div>
     )
   }

@@ -192,6 +192,20 @@ const PATIENT_REQUIRED_FIELDS = [
   "typeOfEmergencySelections",
   "incidentLocation",
   "moiPoiToi",
+  "noi",
+  "signsSymptoms",
+  "gcsEye",
+  "gcsVerbal",
+  "gcsMotor",
+  "locAvpu",
+  "pulseRate",
+  "bloodPressure",
+  "bpm",
+  "oxygenSaturation",
+  "painScale",
+  "temperature",
+  "respiratoryRate",
+  "bloodLossLevel",
   "turnoverInCharge",
   "receivingHospitalId",
   "receivingDate",
@@ -220,6 +234,22 @@ interface PatientFormState {
   circulationSelections: string[]
   incidentLocation: string
   moiPoiToi: string
+  noi: string
+  signsSymptoms: string
+  gcsEye: string
+  gcsVerbal: string
+  gcsMotor: string
+  gcsOther: string
+  locAvpu: string
+  pulseRate: string
+  bloodPressure: string
+  bpm: string
+  oxygenSaturation: string
+  painScale: string
+  temperature: string
+  respiratoryRate: string
+  bloodLossLevel: string
+  estimatedBloodLoss: string
   turnoverInCharge: string
   receivingHospitalId?: string
   receivingDate: string
@@ -250,6 +280,22 @@ const createEmptyPatient = (): PatientFormState => ({
   circulationSelections: [],
   incidentLocation: "",
   moiPoiToi: "",
+  noi: "",
+  signsSymptoms: "",
+  gcsEye: "",
+  gcsVerbal: "",
+  gcsMotor: "",
+  gcsOther: "",
+  locAvpu: "",
+  pulseRate: "",
+  bloodPressure: "",
+  bpm: "",
+  oxygenSaturation: "",
+  painScale: "",
+  temperature: "",
+  respiratoryRate: "",
+  bloodLossLevel: "",
+  estimatedBloodLoss: "",
   turnoverInCharge: "",
   receivingHospitalId: undefined,
   receivingDate: "",
@@ -1214,6 +1260,13 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
           const uniqueInjuryCodes = new Set<string>()
           Object.values(patient.bodyPartInjuries).forEach((codes) => codes.forEach((code) => uniqueInjuryCodes.add(code)))
           const injurySummary = formatInjuryList(Array.from(uniqueInjuryCodes).map((code) => INJURY_TYPE_LOOKUP[code]?.shortLabel ?? code))
+          const gcsEyeScore = patient.gcsEye ? parseInt(patient.gcsEye, 10) : null
+          const gcsVerbalScore = patient.gcsVerbal ? parseInt(patient.gcsVerbal, 10) : null
+          const gcsMotorScore = patient.gcsMotor ? parseInt(patient.gcsMotor, 10) : null
+          const gcsTotal = [gcsEyeScore, gcsVerbalScore, gcsMotorScore].some((value) => value !== null)
+            ? (Number(gcsEyeScore ?? 0) + Number(gcsVerbalScore ?? 0) + Number(gcsMotorScore ?? 0))
+            : null
+          const estimatedBloodLoss = patient.estimatedBloodLoss ? Number(patient.estimatedBloodLoss) : null
           return {
             internal_report_id: reportId,
             receiving_hospital_id: patient.receivingHospitalId ?? null,
@@ -1233,6 +1286,23 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
             injury_types: injurySummary,
             incident_location: patient.incidentLocation,
             moi_poi_toi: patient.moiPoiToi,
+            noi: patient.noi || null,
+            signs_symptoms: patient.signsSymptoms || null,
+            gcs_eye: gcsEyeScore,
+            gcs_verbal: gcsVerbalScore,
+            gcs_motor: gcsMotorScore,
+            gcs_total: gcsTotal,
+            gcs_other: patient.gcsOther || null,
+            loc_avpu: patient.locAvpu || null,
+            pulse_rate: patient.pulseRate || null,
+            blood_pressure: patient.bloodPressure || null,
+            bpm: patient.bpm || null,
+            oxygen_saturation: patient.oxygenSaturation || null,
+            pain_scale: patient.painScale || null,
+            temperature: patient.temperature || null,
+            respiratory_rate: patient.respiratoryRate || null,
+            blood_loss_level: patient.bloodLossLevel || null,
+            estimated_blood_loss: estimatedBloodLoss,
             turnover_in_charge: patient.turnoverInCharge || null,
             receiving_hospital_date: patient.receivingDate ? new Date(`${patient.receivingDate}T00:00:00Z`).toISOString() : null,
             emt_ert_date: patient.emtErtDate ? new Date(`${patient.emtErtDate}T00:00:00Z`).toISOString() : null,
@@ -1469,6 +1539,7 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
     const missingInjury = missingInjuryPatientIds.includes(patient.id)
     const containerHasErrors = hasErrors || missingInjury
     const priorityDetails = getPriorityDetails(patient.evacPriority)
+    const gcsTotal = Number(patient.gcsEye || 0) + Number(patient.gcsVerbal || 0) + Number(patient.gcsMotor || 0)
     return (
       <div key={patient.id} className={cn("rounded-lg border p-4", containerHasErrors ? "border-red-300 bg-red-50" : "border-gray-200 bg-white")}
       >
@@ -1511,6 +1582,18 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
                 <span className="text-gray-500">No priority selected</span>
               )}
             </dd>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+            <span className="font-semibold text-gray-700">GCS</span>
+            <span className="text-gray-600">{gcsTotal ? `${gcsTotal} (E${patient.gcsEye || 0} V${patient.gcsVerbal || 0} M${patient.gcsMotor || 0})` : "—"}</span>
+            <span className="font-semibold text-gray-700">Vitals</span>
+            <span className="text-gray-600 text-left">
+              {[patient.locAvpu, patient.pulseRate && `${patient.pulseRate} PR`, patient.bloodPressure && `BP ${patient.bloodPressure}`, patient.oxygenSaturation && `O₂ ${patient.oxygenSaturation}%`, patient.respiratoryRate && `RR ${patient.respiratoryRate}`, patient.temperature && `${patient.temperature}°C`, patient.painScale && `Pain ${patient.painScale}/10`]
+                .filter(Boolean)
+                .join(" · ") || "—"}
+            </span>
+            <span className="font-semibold text-gray-700">Blood Loss</span>
+            <span className="text-gray-600">{patient.bloodLossLevel || "—"}{patient.estimatedBloodLoss ? ` (${patient.estimatedBloodLoss} L)` : ""}</span>
           </div>
           <div>
             <dt className="font-semibold text-gray-700">Body Diagram</dt>
@@ -2058,8 +2141,297 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
+                <Label htmlFor="noiPatient" className="block text-sm font-medium text-gray-700 mb-1">
+                  NOI (Nature of Injury)
+                </Label>
+                <Textarea
+                  id="noiPatient"
+                  value={activePatient?.noi ?? ""}
+                  onChange={(event) => handlePatientChange(activePatient.id, "noi", event.target.value)}
+                  rows={3}
+                  required
+                />
+                {patientValidationErrors[activePatient.id]?.includes("noi") ? (
+                  <p className="text-xs text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                ) : null}
+              </div>
+              <div>
+                <Label htmlFor="signsSymptomsPatient" className="block text-sm font-medium text-gray-700 mb-1">
+                  S/S (Signs &amp; Symptoms)
+                </Label>
+                <Textarea
+                  id="signsSymptomsPatient"
+                  value={activePatient?.signsSymptoms ?? ""}
+                  onChange={(event) => handlePatientChange(activePatient.id, "signsSymptoms", event.target.value)}
+                  rows={3}
+                  required
+                />
+                {patientValidationErrors[activePatient.id]?.includes("signsSymptoms") ? (
+                  <p className="text-xs text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="rounded-lg border shadow-sm p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-gray-700">Glasgow Coma Scale (GCS)</p>
+                  <span className="text-xs text-gray-500">Tap to select score</span>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-xs font-semibold text-gray-600 mb-2 block">Eye (4-1)</Label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {["4", "3", "2", "1"].map((value) => (
+                        <Button
+                          key={value}
+                          type="button"
+                          variant={activePatient?.gcsEye === value ? "default" : "outline"}
+                          className={cn(
+                            "py-2",
+                            activePatient?.gcsEye === value ? "bg-orange-500 text-white" : "bg-white text-gray-700 hover:bg-gray-50",
+                          )}
+                          onClick={() => handlePatientChange(activePatient.id, "gcsEye", value)}
+                        >
+                          {value}
+                        </Button>
+                      ))}
+                    </div>
+                    {patientValidationErrors[activePatient.id]?.includes("gcsEye") ? (
+                      <p className="text-xs text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-gray-600 mb-2 block">Verbal (5-1)</Label>
+                    <div className="grid grid-cols-5 gap-2">
+                      {["5", "4", "3", "2", "1"].map((value) => (
+                        <Button
+                          key={value}
+                          type="button"
+                          variant={activePatient?.gcsVerbal === value ? "default" : "outline"}
+                          className={cn(
+                            "py-2",
+                            activePatient?.gcsVerbal === value ? "bg-orange-500 text-white" : "bg-white text-gray-700 hover:bg-gray-50",
+                          )}
+                          onClick={() => handlePatientChange(activePatient.id, "gcsVerbal", value)}
+                        >
+                          {value}
+                        </Button>
+                      ))}
+                    </div>
+                    {patientValidationErrors[activePatient.id]?.includes("gcsVerbal") ? (
+                      <p className="text-xs text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold text-gray-600 mb-2 block">Motor (6-1)</Label>
+                    <div className="grid grid-cols-6 gap-2">
+                      {["6", "5", "4", "3", "2", "1"].map((value) => (
+                        <Button
+                          key={value}
+                          type="button"
+                          variant={activePatient?.gcsMotor === value ? "default" : "outline"}
+                          className={cn(
+                            "py-2",
+                            activePatient?.gcsMotor === value ? "bg-orange-500 text-white" : "bg-white text-gray-700 hover:bg-gray-50",
+                          )}
+                          onClick={() => handlePatientChange(activePatient.id, "gcsMotor", value)}
+                        >
+                          {value}
+                        </Button>
+                      ))}
+                    </div>
+                    {patientValidationErrors[activePatient.id]?.includes("gcsMotor") ? (
+                      <p className="text-xs text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2">
+                  <span className="text-sm font-semibold text-gray-700">Total GCS</span>
+                  <span className="text-lg font-bold text-gray-900">
+                    {Number(activePatient?.gcsEye || 0) + Number(activePatient?.gcsVerbal || 0) + Number(activePatient?.gcsMotor || 0)}
+                  </span>
+                </div>
+                <div>
+                  <Label htmlFor="gcsOther" className="block text-xs font-semibold text-gray-600 mb-1">
+                    Other Remarks
+                  </Label>
+                  <Textarea
+                    id="gcsOther"
+                    value={activePatient?.gcsOther ?? ""}
+                    onChange={(event) => handlePatientChange(activePatient.id, "gcsOther", event.target.value)}
+                    rows={2}
+                    placeholder="Optional notes"
+                  />
+                </div>
+              </div>
+              <div className="rounded-lg border shadow-sm p-4 space-y-4">
+                <p className="text-sm font-semibold text-gray-700">Vital Signs &amp; Assessment</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="locAvpu" className="block text-xs font-semibold text-gray-600 mb-1">
+                      LOC / AVPU
+                    </Label>
+                    <Input
+                      id="locAvpu"
+                      value={activePatient?.locAvpu ?? ""}
+                      onChange={(event) => handlePatientChange(activePatient.id, "locAvpu", event.target.value)}
+                      placeholder="e.g. Alert"
+                      required
+                    />
+                    {patientValidationErrors[activePatient.id]?.includes("locAvpu") ? (
+                      <p className="text-xs text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Label htmlFor="pulseRate" className="block text-xs font-semibold text-gray-600 mb-1">
+                      Pulse Rate
+                    </Label>
+                    <Input
+                      id="pulseRate"
+                      value={activePatient?.pulseRate ?? ""}
+                      onChange={(event) => handlePatientChange(activePatient.id, "pulseRate", event.target.value)}
+                      placeholder="bpm"
+                      required
+                    />
+                    {patientValidationErrors[activePatient.id]?.includes("pulseRate") ? (
+                      <p className="text-xs text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Label htmlFor="bloodPressure" className="block text-xs font-semibold text-gray-600 mb-1">
+                      BP
+                    </Label>
+                    <Input
+                      id="bloodPressure"
+                      value={activePatient?.bloodPressure ?? ""}
+                      onChange={(event) => handlePatientChange(activePatient.id, "bloodPressure", event.target.value)}
+                      placeholder="e.g. 120/80"
+                      required
+                    />
+                    {patientValidationErrors[activePatient.id]?.includes("bloodPressure") ? (
+                      <p className="text-xs text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Label htmlFor="bpm" className="block text-xs font-semibold text-gray-600 mb-1">
+                      BPM
+                    </Label>
+                    <Input
+                      id="bpm"
+                      value={activePatient?.bpm ?? ""}
+                      onChange={(event) => handlePatientChange(activePatient.id, "bpm", event.target.value)}
+                      placeholder="Beats per minute"
+                      required
+                    />
+                    {patientValidationErrors[activePatient.id]?.includes("bpm") ? (
+                      <p className="text-xs text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Label htmlFor="oxygenSaturation" className="block text-xs font-semibold text-gray-600 mb-1">
+                      O₂ Saturation (%)
+                    </Label>
+                    <Input
+                      id="oxygenSaturation"
+                      value={activePatient?.oxygenSaturation ?? ""}
+                      onChange={(event) => handlePatientChange(activePatient.id, "oxygenSaturation", event.target.value)}
+                      required
+                    />
+                    {patientValidationErrors[activePatient.id]?.includes("oxygenSaturation") ? (
+                      <p className="text-xs text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Label htmlFor="painScale" className="block text-xs font-semibold text-gray-600 mb-1">
+                      Pain (1-10)
+                    </Label>
+                    <Input
+                      id="painScale"
+                      type="number"
+                      min="0"
+                      max="10"
+                      value={activePatient?.painScale ?? ""}
+                      onChange={(event) => handlePatientChange(activePatient.id, "painScale", event.target.value.replace(/[^0-9]/g, "").slice(0, 2))}
+                      required
+                    />
+                    {patientValidationErrors[activePatient.id]?.includes("painScale") ? (
+                      <p className="text-xs text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Label htmlFor="temperature" className="block text-xs font-semibold text-gray-600 mb-1">
+                      Temperature (°C)
+                    </Label>
+                    <Input
+                      id="temperature"
+                      value={activePatient?.temperature ?? ""}
+                      onChange={(event) => handlePatientChange(activePatient.id, "temperature", event.target.value)}
+                      required
+                    />
+                    {patientValidationErrors[activePatient.id]?.includes("temperature") ? (
+                      <p className="text-xs text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Label htmlFor="respiratoryRate" className="block text-xs font-semibold text-gray-600 mb-1">
+                      Respiratory Rate (RR)
+                    </Label>
+                    <Input
+                      id="respiratoryRate"
+                      value={activePatient?.respiratoryRate ?? ""}
+                      onChange={(event) => handlePatientChange(activePatient.id, "respiratoryRate", event.target.value)}
+                      required
+                    />
+                    {patientValidationErrors[activePatient.id]?.includes("respiratoryRate") ? (
+                      <p className="text-xs text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="block text-xs font-semibold text-gray-600 mb-1">Blood Loss</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {["Major", "Minor", "None"].map((option) => (
+                      <Button
+                        key={option}
+                        type="button"
+                        variant={activePatient?.bloodLossLevel === option ? "default" : "outline"}
+                        className={cn(
+                          "px-4",
+                          activePatient?.bloodLossLevel === option
+                            ? "bg-orange-500 text-white"
+                            : "bg-white text-gray-700 hover:bg-gray-50",
+                        )}
+                        onClick={() => handlePatientChange(activePatient.id, "bloodLossLevel", option)}
+                      >
+                        {option}
+                      </Button>
+                    ))}
+                  </div>
+                  {patientValidationErrors[activePatient.id]?.includes("bloodLossLevel") ? (
+                    <p className="text-xs text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
+                  ) : null}
+                </div>
+
+                <div>
+                  <Label htmlFor="estimatedBloodLoss" className="block text-xs font-semibold text-gray-600 mb-1">
+                    Estimated Quantity (Liters)
+                  </Label>
+                  <Input
+                    id="estimatedBloodLoss"
+                    value={activePatient?.estimatedBloodLoss ?? ""}
+                    onChange={(event) => handlePatientChange(activePatient.id, "estimatedBloodLoss", event.target.value)}
+                    placeholder="e.g. 0.5"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+              <div className="min-w-0">
                 <Label htmlFor="receivingHospital" className="block text-sm font-medium text-gray-700 mb-1">
                   Receiving Hospital
                 </Label>
@@ -2068,12 +2440,12 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
                   onValueChange={(value) => handlePatientChange(activePatient.id, "receivingHospitalId", value)}
                   required
                 >
-                  <SelectTrigger id="receivingHospital">
+                  <SelectTrigger id="receivingHospital" className="w-full max-w-full truncate">
                     <SelectValue placeholder="Select hospital" />
                   </SelectTrigger>
-                  <SelectContent className="max-h-60 overflow-y-auto">
+                  <SelectContent className="max-h-60 overflow-y-auto w-[var(--radix-select-trigger-width)]">
                     {hospitals.map((hospital) => (
-                      <SelectItem key={hospital.id} value={hospital.id}>
+                      <SelectItem key={hospital.id} value={hospital.id} className="whitespace-normal break-words">
                         {hospital.name}
                       </SelectItem>
                     ))}
@@ -2083,7 +2455,7 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
                   <p className="text-xs text-red-500 mt-1">{REQUIRED_FIELD_LABEL}</p>
                 ) : null}
               </div>
-              <div>
+              <div className="min-w-0">
                 <Label htmlFor="turnoverInCharge" className="block text-sm font-medium text-gray-700 mb-1">
                   Turnover In-Charge
                 </Label>

@@ -235,6 +235,14 @@ export default function HospitalDashboardPage() {
     return String(value)
   }, [])
 
+  const hospitalNameLookup = React.useMemo(() => {
+    const map: Record<string, string> = {}
+    hospitals.forEach((hospital) => {
+      map[String(hospital.id)] = hospital.name
+    })
+    return map
+  }, [hospitals])
+
   const getBarangayName = React.useCallback((id: number | string | null | undefined) => {
     const normalized = normalizeId(id)
     if (normalized === null) return "—"
@@ -866,6 +874,7 @@ export default function HospitalDashboardPage() {
                 barangayName={selectedMeta.barangay}
                 incidentTypeName={selectedMeta.incidentType}
                 erTeamName={selectedMeta.erTeam}
+                hospitalNameLookup={hospitalNameLookup}
                 restrictToPatientView
               />
             </div>

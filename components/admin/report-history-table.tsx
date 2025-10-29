@@ -48,6 +48,7 @@ interface ReportHistoryTableProps {
   barangays: BaseEntry[];
   incidentTypes: BaseEntry[];
   erTeams: BaseEntry[];
+  hospitalNameLookup: Record<string, string>;
   // Props for Search and Filters
   searchTerm: string;
   setSearchTerm: (term: string) => void;
@@ -71,6 +72,7 @@ export function ReportHistoryTable({
   barangays, 
   incidentTypes, 
   erTeams,
+  hospitalNameLookup,
   searchTerm,
   setSearchTerm,
   selectedIncidentType,
@@ -110,6 +112,13 @@ export function ReportHistoryTable({
     const normalized = normalizeId(id)
     if (normalized === null) return 'N/A'
     return erTeams.find((et) => normalizeId(et.id) === normalized)?.name || 'N/A'
+  }
+
+  const getHospitalName = (id: string | null | undefined, fallbackName: string | null | undefined) => {
+    if (fallbackName) return fallbackName
+    const normalized = id ? String(id) : null
+    if (!normalized) return null
+    return hospitalNameLookup[normalized] ?? null
   }
 
   // Handlers for pagination buttons
@@ -490,7 +499,12 @@ export function ReportHistoryTable({
                               <div className="min-w-0 flex-1">
                                 <p className="truncate font-medium text-gray-800">{patient.patient_name || "Unnamed patient"}</p>
                                 <p className="truncate text-[11px] text-gray-500">
-                                  {patient.receiving_hospital_name || patient.receiving_hospital_id || "No hospital assigned"}
+                                  {(() => {
+                                    const resolved = getHospitalName(patient.receiving_hospital_id, patient.receiving_hospital_name)
+                                    if (resolved) return resolved
+                                    if (patient.receiving_hospital_id) return patient.receiving_hospital_id
+                                    return "No hospital assigned"
+                                  })()}
                                 </p>
                               </div>
                               <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-semibold uppercase text-orange-700">
