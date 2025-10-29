@@ -37,6 +37,41 @@ const HOSPITAL_NAME_OVERRIDES: Record<string, string> = {
   "Irosin General Hospital / IMAC": "Irosin General Hospital / IMAC",
 }
 
+const HOSPITAL_PROFILE_CACHE_KEY = "mdrrmo_hospital_profile"
+
+interface HospitalProfileCache {
+  hospitalId: string | null
+  hospitalName: string | null
+  cachedAt: string
+}
+
+const readHospitalProfileCache = (): HospitalProfileCache | null => {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.localStorage.getItem(HOSPITAL_PROFILE_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== "object") return null
+    return {
+      hospitalId: typeof parsed.hospitalId === "string" ? parsed.hospitalId : null,
+      hospitalName: typeof parsed.hospitalName === "string" ? parsed.hospitalName : null,
+      cachedAt: typeof parsed.cachedAt === "string" ? parsed.cachedAt : new Date().toISOString(),
+    }
+  } catch (error) {
+    console.warn("Failed to read cached hospital profile", error)
+    return null
+  }
+}
+
+const writeHospitalProfileCache = (record: HospitalProfileCache) => {
+  if (typeof window === "undefined") return
+  try {
+    window.localStorage.setItem(HOSPITAL_PROFILE_CACHE_KEY, JSON.stringify(record))
+  } catch (error) {
+    console.warn("Failed to cache hospital profile", error)
+  }
+}
+
 type PatientStatus =
   | "pending"
   | "critical"
@@ -201,6 +236,7 @@ export interface HospitalDashboardShellProps {
 }
 
 export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps) {
+  const [isOnline, setIsOnline] = React.useState<boolean>(() => (typeof navigator !== "undefined" ? navigator.onLine : true))
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [hospital, setHospital] = React.useState<HospitalRecord | null>(null)
@@ -333,6 +369,8 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
 
       const hospitalId = mapping.hospital_id
 
+      writeHospitalProfileCache({ hospitalId, hospitalName: null, cachedAt: new Date().toISOString() })
+
       const hospitalsPromise = fetch("/api/hospital/hospitals", {
         method: "GET",
         headers: {
@@ -411,6 +449,7 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
       setHospitals(hospitalRows)
       const matchedHospital = hospitalRows.find((row) => row.id === hospitalId) ?? null
       setHospital(matchedHospital)
+      writeHospitalProfileCache({ hospitalId, hospitalName: matchedHospital?.name ?? null, cachedAt: new Date().toISOString() })
 
       setBarangays(barangaysRes.data as BaseEntry[])
       setIncidentTypes(incidentTypesRes.data as BaseEntry[])
@@ -442,10 +481,6 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
       setLoading(false)
     }
   }, [])
-
-  React.useEffect(() => {
-    void loadHospitalData()
-  }, [loadHospitalData])
 
   React.useEffect(() => {
     if (!selectedActionPatient) return
@@ -678,9 +713,47 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
     }
   }
 
-  const handleRefresh = () => {
+  const handleRefresh = React.useCallback(() => {
+    if (!navigator.onLine) {
+      setError((prev) => prev ?? "You appear to be offline. We'll refresh when the connection returns.")
+      return
+    }
     void loadHospitalData()
-  }
+  }, [loadHospitalData])
+
+  React.useEffect(() => {
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+    window.addEventListener("online", handleOnline)
+    window.addEventListener("offline", handleOffline)
+    return () => {
+      window.removeEventListener("online", handleOnline)
+      window.removeEventListener("offline", handleOffline)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    if (!isOnline) {
+      const cache = readHospitalProfileCache()
+      if (cache?.hospitalId) {
+        setLoading(false)
+        setError(null)
+        setHospital({ id: cache.hospitalId, name: cache.hospitalName ?? "Hospital" })
+      }
+      return
+    }
+    void loadHospitalData()
+  }, [isOnline, loadHospitalData])
+
+  React.useEffect(() => {
+    if (!error) return
+
+    const timeout = window.setTimeout(() => {
+      void handleRefresh()
+    }, 3000)
+
+    return () => window.clearTimeout(timeout)
+  }, [error, handleRefresh])
 
   React.useEffect(() => {
     if (!hospital) return
@@ -914,17 +987,6 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
       </div>
     )
   }
-
-  React.useEffect(() => {
-    if (!error) return
-
-    const timeout = window.setTimeout(() => {
-      void handleRefresh()
-    }, 3000)
-
-    return () => window.clearTimeout(timeout)
-  }, [error, handleRefresh])
-
   if (error) {
     if (error.includes("No hospital assignment")) {
       return (
