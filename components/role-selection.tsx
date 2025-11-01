@@ -230,7 +230,6 @@ export function RoleSelection({ onRoleSelected, onBack }: RoleSelectionProps) {
                       </Select>
                     )}
                   </div>
-
                 </div>
               )}
 
@@ -238,7 +237,12 @@ export function RoleSelection({ onRoleSelected, onBack }: RoleSelectionProps) {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={onBack}
+                  onClick={() => {
+                    setSelectedCategory(null)
+                    setSelectedHospital('')
+                    setSelectedErTeamType('')
+                    onBack()
+                  }}
                   className="flex-1 border-gray-300 text-gray-700 hover:bg-gray-50"
                 >
                   Cancel

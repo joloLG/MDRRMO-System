@@ -821,9 +821,6 @@ export default function HospitalDashboardShell({ onLogout }: HospitalDashboardSh
             <span className="font-medium text-gray-700">
               {lastRefreshedAt ? formatDistanceToNow(lastRefreshedAt, { addSuffix: true }) : "—"}
             </span>
-            <Button variant="outline" size="sm" onClick={handleRefresh} className="border-orange-300 text-orange-600 hover:bg-orange-50">
-              Refresh
-            </Button>
           </div>
         </div>
       </CardHeader>
@@ -919,9 +916,6 @@ export default function HospitalDashboardShell({ onLogout }: HospitalDashboardSh
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" size="sm" onClick={handleRefresh} className="border-orange-300 text-orange-600 hover:bg-orange-50">
-              Refresh
-            </Button>
           </div>
         </div>
       </CardHeader>

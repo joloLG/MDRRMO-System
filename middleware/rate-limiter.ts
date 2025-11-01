@@ -58,6 +58,22 @@ const POLICY_CONFIGS: Array<{ prefix: string; config: RateConfig }> = [
       maxRequests: 30,
     },
   },
+  {
+    prefix: '/api/er-team/reports/draft',
+    config: {
+      windowMs: 60 * 1000,
+      maxRequests: 120,
+      message: 'Too many ER draft submissions in a short time. Please wait a moment and try again.',
+    },
+  },
+  {
+    prefix: '/api/er-team',
+    config: {
+      windowMs: 60 * 1000,
+      maxRequests: 120,
+      message: 'Too many ER team requests. Please wait a moment before retrying.',
+    },
+  },
 ];
 
 const RATE_LIMIT_SCOPE_PREFIXES = ['/api'];
@@ -135,6 +151,13 @@ const buildResponse = (limited: boolean, message: string | undefined, headers: R
 
 export async function rateLimitMiddleware(request: Request) {
   const path = new URL(request.url).pathname;
+
+  const host = request.headers.get('host') ?? '';
+  const isLocalHost = host.startsWith('localhost') || host.startsWith('127.0.0.1') || host.startsWith('::1');
+  if (process.env.NODE_ENV !== 'production' || isLocalHost) {
+    return NextResponse.next();
+  }
+
   if (!RATE_LIMIT_SCOPE_PREFIXES.some(prefix => path.startsWith(prefix))) {
     return NextResponse.next();
   }

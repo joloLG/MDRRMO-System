@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import dynamic from 'next/dynamic';
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
 import { Bell, BellOff, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon, FireExtinguisher, HeartPulse, Car, CloudRain, Swords, HelpCircle, PersonStanding, Navigation, Clock } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
+import AdminRealtimeOverlay from "@/components/admin/AdminRealtimeOverlay"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Calendar } from "@/components/ui/calendar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -16,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { format, isSameDay } from "date-fns"
 import { cn } from "@/lib/utils"
 import React from "react"
+import { useRouter } from "next/navigation"
 
 const LocationMap = dynamic(
   () => import('@/components/LocationMap'),
@@ -81,6 +83,42 @@ interface BaseEntry {
   name: string;
 }
 
+interface ErTeamReportSummary {
+  id: string
+  status: "draft" | "pending_review" | "in_review" | "approved" | "rejected"
+  er_team_id: number
+  submitted_by: string
+  patient_payload: Record<string, any>
+  incident_payload: Record<string, any> | null
+  injury_payload: {
+    front?: Record<string, string[]>
+    back?: Record<string, string[]>
+  } | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+  emergency_report_id: string | null
+  emergency_report?: {
+    id: string
+    status: string
+    emergency_type: string | null
+    location_address: string | null
+    created_at: string
+    responded_at: string | null
+    resolved_at: string | null
+    er_team_id: number | null
+  } | null
+  internal_report_id: number | null
+  internal_report?: {
+    id: number
+    incident_date: string
+    time_responded: string | null
+    barangay_id: number | null
+    er_team_id: number | null
+    prepared_by: string | null
+  } | null
+}
+
 // Props for the AdminDashboard component
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -106,6 +144,16 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [pendingBroadcastType, setPendingBroadcastType] = useState<'earthquake' | 'tsunami' | null>(null);
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [broadcastValidationError, setBroadcastValidationError] = useState<string | null>(null);
+
+  const [erTeamReports, setErTeamReports] = useState<ErTeamReportSummary[]>([])
+  const [erTeamReportsLoading, setErTeamReportsLoading] = useState(false)
+  const [erTeamReportsError, setErTeamReportsError] = useState<string | null>(null)
+  const [erTeamReportsActionLoading, setErTeamReportsActionLoading] = useState(false)
+
+  const selectedErTeamReport = useMemo(() => {
+    if (!selectedReport) return null
+    return erTeamReports.find((report) => report.emergency_report_id === selectedReport.id) ?? null
+  }, [erTeamReports, selectedReport])
 
   // Refs for click outside detection
   const notificationsDropdownRef = useRef<HTMLDivElement>(null);
@@ -479,6 +527,76 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     }
   };
 
+  const router = useRouter()
+
+  const erTeamReportsFetchingRef = useRef(false)
+  const erTeamReportsLastFetchedRef = useRef(0)
+
+  const fetchErTeamReports = useCallback(
+    async (force = false) => {
+      if (erTeamReportsFetchingRef.current) return
+      const now = Date.now()
+      if (!force && now - erTeamReportsLastFetchedRef.current < 4000) {
+        return
+      }
+
+      erTeamReportsFetchingRef.current = true
+      setErTeamReportsLoading(true)
+      setErTeamReportsError(null)
+      try {
+        const response = await fetch("/api/admin/er-team-reports?status=pending_review,in_review", {
+          credentials: "include",
+        })
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}))
+          throw new Error(payload?.error ?? response.statusText)
+        }
+        const payload = (await response.json()) as { reports: ErTeamReportSummary[] }
+        setErTeamReports(payload.reports ?? [])
+      } catch (err: any) {
+        const message = err?.message ?? "Failed to load ER team reports"
+        if (String(message).toLowerCase().includes("too many requests")) {
+          setErTeamReportsError("Temporarily rate limited. Please try again in a moment.")
+        } else {
+          setErTeamReportsError(message)
+        }
+        console.error("Failed to load ER team reports", err)
+      } finally {
+        erTeamReportsFetchingRef.current = false
+        erTeamReportsLastFetchedRef.current = Date.now()
+        setErTeamReportsLoading(false)
+      }
+    },
+    []
+  )
+
+  const handleErTeamReportAction = useCallback(
+    async (action: "in_review" | "approve") => {
+      if (!selectedErTeamReport) return
+      try {
+        setErTeamReportsActionLoading(true)
+        setErTeamReportsError(null)
+        const response = await fetch("/api/admin/er-team-reports", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ reportId: selectedErTeamReport.id, action }),
+        })
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}))
+          throw new Error(payload?.error ?? response.statusText)
+        }
+        await fetchErTeamReports(true)
+      } catch (err: any) {
+        console.error("Failed to update ER team report status", err)
+        setErTeamReportsError(err?.message ?? "Failed to update ER team report status")
+      } finally {
+        setErTeamReportsActionLoading(false)
+      }
+    },
+    [fetchErTeamReports, selectedErTeamReport]
+  )
+
   // Consolidated Real-time Listener for Reports, Notifications, and ER Teams
   useEffect(() => {
     const fetchAllDashboardData = async () => {
@@ -510,6 +628,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
     fetchAllDashboardData();
     loadActiveAlert();
+    void fetchErTeamReports(true);
 
     // Set up real-time channels for all relevant tables
     const reportsChannel = supabase
@@ -585,6 +704,18 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       )
       .subscribe();
 
+    const erTeamReportsChannel = supabase
+      .channel('dashboard-er-team-reports-channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'er_team_reports' },
+        (payload) => {
+          console.log('Change received on er_team_reports, refetching ER team reports:', payload);
+          void fetchErTeamReports();
+        }
+      )
+      .subscribe();
+
     // Cleanup subscriptions on component unmount
     return () => {
       supabase.removeChannel(reportsChannel);
@@ -592,8 +723,9 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       supabase.removeChannel(internalReportsChannel);
       supabase.removeChannel(erTeamsChannel);
       supabase.removeChannel(alertSettingsChannel);
+      supabase.removeChannel(erTeamReportsChannel);
     };
-  }, [fetchAllReports, fetchAdminNotifications, fetchInternalReports, fetchErTeams, selectedReport, internalReports, loadActiveAlert, playAlertSound]); // include alert handlers
+  }, [fetchAllReports, fetchAdminNotifications, fetchInternalReports, fetchErTeams, selectedReport, internalReports, loadActiveAlert, playAlertSound, fetchErTeamReports]); // include alert handlers
 
   // Effect to get barangay from coordinates
   useEffect(() => {
@@ -989,6 +1121,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
+      <AdminRealtimeOverlay />
       <Dialog open={broadcastModalOpen} onOpenChange={handleBroadcastModalChange}>
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
@@ -1275,6 +1408,103 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                           </p>
                         )}
                       </div>
+
+                      {selectedErTeamReport ? (
+                        <div className="mb-6 space-y-4 rounded-lg border border-orange-200 bg-orange-50 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h4 className="text-sm font-semibold text-orange-900">ER Team PCR submission</h4>
+                              <p className="text-xs text-orange-700/80">
+                                Received {new Date(selectedErTeamReport.updated_at).toLocaleString()} · Status: {selectedErTeamReport.status.replace(/_/g, " ")}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-orange-300 text-orange-700 hover:bg-white"
+                                onClick={() => router.push(`/admin/report?erTeamReportId=${selectedErTeamReport.id}`)}
+                              >
+                                Review in Make Report
+                              </Button>
+                              {selectedErTeamReport.status !== "in_review" && selectedErTeamReport.status !== "approved" ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-orange-300 text-orange-700 hover:bg-white"
+                                  disabled={erTeamReportsActionLoading}
+                                  onClick={() => void handleErTeamReportAction("in_review")}
+                                >
+                                  {erTeamReportsActionLoading ? "Updating…" : "Mark in review"}
+                                </Button>
+                              ) : null}
+                              {selectedErTeamReport.status !== "approved" ? (
+                                <Button
+                                  size="sm"
+                                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                                  disabled={erTeamReportsActionLoading}
+                                  onClick={() => void handleErTeamReportAction("approve")}
+                                >
+                                  {erTeamReportsActionLoading ? "Updating…" : "Approve report"}
+                                </Button>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          <div className="space-y-3 text-sm text-gray-700">
+                            {(() => {
+                              const patientInfo = selectedErTeamReport.patient_payload?.patientInformation
+                              if (!patientInfo) return null
+                              const name = `${patientInfo.firstName ?? ""} ${patientInfo.lastName ?? ""}`.trim()
+                              const hasName = name.length > 0
+                              const hasAge = Boolean(patientInfo.age)
+                              const hasSex = typeof patientInfo.sex === "string" && patientInfo.sex.length > 0
+                              if (!hasName && !hasAge && !hasSex) return null
+                              return (
+                                <div>
+                                  <p className="text-xs uppercase text-orange-800/80">Lead patient</p>
+                                  {hasName ? <p className="font-medium">{name}</p> : null}
+                                  {hasAge || hasSex ? (
+                                    <p className="text-xs text-gray-500">
+                                      {hasAge ? `Age: ${patientInfo.age}` : null}
+                                      {hasAge && hasSex ? " · " : ""}
+                                      {hasSex ? `Sex: ${patientInfo.sex}` : null}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              )
+                            })()}
+
+                            {(() => {
+                              const incident = selectedErTeamReport.incident_payload
+                              const typeLabel = incident?.incidentTypeLabel
+                              const date = incident?.incidentDate
+                              const time = incident?.incidentTime
+                              if (!typeLabel && !date && !time) return null
+                              return (
+                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                  <div>
+                                    <p className="text-xs uppercase text-orange-800/80">Incident details</p>
+                                    {typeLabel ? <p className="font-medium">{typeLabel}</p> : null}
+                                    {date || time ? (
+                                      <p className="text-xs text-gray-500">
+                                        {[date, time].filter(Boolean).join(" · ")}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                  {selectedErTeamReport.notes ? (
+                                    <div>
+                                      <p className="text-xs uppercase text-orange-800/80">Notes</p>
+                                      <p className="text-sm text-gray-600">{selectedErTeamReport.notes}</p>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              )
+                            })()}
+
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
                     <div className="flex items-center justify-center h-full"><p className="text-gray-500">Select a report to view details.</p></div>
@@ -1287,13 +1517,34 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
               <Card className="shadow-lg h-full">
                 <CardHeader className="bg-orange-600 text-white"><CardTitle>All Reports</CardTitle></CardHeader>
                 <CardContent className="p-0">
-                  <div className="overflow-y-auto max-h-[400px] custom-scrollbar"> {/* Added custom-scrollbar class */}
+                  <div className="overflow-y-auto max-h-[400px] custom-scrollbar">
                     <table className="min-w-full divide-y divide-gray-200">
                       <tbody className="bg-white divide-y divide-gray-200">
                         {allReports.map((report) => (
-                          <tr key={report.id} onClick={() => handleReportClick(report)} className={`hover:bg-gray-100 cursor-pointer ${selectedReport?.id === report.id ? 'bg-blue-100' : ''}`}>
-                            <td className="px-4 py-3 whitespace-nowrap"><div className="text-sm font-medium">{report.firstName} {report.lastName}</div><div className="text-xs text-gray-500">{report.emergency_type}</div></td>
-                            <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${(report.status.trim().toLowerCase() === 'pending' || report.status.trim().toLowerCase() === 'active') ? 'bg-red-100 text-red-800' : report.status.trim().toLowerCase() === 'responded' ? 'bg-yellow-100 text-yellow-800' : report.status.trim().toLowerCase() === 'resolved' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{report.status}</span></td>
+                          <tr
+                            key={report.id}
+                            onClick={() => handleReportClick(report)}
+                            className={`hover:bg-gray-100 cursor-pointer ${selectedReport?.id === report.id ? 'bg-blue-100' : ''}`}
+                          >
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm font-medium">{report.firstName} {report.lastName}</div>
+                              <div className="text-xs text-gray-500">{report.emergency_type}</div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span
+                                className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                  (report.status.trim().toLowerCase() === 'pending' || report.status.trim().toLowerCase() === 'active')
+                                    ? 'bg-red-100 text-red-800'
+                                    : report.status.trim().toLowerCase() === 'responded'
+                                      ? 'bg-yellow-100 text-yellow-800'
+                                      : report.status.trim().toLowerCase() === 'resolved'
+                                        ? 'bg-green-100 text-green-800'
+                                        : 'bg-gray-100 text-gray-800'
+                                }`}
+                              >
+                                {report.status}
+                              </span>
+                            </td>
                           </tr>
                         ))}
                       </tbody>

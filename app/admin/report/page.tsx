@@ -1,6 +1,6 @@
 "use client"
 
-import { MakeReportForm } from "@/components/admin/make-report-form";
+import { MakeReportForm, type AdminReport, type AdminErTeamReportDetails } from "@/components/admin/make-report-form";
 import { supabase } from "@/lib/supabase";
 import React from "react";
 import { Button } from "@/components/ui/button";
@@ -10,20 +10,6 @@ import Link from "next/link";
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from 'next/navigation';
 import { useRouter } from "next/navigation";
-
-interface Report {
-  id: string;
-  created_at: string;
-  location_address: string;
-  latitude: number;
-  longitude: number;
-  firstName: string;
-  lastName: string;
-  mobileNumber: string;
-  emergency_type?: string;
-  er_team_id?: string;
-  casualties?: number;
-}
 
 interface Barangay {
   id: number;
@@ -49,8 +35,9 @@ function MakeReportContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const incidentId = searchParams.get('incidentId');
+  const erTeamReportId = searchParams.get('erTeamReportId');
 
-  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+  const [selectedReport, setSelectedReport] = useState<AdminReport | null>(null);
   const [erTeams, setErTeams] = useState<ERTeam[]>([]);
   const [barangays, setBarangays] = useState<Barangay[]>([]);
   const [incidentTypes, setIncidentTypes] = useState<IncidentType[]>([]);
@@ -151,17 +138,79 @@ function MakeReportContent() {
         setHospitals(hospitalsData);
         writeCache(cacheKey('hospitals'), hospitalsData);
 
-        if (incidentId) {
-          const { data: reportData, error: reportError } = await supabase
-            .from('emergency_reports')
-            .select('*')
-            .eq('id', incidentId)
-            .single();
+        const loadReport = async () => {
+          if (!incidentId && !erTeamReportId) return;
 
-          if (reportError) throw reportError;
-          setSelectedReport(reportData as Report);
-        }
-        setHasCachedData(true);
+          let mergedReport: AdminReport | null = null;
+
+          if (erTeamReportId) {
+            try {
+              const response = await fetch(`/api/admin/er-team-reports?reportId=${erTeamReportId}`, { credentials: 'include' });
+              if (response.ok) {
+                const payload = await response.json();
+                const entry = Array.isArray(payload?.reports) ? payload.reports[0] : null;
+                if (entry) {
+                  mergedReport = {
+                    id: entry.emergency_report?.id ?? entry.id,
+                    created_at: entry.emergency_report?.created_at ?? entry.created_at,
+                    location_address: (entry.emergency_report?.location_address as string | null | undefined) ?? null,
+                    latitude: (entry.emergency_report?.latitude as number | null | undefined) ?? null,
+                    longitude: (entry.emergency_report?.longitude as number | null | undefined) ?? null,
+                    firstName: (entry.emergency_report?.firstName as string | null | undefined) ?? null,
+                    middleName: (entry.emergency_report?.middleName as string | null | undefined) ?? null,
+                    lastName: (entry.emergency_report?.lastName as string | null | undefined) ?? null,
+                    mobileNumber: (entry.emergency_report?.mobileNumber as string | null | undefined) ?? null,
+                    emergency_type: (entry.emergency_report?.emergency_type as string | null | undefined) ?? undefined,
+                    emergency_details: (entry.emergency_report?.emergency_details as string | null | undefined) ?? null,
+                    er_team_id: entry.er_team_id ?? null,
+                    casualties: (entry.emergency_report?.casualties as number | null | undefined) ?? null,
+                    responded_at: (entry.emergency_report?.responded_at as string | null | undefined) ?? null,
+                    resolved_at: (entry.emergency_report?.resolved_at as string | null | undefined) ?? null,
+                    er_team_report: entry as AdminErTeamReportDetails,
+                  } satisfies AdminReport;
+                }
+              } else {
+                console.warn('Failed to fetch ER team report via admin API', await response.json().catch(() => ({})));
+              }
+            } catch (apiError) {
+              console.error('Error loading ER team report via admin API', apiError);
+            }
+          }
+
+          if (!mergedReport && incidentId) {
+            const { data: reportData, error: reportError } = await supabase
+              .from('emergency_reports')
+              .select('*')
+              .eq('id', incidentId)
+              .single();
+
+            if (reportError) throw reportError;
+
+            let erTeamReport: AdminErTeamReportDetails | null = null;
+            try {
+              const response = await fetch(`/api/admin/er-team-reports?reportId=${incidentId}`, { credentials: 'include' });
+              if (response.ok) {
+                const payload = await response.json();
+                if (Array.isArray(payload?.reports) && payload.reports.length > 0) {
+                  erTeamReport = payload.reports[0] as AdminErTeamReportDetails;
+                }
+              }
+            } catch (apiError) {
+              console.error('Error loading ER team report for incident', apiError);
+            }
+
+            mergedReport = {
+              ...(reportData as AdminReport),
+              er_team_report: erTeamReport,
+            } satisfies AdminReport;
+          }
+
+          if (mergedReport) {
+            setSelectedReport(mergedReport);
+          }
+        };
+
+        await loadReport();
       } catch (err: any) {
         console.error("Error loading form data:", err);
         if (!hasCachedData) {

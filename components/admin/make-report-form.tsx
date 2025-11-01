@@ -21,22 +21,37 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 
-interface Report {
+type ErTeamInjuryPayload = {
+  front?: Record<string, string[] | null | undefined> | null
+  back?: Record<string, string[] | null | undefined> | null
+} | null
+
+export interface AdminErTeamReportDetails {
+  id: string
+  status: string
+  patient_payload?: ErTeamPatientPayload | null
+  incident_payload?: Record<string, unknown> | null
+  injury_payload?: ErTeamInjuryPayload
+  notes?: string | null
+}
+
+export interface AdminReport {
   id: string
   created_at: string
-  location_address: string
-  latitude: number
-  longitude: number
-  firstName: string
-  middleName?: string
-  lastName?: string
-  mobileNumber: string
-  emergency_type?: string
+  location_address: string | null
+  latitude?: number | null
+  longitude?: number | null
+  firstName: string | null
+  middleName?: string | null
+  lastName: string | null
+  mobileNumber: string | null
+  emergency_type?: string | null
   emergency_details?: string | null
-  er_team_id?: string | number
-  casualties?: number
+  er_team_id?: string | number | null
+  casualties?: number | null
   responded_at?: string | null
   resolved_at?: string | null
+  er_team_report?: AdminErTeamReportDetails | null
 }
 
 interface Barangay {
@@ -60,7 +75,7 @@ interface Hospital {
 }
 
 interface MakeReportFormProps {
-  selectedReport: Report | null
+  selectedReport: AdminReport | null
   erTeams: ERTeam[]
   barangays: Barangay[]
   incidentTypes: IncidentType[]
@@ -94,7 +109,7 @@ const INCIDENT_TYPE_ALIASES: Record<string, string> = {
 
 const normalize = (value: string) => value.trim().toLowerCase()
 
-const FRONT_BODY_REGION_IDS = [
+export const FRONT_BODY_REGION_IDS = [
   "front_x3D__x22_right-thigh_x22_",
   "front_x3D__x22_left-thigh_x22_",
   "stomach",
@@ -133,7 +148,7 @@ const FRONT_BODY_REGION_IDS = [
   "front_x3D__x22_nose_x22_",
 ] as const
 
-const BACK_BODY_REGION_IDS = [
+export const BACK_BODY_REGION_IDS = [
   "back_x3D__x22_right-hand_x22_",
   "back_x3D__x22_right-thigh_x22_",
   "back_x3D__x22_left-thigh_x22_",
@@ -169,8 +184,8 @@ const BACK_BODY_REGION_IDS = [
   "back_x3D__x22_right-elbow_x22_",
 ] as const
 
-const FRONT_SVG_PATH = "/body_part_front-01.svg"
-const BACK_SVG_PATH = "/body_part_back-01.svg"
+export const FRONT_SVG_PATH = "/body_part_front-01.svg"
+export const BACK_SVG_PATH = "/body_part_back-01.svg"
 
 const STEP1_REQUIRED_FIELDS = [
   "incidentDate",
@@ -219,10 +234,57 @@ type PatientFieldKey = typeof PATIENT_REQUIRED_FIELDS[number]
 
 type PatientSex = "male" | "female" | ""
 
+interface ErTeamPatientPayload {
+  patientNumber?: string | null
+  patientName?: string | null
+  firstName?: string | null
+  middleName?: string | null
+  lastName?: string | null
+  suffix?: string | null
+  patientBirthday?: string | null
+  patientAge?: string | null
+  patientSex?: PatientSex | null
+  patientAddress?: string | null
+  contactNumber?: string | null
+  incidentLocation?: string | null
+  receivingHospitalId?: string | null
+  receivingDate?: string | null
+  turnoverInCharge?: string | null
+  emtErtDate?: string | null
+  bloodLossLevel?: string | null
+  estimatedBloodLoss?: string | null
+  painScale?: string | null
+  signsSymptoms?: string | null
+  moiPoiToi?: string | null
+  noi?: string | null
+  airwaySelections?: string[] | null
+  breathingSelections?: string[] | null
+  circulationSelections?: string[] | null
+  typeOfEmergencySelections?: string[] | null
+  bloodPressure?: string | null
+  pulseRate?: string | null
+  respiratoryRate?: string | null
+  temperature?: string | null
+  oxygenSaturation?: string | null
+  bpm?: string | null
+  gcsEye?: string | null
+  gcsVerbal?: string | null
+  gcsMotor?: string | null
+  gcsOther?: string | null
+  locAvpu?: string | null
+  evacPriority?: string | null
+  bodyPartInjuries?: Record<string, string[]> | null
+}
+
 interface PatientFormState {
   id: string
   patientName: string
+  firstName?: string
+  middleName?: string
+  lastName?: string
+  suffix?: string
   patientNumber: string
+  contactNumber: string
   patientBirthday: string
   patientAge: string
   patientAddress: string
@@ -268,7 +330,12 @@ const generatePatientId = () => {
 const createEmptyPatient = (): PatientFormState => ({
   id: generatePatientId(),
   patientName: "",
+  firstName: "",
+  middleName: "",
+  lastName: "",
+  suffix: "",
   patientNumber: "",
+  contactNumber: "",
   patientBirthday: "",
   patientAge: "",
   patientAddress: "",
@@ -302,6 +369,76 @@ const createEmptyPatient = (): PatientFormState => ({
   emtErtDate: "",
   bodyPartInjuries: {},
 })
+
+const cloneBodyInjuries = (source?: Record<string, string[]> | null): Record<string, string[]> => {
+  if (!source) return {}
+  return JSON.parse(JSON.stringify(source)) as Record<string, string[]>
+}
+
+const mergeInjuryPayload = (injuryPayload: ErTeamInjuryPayload): Record<string, string[]> => {
+  if (!injuryPayload) return {}
+  const result: Record<string, string[]> = {}
+  const applySection = (section?: Record<string, string[] | null | undefined> | null) => {
+    if (!section) return
+    Object.entries(section).forEach(([regionId, codes]) => {
+      if (!codes || !Array.isArray(codes)) return
+      result[regionId] = codes.filter((code): code is string => typeof code === "string")
+    })
+  }
+  applySection(injuryPayload.front)
+  applySection(injuryPayload.back)
+  return result
+}
+
+const normalizePayloadArray = (value: string[] | null | undefined): string[] => (Array.isArray(value) ? [...value] : [])
+
+const createPatientFromErPayload = (payload: ErTeamPatientPayload, injuryPayload: ErTeamInjuryPayload): PatientFormState => {
+  const bodyPartInjuries = Object.keys(payload.bodyPartInjuries ?? {}).length
+    ? cloneBodyInjuries(payload.bodyPartInjuries)
+    : mergeInjuryPayload(injuryPayload)
+  return {
+    id: generatePatientId(),
+    patientName: payload.patientName ?? "",
+    firstName: payload.firstName ?? "",
+    middleName: payload.middleName ?? "",
+    lastName: payload.lastName ?? "",
+    suffix: payload.suffix ?? "",
+    patientNumber: payload.patientNumber ?? "",
+    contactNumber: payload.contactNumber ?? "",
+    patientBirthday: payload.patientBirthday ?? "",
+    patientAge: payload.patientAge ?? "",
+    patientAddress: payload.patientAddress ?? "",
+    patientSex: (payload.patientSex as PatientSex) ?? "",
+    evacPriority: payload.evacPriority ?? "",
+    typeOfEmergencySelections: normalizePayloadArray(payload.typeOfEmergencySelections),
+    airwaySelections: normalizePayloadArray(payload.airwaySelections),
+    breathingSelections: normalizePayloadArray(payload.breathingSelections),
+    circulationSelections: normalizePayloadArray(payload.circulationSelections),
+    incidentLocation: payload.incidentLocation ?? "",
+    moiPoiToi: payload.moiPoiToi ?? "",
+    noi: payload.noi ?? "",
+    signsSymptoms: payload.signsSymptoms ?? "",
+    gcsEye: payload.gcsEye ?? "",
+    gcsVerbal: payload.gcsVerbal ?? "",
+    gcsMotor: payload.gcsMotor ?? "",
+    gcsOther: payload.gcsOther ?? "",
+    locAvpu: payload.locAvpu ?? "",
+    pulseRate: payload.pulseRate ?? "",
+    bloodPressure: payload.bloodPressure ?? "",
+    bpm: payload.bpm ?? "",
+    oxygenSaturation: payload.oxygenSaturation ?? "",
+    painScale: payload.painScale ?? "",
+    temperature: payload.temperature ?? "",
+    respiratoryRate: payload.respiratoryRate ?? "",
+    bloodLossLevel: payload.bloodLossLevel ?? "",
+    estimatedBloodLoss: payload.estimatedBloodLoss ?? "",
+    turnoverInCharge: payload.turnoverInCharge ?? "",
+    receivingHospitalId: payload.receivingHospitalId ?? undefined,
+    receivingDate: payload.receivingDate ?? "",
+    emtErtDate: payload.emtErtDate ?? "",
+    bodyPartInjuries,
+  }
+}
 
 const REGION_LABELS: Record<string, string> = {
   "front_x3D__x22_right-thigh_x22_": "Front Right Thigh",
@@ -467,7 +604,7 @@ function InteractiveBodyDiagram({ view, svgPath, regionIds, selectedRegions, reg
     svgElement.removeAttribute("height")
     svgElement.style.width = "100%"
     svgElement.style.height = "auto"
-    svgElement.style.maxWidth = "360px"
+    svgElement.style.maxWidth = "320px"
     svgElement.style.display = "block"
     svgElement.style.margin = "0 auto"
 
@@ -852,8 +989,16 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
   const barangayDropdownRef = React.useRef<HTMLDivElement | null>(null)
 
   const initialPatientRef = React.useRef<PatientFormState | null>(null)
+  const selectedPatientPayload = selectedReport?.er_team_report?.patient_payload ?? null
+  const selectedInjuryPayload = selectedReport?.er_team_report?.injury_payload ?? null
+
   if (!initialPatientRef.current) {
-    initialPatientRef.current = createEmptyPatient()
+    if (selectedPatientPayload) {
+      const seededPatient = createPatientFromErPayload(selectedPatientPayload, selectedInjuryPayload)
+      initialPatientRef.current = seededPatient
+    } else {
+      initialPatientRef.current = createEmptyPatient()
+    }
   }
 
   const [patients, setPatients] = React.useState<PatientFormState[]>(() => [initialPatientRef.current!])
@@ -882,6 +1027,11 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
     const incidentId = selectedReport.id
     if (incidentPrefillStateRef.current.incidentId !== incidentId) {
       incidentPrefillStateRef.current = { incidentId, baseApplied: false }
+      if (selectedPatientPayload) {
+        const seededPatient = createPatientFromErPayload(selectedPatientPayload, selectedInjuryPayload)
+        setPatients([seededPatient])
+        setActivePatientId(seededPatient.id)
+      }
     }
 
     if (!incidentPrefillStateRef.current.baseApplied) {
@@ -906,6 +1056,23 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
         setNumberOfResponders(value)
       }
 
+      if (selectedPatientPayload && patients.length === 1) {
+        setPatients((prev) =>
+          prev.map((patient, index) =>
+            index === 0
+              ? {
+                  ...patient,
+                  incidentLocation: selectedPatientPayload.incidentLocation ?? patient.incidentLocation,
+                  receivingHospitalId: selectedPatientPayload.receivingHospitalId ?? patient.receivingHospitalId,
+                  receivingDate: selectedPatientPayload.receivingDate ?? patient.receivingDate,
+                  turnoverInCharge: selectedPatientPayload.turnoverInCharge ?? patient.turnoverInCharge,
+                  emtErtDate: selectedPatientPayload.emtErtDate ?? patient.emtErtDate,
+                }
+              : patient,
+          ),
+        )
+      }
+
       incidentPrefillStateRef.current.baseApplied = true
     }
 
@@ -921,7 +1088,7 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
         setOtherIncidentDescription(selectedReport.emergency_details)
       }
     }
-  }, [selectedReport, incidentTypes, incidentTypeId])
+  }, [selectedReport, incidentTypes, incidentTypeId, selectedPatientPayload, selectedInjuryPayload, patients.length])
 
   React.useEffect(() => {
     if (!selectedReport) return
@@ -1328,6 +1495,17 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
         const { error: narrativeError } = await supabase.from("narrative_reports").insert(narrativePayload)
         if (narrativeError) {
           console.error("Failed to create narrative draft", narrativeError)
+        }
+
+        if (selectedReport?.er_team_report?.id) {
+          const { error: erTeamUpdateError } = await supabase
+            .from("er_team_reports")
+            .update({ status: "resolved", internal_report_id: reportId, updated_at: new Date().toISOString() })
+            .eq("id", selectedReport.er_team_report.id)
+
+          if (erTeamUpdateError) {
+            throw erTeamUpdateError
+          }
         }
 
         setFormMessage({ type: "success", text: "Internal report submitted successfully!" })

@@ -1,13 +1,14 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Loader2, LogOut, Info, CheckCircle, XCircle, Clock } from "lucide-react" // Removed Ban, CheckCircle, CalendarIcon
-import { userQueries, hospitalQueries, type User, type Hospital, supabase } from "@/lib/supabase"
+import { userQueries, hospitalQueries, erTeamQueries, type User, type Hospital, type ErTeam, supabase } from "@/lib/supabase"
 import { robustSignOut } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -63,12 +64,18 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
   const [currentPage, setCurrentPage] = useState(1)
   const [hospitals, setHospitals] = useState<Hospital[]>([])
   const [hospitalAssignments, setHospitalAssignments] = useState<Record<string, string | null>>({})
+  const [erTeams, setErTeams] = useState<ErTeam[]>([])
+  const [erTeamAssignments, setErTeamAssignments] = useState<Record<string, number | null>>({})
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserName, setCurrentUserName] = useState<string>("Superadmin")
+  const [greetingMessage, setGreetingMessage] = useState<string>("")
+  const [currentDateTime, setCurrentDateTime] = useState<string>("")
 
   // Approval requests state
   type ApprovalRequest = {
     id: string
     user_id: string
-    requested_role: 'admin' | 'hospital'
+    requested_role: 'admin' | 'hospital' | 'er_team'
     requested_at: string
     reviewed_at?: string
     reviewed_by?: string
@@ -154,7 +161,7 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
         supabase
           .from('users')
           .select('id, firstName, lastName, email, mobileNumber, status, requested_role, created_at')
-          .in('status', ['pending_admin', 'pending_hospital'])
+          .in('status', ['pending_admin', 'pending_hospital', 'pending_er_team'])
       ])
 
       if (requestsResult.error) throw requestsResult.error
@@ -163,12 +170,14 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
       const fetchedRequests = (requestsResult.data || []) as ApprovalRequest[]
       const existingUserIds = new Set(fetchedRequests.map((req) => req.user_id))
 
-      const syntheticRequests: ApprovalRequest[] = (pendingUsersResult.data || [])
+      const syntheticRequests = (pendingUsersResult.data || [])
         .filter((pendingUser) => !existingUserIds.has(pendingUser.id))
-        .map((pendingUser) => {
-          const requestedRole = (pendingUser.requested_role === 'hospital' || pendingUser.status === 'pending_hospital')
+        .map<ApprovalRequest>((pendingUser) => {
+          const requestedRole = pendingUser.requested_role === 'hospital' || pendingUser.status === 'pending_hospital'
             ? 'hospital'
-            : 'admin'
+            : pendingUser.requested_role === 'er_team' || pendingUser.status === 'pending_er_team'
+              ? 'er_team'
+              : 'admin'
 
           return {
             id: `pending-${pendingUser.id}`,
@@ -212,6 +221,9 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
         const hospitalId = existingRequest.requested_role === 'hospital'
           ? hospitalAssignments[existingRequest.user_id] ?? null
           : null
+        const erTeamId = existingRequest.requested_role === 'er_team'
+          ? erTeamAssignments[existingRequest.user_id] ?? null
+          : null
 
         const { data: createdRequest, error: createError } = await supabase
           .from('admin_approval_requests')
@@ -220,6 +232,7 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
             requested_role: existingRequest.requested_role,
             status: 'pending',
             hospital_id: hospitalId,
+            er_team_id: erTeamId,
             notes: notes || null,
           })
           .select(`
@@ -264,7 +277,8 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
       // If approving, update the user's status and role
       if (action === 'approve') {
         const isHospitalRequest = workingRequest.requested_role === 'hospital'
-        const userType = isHospitalRequest ? 'hospital' : 'admin'
+        const isErTeamRequest = workingRequest.requested_role === 'er_team'
+        const userType = isHospitalRequest ? 'hospital' : isErTeamRequest ? 'er_team' : 'admin'
         const status = 'active'
 
         const { error: userUpdateError } = await supabase
@@ -291,6 +305,22 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
                 }, { onConflict: 'user_id' })
             } catch (e) {
               console.warn('Failed to automatically assign hospital', e)
+            }
+          }
+        }
+
+        if (isErTeamRequest) {
+          const teamId = workingRequest.er_team_id || erTeamAssignments[workingRequest.user_id] || null
+          if (teamId) {
+            try {
+              await supabase
+                .from('er_team_users')
+                .upsert({
+                  user_id: workingRequest.user_id,
+                  er_team_id: teamId,
+                }, { onConflict: 'user_id' })
+            } catch (e) {
+              console.warn('Failed to automatically assign ER team', e)
             }
           }
         }
@@ -330,7 +360,7 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
       }
 
       // Refresh data
-      await Promise.all([fetchUsers(), fetchApprovalRequests(), fetchHospitalsAndAssignments()])
+      await Promise.all([fetchUsers(), fetchApprovalRequests(), fetchHospitalsAndAssignments(), fetchErTeamsAndAssignments()])
 
     } catch (err) {
       console.error("Error handling approval action:", err)
@@ -339,9 +369,28 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
   }
 
   // Set up real-time subscription for user updates
+  const fetchErTeamsAndAssignments = async () => {
+    try {
+      const [teams, assignments] = await Promise.all([
+        erTeamQueries.getErTeams(),
+        erTeamQueries.getErTeamAssignments(),
+      ])
+
+      setErTeams(teams)
+      const assignmentMap: Record<string, number | null> = {}
+      assignments.forEach((item) => {
+        assignmentMap[item.user_id] = item.er_team_id
+      })
+      setErTeamAssignments(assignmentMap)
+    } catch (err) {
+      console.error("Error fetching ER teams/assignments:", err)
+    }
+  }
+
   useEffect(() => {
     fetchUsers();
     fetchHospitalsAndAssignments();
+    fetchErTeamsAndAssignments();
     fetchApprovalRequests();
     
     // Subscribe to user updates (still useful for role changes or external ban updates)
@@ -375,6 +424,75 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
     };
   }, [])
 
+  useEffect(() => {
+    const loadCurrentUser = async () => {
+      const { data: authData } = await supabase.auth.getUser()
+      const authUser = authData?.user
+      if (authUser?.id) {
+        setCurrentUserId(authUser.id)
+        const metadataName = typeof authUser.user_metadata?.full_name === 'string'
+          ? authUser.user_metadata.full_name.trim()
+          : ''
+        if (metadataName) {
+          setCurrentUserName(metadataName)
+        }
+      }
+    }
+
+    void loadCurrentUser()
+  }, [])
+
+  useEffect(() => {
+    if (!currentUserId) return
+    const matchedUser = users.find((user) => user.id === currentUserId)
+    if (!matchedUser) return
+    const nameParts = [matchedUser.firstName, matchedUser.middleName, matchedUser.lastName]
+      .filter((part) => !!part && String(part).trim().length > 0)
+      .map((part) => String(part).trim())
+    const formattedName = nameParts.join(' ').trim()
+    if (formattedName && formattedName !== currentUserName) {
+      setCurrentUserName(formattedName)
+    }
+  }, [currentUserId, users, currentUserName])
+
+  useEffect(() => {
+    const name = currentUserName?.trim() || "Superadmin"
+    const timeFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Manila',
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+    const hourFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Manila',
+      hour: 'numeric',
+      hour12: false,
+    })
+    const updateGreetingAndTime = () => {
+      const now = new Date()
+      const hourPart = hourFormatter.formatToParts(now).find((part) => part.type === 'hour')
+      const hour = hourPart ? Number.parseInt(hourPart.value, 10) : NaN
+      let salutation = 'Good evening'
+      if (Number.isFinite(hour)) {
+        if (hour < 12) {
+          salutation = 'Good morning'
+        } else if (hour < 18) {
+          salutation = 'Good afternoon'
+        }
+      }
+      setGreetingMessage(`${salutation}, ${name}`)
+      setCurrentDateTime(timeFormatter.format(now))
+    }
+
+    updateGreetingAndTime()
+    const intervalId = window.setInterval(updateGreetingAndTime, 60_000)
+    return () => window.clearInterval(intervalId)
+  }, [currentUserName])
+
   // Update user role
   const handleRoleChange = async (userId: string, newRole: User['user_type']) => {
     try {
@@ -387,6 +505,14 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
       if (newRole !== 'hospital') {
         await hospitalQueries.assignHospitalToUser(userId, null)
         setHospitalAssignments((prev) => ({
+          ...prev,
+          [userId]: null,
+        }))
+      }
+
+      if (newRole !== 'er_team') {
+        await erTeamQueries.assignErTeamToUser(userId, null)
+        setErTeamAssignments((prev) => ({
           ...prev,
           [userId]: null,
         }))
@@ -419,6 +545,22 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
     } catch (err) {
       console.error("Error assigning hospital:", err)
       setError("Failed to update hospital assignment. Please try again.")
+    } finally {
+      setUsers(users.map((user) => (user.id === userId ? { ...user, isUpdating: false } : user)))
+    }
+  }
+
+  const handleErTeamAssignment = async (userId: string, erTeamId: number | null) => {
+    setUsers(users.map((user) => (user.id === userId ? { ...user, isUpdating: true } : user)))
+    try {
+      await erTeamQueries.assignErTeamToUser(userId, erTeamId)
+      setErTeamAssignments((prev) => ({
+        ...prev,
+        [userId]: erTeamId,
+      }))
+    } catch (err) {
+      console.error("Error assigning ER team:", err)
+      setError("Failed to update ER team assignment. Please try again.")
     } finally {
       setUsers(users.map((user) => (user.id === userId ? { ...user, isUpdating: false } : user)))
     }
@@ -645,22 +787,57 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
   }
   
   return (
-    <div className="min-h-screen bg-blue-100">
-      <header className="bg-orange-500 shadow">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900 text-center">Superadmin Dashboard</h1>
-          <Button 
-            variant="outline" 
-            onClick={handleLogout}
-            className="flex items-center gap-2"
-          >
-            <LogOut className="h-4 w-4" />
-            <span>Logout</span>
-          </Button>
+    <div
+      className="min-h-screen bg-cover bg-center bg-no-repeat"
+      style={{ backgroundImage: "url('/images/mdrrmo_dashboard_bg.jpg')" }}
+    >
+      <header className="fixed top-0 left-0 right-0 bg-orange-500 shadow z-50">
+        <div className="w-full px-4 py-4 sm:px-6 lg:px-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-3">
+            <Image
+              src="/images/logo.png"
+              alt="MDRRMO Logo"
+              width={64}
+              height={64}
+              className="h-12 w-12 object-contain"
+              priority
+            />
+            <div className="flex flex-col">
+              <h1 className="text-2xl font-bold text-white text-center">Superadmin Dashboard</h1>
+              {greetingMessage ? (
+                <p className="text-sm font-medium text-white leading-tight">{greetingMessage}</p>
+              ) : null}
+            </div>
+          </div>
+          <div className="flex justify-center lg:flex-1">
+            {currentDateTime ? (
+              <p className="text-2xl font-bold text-white text-center animate-pulse drop-shadow-md sm:text-3xl">
+                {currentDateTime}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-4">
+            <Button 
+              variant="outline" 
+              onClick={handleLogout}
+              className="flex items-center gap-2"
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Logout</span>
+            </Button>
+            <Image
+              src="/images/bulan-logo.png"
+              alt="Bulan Municipality Logo"
+              width={64}
+              height={64}
+              className="h-12 w-12 object-contain"
+              priority
+            />
+          </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+      <main className="pt-32 pb-6 px-4 sm:px-6 lg:px-8">
         {error && (
           <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
             {error}
@@ -687,6 +864,7 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
                     <SelectItem value="superadmin">Superadmin</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="hospital">Hospital</SelectItem>
+                    <SelectItem value="er_team">ER Team</SelectItem>
                     <SelectItem value="user">User</SelectItem>
                   </SelectContent>
                 </Select>
@@ -711,7 +889,7 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
                   <TableHead>Email</TableHead>
                   <TableHead>Contact</TableHead>
                   <TableHead>Role</TableHead>
-                  <TableHead>Hospital</TableHead>
+                  <TableHead>Hospital / ER Team</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Date Created</TableHead>
                 </TableRow>
@@ -747,6 +925,7 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
                           <SelectItem value="superadmin">Superadmin</SelectItem>
                           <SelectItem value="admin">Admin</SelectItem>
                           <SelectItem value="hospital">Hospital</SelectItem>
+                          <SelectItem value="er_team">ER Team</SelectItem>
                           <SelectItem value="user">User</SelectItem>
                         </SelectContent>
                       </Select>
@@ -769,6 +948,27 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
                             {hospitals.map((hospital) => (
                               <SelectItem key={hospital.id} value={hospital.id}>
                                 {hospital.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : user.user_type === 'er_team' ? (
+                        <Select
+                          value={String((erTeamAssignments[user.id] ?? null) ?? 'unassigned')}
+                          onValueChange={(value) => {
+                            const nextValue = value === 'unassigned' ? null : Number(value)
+                            void handleErTeamAssignment(user.id, nextValue)
+                          }}
+                          disabled={user.isUpdating || erTeams.length === 0}
+                        >
+                          <SelectTrigger className="w-[200px]">
+                            <SelectValue placeholder="Assign ER team" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Unassigned</SelectItem>
+                            {erTeams.map((team) => (
+                              <SelectItem key={team.id} value={String(team.id)}>
+                                {team.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -863,7 +1063,7 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
       </main>
 
       {/* Approval Requests Section */}
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+      <main className="py-6 px-4 sm:px-6 lg:px-8">
         <Card>
           <CardHeader>
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">

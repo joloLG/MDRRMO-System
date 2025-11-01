@@ -8,12 +8,22 @@ import { Dashboard } from "./components/dashboard"
 import { AdminDashboard } from './components/admin-dashboard'
 import { SuperadminDashboard } from "./components/superadmin-dashboard"
 import { HospitalDashboard } from "./components/hospital-dashboard"
+import { ErTeamDashboard } from "./components/er-team/er-team-dashboard"
 import AdminRealtimeOverlay from "@/components/admin/AdminRealtimeOverlay"
 import { supabase } from "@/lib/supabase"
 import { robustSignOut } from "@/lib/auth"
 
 export default function MobileApp() {
-  const [currentScreen, setCurrentScreen] = useState<"login" | "register" | "role-selection" | "dashboard" | "admin" | "superadmin" | "hospital">("login")
+  const [currentScreen, setCurrentScreen] = useState<
+    | "login"
+    | "register"
+    | "role-selection"
+    | "dashboard"
+    | "admin"
+    | "superadmin"
+    | "hospital"
+    | "er-team"
+  >("login")
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [userData, setUserData] = useState<any>(null)
   const [selectedRoleData, setSelectedRoleData] = useState<any>(null)
@@ -46,6 +56,8 @@ export default function MobileApp() {
           setCurrentScreen("admin")
         } else if (user.user_type === "hospital") {
           setCurrentScreen("hospital")
+        } else if (user.user_type === "er_team") {
+          setCurrentScreen("er-team")
         } else {
           setCurrentScreen("dashboard")
         }
@@ -77,6 +89,8 @@ export default function MobileApp() {
       setCurrentScreen("admin")
     } else if (user.user_type === "hospital") {
       setCurrentScreen("hospital")
+    } else if (user.user_type === "er_team") {
+      setCurrentScreen("er-team")
     } else {
       setCurrentScreen("dashboard")
     }
@@ -133,6 +147,8 @@ export default function MobileApp() {
       )
     } else if (userData?.user_type === "hospital") {
       return <HospitalDashboard onLogout={handleLogout} />
+    } else if (userData?.user_type === "er_team") {
+      return <ErTeamDashboard onLogout={handleLogout} />
     } else {
       return <Dashboard onLogout={handleLogout} userData={userData} />
     }

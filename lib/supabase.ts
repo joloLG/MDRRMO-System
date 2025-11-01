@@ -17,6 +17,16 @@ export interface HospitalUserAssignment {
   hospital_id: string
 }
 
+export interface ErTeam {
+  id: number
+  name: string
+}
+
+export interface ErTeamUserAssignment {
+  user_id: string
+  er_team_id: number
+}
+
 if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
   throw new Error('Missing environment variable: NEXT_PUBLIC_SUPABASE_ANON_KEY')
 }
@@ -26,7 +36,7 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
 export const supabase = createClientComponentClient()
 
 // User type
-export type UserRole = 'superadmin' | 'admin' | 'user' | 'hospital';
+export type UserRole = 'superadmin' | 'admin' | 'user' | 'hospital' | 'er_team';
 
 export interface User {
   id: string
@@ -96,6 +106,59 @@ const handleSupabaseError = (error: any, context: string) => {
   
   throw new DatabaseError(error.message || 'An unknown database error occurred');
 };
+
+export const erTeamQueries = {
+  getErTeams: async (): Promise<ErTeam[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('er_teams')
+        .select('id, name')
+        .order('name', { ascending: true })
+
+      if (error) throw error
+      return (data ?? []) as ErTeam[]
+    } catch (error) {
+      return handleSupabaseError(error, 'getErTeams') as never
+    }
+  },
+
+  getErTeamAssignments: async (): Promise<ErTeamUserAssignment[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('er_team_users')
+        .select('user_id, er_team_id')
+
+      if (error) throw error
+      return (data ?? []) as ErTeamUserAssignment[]
+    } catch (error) {
+      return handleSupabaseError(error, 'getErTeamAssignments') as never
+    }
+  },
+
+  assignErTeamToUser: async (userId: string, erTeamId: number | null): Promise<void> => {
+    try {
+      if (erTeamId !== null) {
+        const { error } = await supabase
+          .from('er_team_users')
+          .upsert(
+            { user_id: userId, er_team_id: erTeamId },
+            { onConflict: 'user_id' }
+          )
+
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('er_team_users')
+          .delete()
+          .eq('user_id', userId)
+
+        if (error) throw error
+      }
+    } catch (error) {
+      handleSupabaseError(error, 'assignErTeamToUser')
+    }
+  },
+}
 
 export const hospitalQueries = {
   getHospitals: async (): Promise<Hospital[]> => {
@@ -193,8 +256,8 @@ export const userQueries = {
 
   // Update user role (only for superadmin)
   updateUserRole: async (
-    userId: string, 
-    role: 'admin' | 'user' | 'superadmin' | 'hospital'
+    userId: string,
+    role: UserRole
   ): Promise<User> => {
     try {
       if (!userId || !role) {
