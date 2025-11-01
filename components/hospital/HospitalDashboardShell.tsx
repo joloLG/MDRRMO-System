@@ -371,13 +371,20 @@ export default function HospitalDashboardShell({ onLogout }: HospitalDashboardSh
         .maybeSingle()
 
       if (mappingError) throw mappingError
-      if (!mapping) {
-        setError("No hospital assignment found for this account. Please contact the MDRRMO administrator.")
-        setLoading(false)
-        return
-      }
+      let hospitalId = mapping?.hospital_id ?? null
 
-      const hospitalId = mapping.hospital_id
+      if (!hospitalId) {
+        const cachedProfile = readHospitalProfileCache()
+        hospitalId = cachedProfile?.hospitalId ?? null
+
+        if (!hospitalId) {
+          setError("No hospital assignment found for this account. Please contact the MDRRMO administrator.")
+          setLoading(false)
+          return
+        }
+
+        console.warn("Hospital assignment missing in database, using cached profile")
+      }
 
       writeHospitalProfileCache({ hospitalId, hospitalName: null, cachedAt: new Date().toISOString() })
 

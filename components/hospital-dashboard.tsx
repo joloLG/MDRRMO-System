@@ -1,1 +1,1 @@
-export { HospitalDashboardShell as HospitalDashboard } from "./hospital/HospitalDashboardShell"
+export { default as HospitalDashboard } from "./hospital/HospitalDashboardShell"
