@@ -235,7 +235,7 @@ export interface HospitalDashboardShellProps {
   onLogout?: () => void
 }
 
-export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps) {
+export default function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps) {
   const [isOnline, setIsOnline] = React.useState<boolean>(() => (typeof navigator !== "undefined" ? navigator.onLine : true))
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -244,6 +244,8 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
   const [barangays, setBarangays] = React.useState<BaseEntry[]>([])
   const [incidentTypes, setIncidentTypes] = React.useState<BaseEntry[]>([])
   const [erTeams, setErTeams] = React.useState<BaseEntry[]>([])
+  const retrySessionRef = React.useRef<number | null>(null)
+
   const [patients, setPatients] = React.useState<PatientWithReport[]>([])
   const [historyEntries, setHistoryEntries] = React.useState<PatientStatusHistoryEntry[]>([])
   const [activeView, setActiveView] = React.useState<SidebarView>("pending")
@@ -332,18 +334,26 @@ export function HospitalDashboardShell({ onLogout }: HospitalDashboardShellProps
       let session = sessionData?.session ?? null
 
       if (sessionError || !session) {
-        const {
-          data: refreshData,
-          error: refreshError,
-        } = await supabase.auth.refreshSession()
+        const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
 
         if (refreshError || !refreshData?.session) {
-          await supabase.auth.signOut()
-          setError("Your hospital session expired. Please sign in again.")
+          if (retrySessionRef.current !== null) {
+            window.clearTimeout(retrySessionRef.current)
+            retrySessionRef.current = null
+          }
+          setError("Your hospital session could not be refreshed. Please check your connection and try again.")
           setLoading(false)
+          retrySessionRef.current = window.setTimeout(() => {
+            retrySessionRef.current = null
+            void loadHospitalData()
+          }, 5000)
           return
         }
 
+        if (retrySessionRef.current !== null) {
+          window.clearTimeout(retrySessionRef.current)
+          retrySessionRef.current = null
+        }
         session = refreshData.session
       }
 
