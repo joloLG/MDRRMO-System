@@ -38,12 +38,27 @@ const DASHBOARD_BACKGROUND_STYLE: React.CSSProperties = {
   backgroundAttachment: "fixed",
 }
 
-interface TeamDispatchAlertState {
-  emergencyId: string
-  reporterName: string
+type NotificationEventType = "assignment" | "status_change"
+
+interface TeamDispatchNotification {
+  id: string
+  eventType: NotificationEventType
+  emergencyReportId: string
+  erTeamId: number | null
+  erTeamReportId: string | null
+  reporterName: string | null
   incidentType: string | null
+  locationAddress: string | null
+  reportedAt: string | null
   respondedAt: string | null
-  triggeredAt: string
+  oldStatus: string | null
+  newStatus: string | null
+  createdAt: string
+  previousTeamId: number | null
+  originLatitude: number | null
+  originLongitude: number | null
+  incidentLatitude: number | null
+  incidentLongitude: number | null
 }
 
 interface ErTeamDashboardProps {
@@ -199,8 +214,76 @@ const formatStatusLabel = (status: ErTeamDraftStatus) =>
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return null
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : date.toLocaleString()
+  try {
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return null
+    return date.toLocaleString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      month: "short",
+      day: "numeric",
+    })
+  } catch {
+    return null
+  }
+}
+
+const formatStatusDisplay = (status?: string | null) => {
+  if (!status) return null
+  return status
+    .split("_")
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ")
+}
+
+const parseCoordinate = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
+const mapNotificationRow = (row: Record<string, any>): TeamDispatchNotification => {
+  const payload = (row?.payload ?? {}) as Record<string, any>
+  const reporterFirst = typeof payload.reporter_first_name === "string" ? payload.reporter_first_name : ""
+  const reporterLast = typeof payload.reporter_last_name === "string" ? payload.reporter_last_name : ""
+  const reporterName = `${reporterFirst} ${reporterLast}`.trim() || null
+
+  const incidentType = typeof payload.incident_type === "string" ? payload.incident_type : null
+  const locationAddress = typeof payload.location_address === "string" ? payload.location_address : null
+  const reportedAt = typeof payload.reported_at === "string" ? payload.reported_at : null
+  const respondedAt = typeof payload.responded_at === "string" ? payload.responded_at : null
+  const previousTeamId =
+    typeof payload.previous_er_team_id === "number"
+      ? payload.previous_er_team_id
+      : typeof payload.previous_er_team_id === "string"
+        ? Number(payload.previous_er_team_id)
+        : null
+  const incidentLatitude = parseCoordinate(payload.incident_latitude)
+  const incidentLongitude = parseCoordinate(payload.incident_longitude)
+
+  return {
+    id: String(row?.id ?? crypto.randomUUID()),
+    eventType: row?.event_type === "status_change" ? "status_change" : "assignment",
+    emergencyReportId: String(row?.emergency_report_id ?? ""),
+    erTeamId: typeof row?.er_team_id === "number" ? row.er_team_id : null,
+    erTeamReportId: typeof row?.er_team_report_id === "string" ? row.er_team_report_id : null,
+    reporterName,
+    incidentType,
+    locationAddress,
+    reportedAt,
+    respondedAt,
+    oldStatus: typeof row?.old_status === "string" ? row.old_status : null,
+    newStatus: typeof row?.new_status === "string" ? row.new_status : null,
+    createdAt: typeof row?.created_at === "string" ? row.created_at : new Date().toISOString(),
+    previousTeamId,
+    originLatitude: parseCoordinate(row?.origin_latitude),
+    originLongitude: parseCoordinate(row?.origin_longitude),
+    incidentLatitude,
+    incidentLongitude,
+  }
 }
 
 const isRowAssignedToTeam = (row: Record<string, any> | null | undefined, teamId: number): boolean => {
@@ -454,14 +537,11 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   )
 
   const assignedIncidentIdsRef = React.useRef<Set<string>>(new Set())
-  const dispatchCooldownRef = React.useRef<Record<string, number>>({})
-  const dispatchedIncidentIgnoreRef = React.useRef<Set<string>>(new Set())
   const dispatchAlertAudioRef = React.useRef<HTMLAudioElement | null>(null)
-  const [dispatchNotifications, setDispatchNotifications] = React.useState<TeamDispatchAlertState[]>([])
+  const [dispatchNotifications, setDispatchNotifications] = React.useState<TeamDispatchNotification[]>([])
   const [hasUnreadDispatchAlert, setHasUnreadDispatchAlert] = React.useState(false)
   const [isNotificationDropdownOpen, setIsNotificationDropdownOpen] = React.useState(false)
-
-  const latestDispatchAlert = dispatchNotifications[0] ?? null
+  const isNotificationDropdownOpenRef = React.useRef(false)
 
   const handleNotificationPopoverChange = React.useCallback((open: boolean) => {
     setIsNotificationDropdownOpen(open)
@@ -1014,55 +1094,6 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
         })
       }
 
-      const shouldTriggerAlert = (() => {
-        if (!newRow || !newAssigned) return false
-        const emergencyId = typeof newRow.id === "string" ? newRow.id : null
-        if (!emergencyId) return false
-        if (dispatchedIncidentIgnoreRef.current.has(emergencyId)) {
-          dispatchedIncidentIgnoreRef.current.delete(emergencyId)
-          return false
-        }
-        const now = Date.now()
-        const lastTriggered = dispatchCooldownRef.current[emergencyId] ?? 0
-        if (now - lastTriggered < ALERT_COOLDOWN_MS) {
-          return false
-        }
-        dispatchCooldownRef.current[emergencyId] = now
-        return true
-      })()
-
-      if (shouldTriggerAlert && newRow) {
-        const reporterName = [newRow.firstName, newRow.lastName]
-          .filter((value) => typeof value === "string" && value.trim().length > 0)
-          .join(" ")
-        const incidentType =
-          typeof newRow.emergency_type === "string" && newRow.emergency_type.trim().length > 0
-            ? newRow.emergency_type
-            : null
-        const respondedAt = typeof newRow.responded_at === "string" ? newRow.responded_at : null
-        const nextAlert: TeamDispatchAlertState = {
-          emergencyId: String(newRow.id),
-          reporterName: reporterName || "An emergency report",
-          incidentType,
-          respondedAt,
-          triggeredAt: new Date().toISOString(),
-        }
-        setDispatchNotifications((previous) => {
-          const deduped = previous.filter((item) => item.emergencyId !== nextAlert.emergencyId)
-          return [nextAlert, ...deduped].slice(0, MAX_DISPATCH_NOTIFICATIONS)
-        })
-        setHasUnreadDispatchAlert(true)
-        setIsNotificationDropdownOpen(true)
-        if (!dispatchAlertAudioRef.current) {
-          dispatchAlertAudioRef.current = new Audio(ALERT_SOUND_PATH)
-        }
-        const audio = dispatchAlertAudioRef.current
-        audio.currentTime = 0
-        void audio.play().catch((error) => {
-          console.warn("Unable to play dispatch alert sound", error)
-        })
-      }
-
       const now = Date.now()
       if (!assignedLoading && now - lastAssignedRefresh > ASSIGNED_REFRESH_DEBOUNCE_MS) {
         setLastAssignedRefresh(now)
@@ -1448,9 +1479,21 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                       <ul className="divide-y divide-orange-100">
                         {dispatchNotifications.map((notification) => {
                           const timeLabel =
-                            formatDateTime(notification.respondedAt ?? notification.triggeredAt) ?? "Just now"
+                            formatDateTime(notification.respondedAt ?? notification.createdAt) ?? "Just now"
+                          const incidentIdLabel = notification.emergencyReportId.slice(0, 8)
+                          const originLat = notification.originLatitude
+                          const originLng = notification.originLongitude
+                          const destLat = notification.incidentLatitude
+                          const destLng = notification.incidentLongitude
+                          const hasOrigin = typeof originLat === "number" && typeof originLng === "number"
+                          const hasDestination = typeof destLat === "number" && typeof destLng === "number"
+                          const gmapsUrl = hasDestination
+                            ? hasOrigin
+                              ? `https://www.google.com/maps/dir/?api=1&origin=${originLat},${originLng}&destination=${destLat},${destLng}`
+                              : `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`
+                            : null
                           return (
-                            <li key={`${notification.emergencyId}-${notification.triggeredAt}`} className="px-4 py-3 text-sm">
+                            <li key={notification.id} className="px-4 py-3 text-sm">
                               <div className="flex items-center justify-between gap-2">
                                 <span className="font-semibold text-gray-900">{notification.reporterName}</span>
                                 <span className="text-xs text-gray-500">{timeLabel}</span>
@@ -1461,8 +1504,28 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                                 </div>
                               ) : null}
                               <div className="mt-1 text-xs text-gray-600">
-                                Incident ID: <span className="font-mono">{notification.emergencyId.slice(0, 8)}</span>
+                                Incident ID: <span className="font-mono">{incidentIdLabel}</span>
                               </div>
+                              {notification.locationAddress ? (
+                                <div className="mt-1 text-xs text-gray-500">{notification.locationAddress}</div>
+                              ) : null}
+                              {notification.eventType === "status_change" && notification.newStatus ? (
+                                <div className="mt-2 inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-sky-700">
+                                  {formatStatusDisplay(notification.newStatus)}
+                                </div>
+                              ) : null}
+                              {gmapsUrl ? (
+                                <div className="mt-2">
+                                  <a
+                                    href={gmapsUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-xs font-medium text-orange-600 hover:underline"
+                                  >
+                                    Open route in Google Maps
+                                  </a>
+                                </div>
+                              ) : null}
                             </li>
                           )
                         })}

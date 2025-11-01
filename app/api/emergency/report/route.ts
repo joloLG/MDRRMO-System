@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
+
 export async function POST(req: Request) {
   const supabase = createRouteHandlerClient({ cookies })
   const {
@@ -59,22 +61,25 @@ export async function POST(req: Request) {
   if (typeof casualties === 'number' && casualties >= 0) {
     insertPayload.casualties = casualties
   }
-  const { data: reportData, error: reportError } = await supabase
+  const { data: reportData, error: reportError } = await supabaseAdmin
     .from('emergency_reports')
     .insert(insertPayload)
     .select()
     .single()
   if (reportError || !reportData) {
-    return NextResponse.json({ error: 'Failed to record report' }, { status: 500 })
+    if (reportError) {
+      console.error('[api/emergency/report] emergency_reports insert failed', reportError)
+    }
+    return NextResponse.json({ error: 'Failed to record report', details: reportError }, { status: 500 })
   }
-  await supabase.from('admin_notifications').insert({
+  await supabaseAdmin.from('admin_notifications').insert({
     emergency_report_id: reportData.id,
     message: `🚨 NEW EMERGENCY ALERT: ${userProfile.firstName} ${userProfile.lastName} reported: ${emergencyType} at ${locationAddress}`,
     is_read: false,
     type: 'new_report',
     created_at: new Date().toISOString()
   })
-  await supabase.from('user_notifications').insert({
+  await supabaseAdmin.from('user_notifications').insert({
     user_id: user.id,
     emergency_report_id: reportData.id,
     message: `Your emergency alert for "${emergencyType}" has been sent. Help is on the way!`,

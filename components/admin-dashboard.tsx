@@ -209,11 +209,13 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
           .createSignedUrl(activeAlertPath, 60);
         if (!error && data?.signedUrl) {
           url = data.signedUrl;
+        } else {
+          console.warn('[AdminAlertSound] Signed URL unavailable for active alert path', activeAlertPath);
         }
       }
       if (!url) {
-        console.warn('[AdminAlertSound] No signed URL available for active alert path', activeAlertPath);
-        return;
+        console.log('[AdminAlertSound] Using fallback sound /sounds/alert.mp3');
+        url = "/sounds/alert.mp3";
       }
       audioRef.current.src = url;
       audioRef.current.volume = 1.0;

@@ -29,48 +29,47 @@ export default function AdminRealtimeOverlay() {
   const [adminSoundPath, setAdminSoundPath] = useState<string | null>('/sounds/alert.mp3')
 
   useEffect(() => {
+    console.log('[AdminOverlay] Setting up realtime subscription')
     const notifChannel = supabase
       .channel("admin-overlay-new-report")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "admin_notifications" },
         (payload: any) => {
+          console.log('[AdminOverlay] Received postgres change:', payload)
           const row = payload?.new as AdminNotificationRow
           if (row?.type === "new_report") {
+            console.log('[AdminOverlay] Processing new report notification:', row)
+            alert('Admin Overlay Triggered: New emergency report received!')  
             void processNotification(row)
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log('[AdminOverlay] Subscription status:', status)
+      })
 
     const loadAdminSound = async () => {
       try {
         const { data, error } = await supabase
-          .from('alert_settings')
-          .select('admin_incident_sound_path, active_file_path')
-          .order('updated_at', { ascending: false })
-          .limit(1)
-        if (!error && data && data.length > 0) {
-          const row = data[0] as any
-          setAdminSoundPath(prev => {
-            const next = row.admin_incident_sound_path || row.active_file_path || prev || '/sounds/alert.mp3'
-            if (prev && prev !== next && prev !== '/sounds/alert.mp3') clearAlertSoundCache(prev)
-            return next
-          })
+          .from('alert_sounds')
+          .select('file_path')
+          .eq('is_active', true)
+          .single()
+        if (!error && data?.file_path) {
+          setAdminSoundPath(data.file_path)
         } else {
-          // Keep the default sound if no settings found
-          setAdminSoundPath(prev => prev || '/sounds/alert.mp3')
+          setAdminSoundPath('/sounds/alert.mp3')
         }
       } catch {
-        // Keep the default sound on error
-        setAdminSoundPath(prev => prev || '/sounds/alert.mp3')
+        setAdminSoundPath('/sounds/alert.mp3')
       }
     }
     void loadAdminSound()
 
     const settingsChannel = supabase
-      .channel('admin-overlay-alert-settings')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_settings' }, () => {
+      .channel('admin-overlay-alert-sounds')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_sounds' }, () => {
         void loadAdminSound()
       })
       .subscribe()
@@ -92,6 +91,7 @@ export default function AdminRealtimeOverlay() {
   }
 
   const processNotification = async (row: AdminNotificationRow) => {
+    console.log('[AdminOverlay] processNotification called with:', row)
     let v: OverlayVariant = "default"
     let msg = row?.message || "New emergency report received"
     try {
@@ -109,11 +109,15 @@ export default function AdminRealtimeOverlay() {
       } else {
         v = detectVariant(msg)
       }
-    } catch {}
+    } catch (error) {
+      console.log('[AdminOverlay] Error in processNotification:', error)
+    }
+    console.log('[AdminOverlay] Calling showOverlay with msg:', msg, 'variant:', v)
     showOverlay(msg, v)
   }
 
   const showOverlay = (msg: string, v: OverlayVariant = "default") => {
+    console.log('[AdminOverlay] showOverlay called with msg:', msg, 'variant:', v)
     setMessage(msg)
     setVariant(v)
     setVisible(true)
@@ -121,7 +125,7 @@ export default function AdminRealtimeOverlay() {
     if (dismissTimer.current) clearTimeout(dismissTimer.current)
     dismissTimer.current = setTimeout(() => {
       hideOverlay()
-    }, 10000)
+    }, 15000)
   }
 
   const hideOverlay = () => {
