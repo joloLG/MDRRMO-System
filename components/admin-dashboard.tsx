@@ -434,18 +434,19 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       const baseLat = (base as any).latitude as number | undefined;
       const baseLon = (base as any).longitude as number | undefined;
       const baseAddr = ((base as any).location_address || '').toString().trim().toLowerCase();
+      console.log(`Dedupe base: lat ${baseLat}, lon ${baseLon}, addr "${baseAddr}", type ${base.emergency_type}, time ${base.created_at}`);
       if (typeof baseLat !== 'number' || typeof baseLon !== 'number') {
         console.log('Dedup skipped: base report missing coordinates');
         return;
       }
 
       const baseTime = new Date(base.created_at).getTime();
-      const startWindow = new Date(baseTime - 30 * 60 * 1000).toISOString();
-      const endWindow = new Date(baseTime + 30 * 60 * 1000).toISOString();
+      const startWindow = new Date(baseTime - 60 * 60 * 1000).toISOString();
+      const endWindow = new Date(baseTime + 60 * 60 * 1000).toISOString();
 
       const { data: candidates, error } = await supabase
         .from('emergency_reports')
-        .select('id, status, created_at, latitude, longitude, location_address, emergency_type')
+        .select('id, user_id, firstName, lastName, mobileNumber, latitude, longitude, location_address, emergency_type')
         .neq('id', base.id)
         .in('status', ['pending', 'active'])
         .eq('emergency_type', base.emergency_type)
@@ -456,7 +457,11 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         console.error('Error querying duplicates:', error);
         return;
       }
-      if (!candidates || candidates.length === 0) return;
+      if (!candidates || candidates.length === 0) {
+        console.log('No candidates found for dedupe');
+        return;
+      }
+      console.log(`Found ${candidates.length} candidate reports for dedupe`);
 
       const toRad = (v: number) => (v * Math.PI) / 180;
       const haversineMeters = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -469,7 +474,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       };
       const RADIUS_METERS = 50;
 
-      const duplicatesToDelete = candidates.filter((r: any) => {
+      const duplicates = candidates.filter((r: any) => {
         const candLat = r.latitude as number | undefined;
         const candLon = r.longitude as number | undefined;
         const candAddr = (r.location_address || '').toString().trim().toLowerCase();
@@ -487,9 +492,57 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         }
         const sameAddress = baseAddr && candAddr && baseAddr === candAddr;
         return closeBy || sameAddress;
-      }).map((r: any) => r.id);
+      });
 
-      if (duplicatesToDelete.length === 0) return;
+      if (duplicates.length === 0) {
+        console.log('No duplicates found');
+        return;
+      }
+      console.log(`Found ${duplicates.length} duplicates to delete`);
+
+      // Notify duplicate report users that the team is responding
+      const selectedTeam = erTeams.find(team => team.id === parseInt(selectedTeamId || ''));
+      const teamName = selectedTeam ? selectedTeam.name : 'a response team';
+
+      for (const dup of duplicates) {
+        const { error: notificationError } = await supabase
+          .from('user_notifications')
+          .insert({
+            user_id: dup.user_id,
+            emergency_report_id: dup.id,
+            message: `Your emergency report for ${dup.emergency_type} is OTW. Team ${teamName} is responding.`
+          });
+
+        if (notificationError) {
+          console.error('Error sending notification to duplicate user:', notificationError);
+        }
+
+        // Optionally send SMS to duplicate users
+        const reporterNameParts = [dup.firstName, dup.lastName].filter(Boolean);
+        const reporterName = reporterNameParts.length > 0 ? reporterNameParts.join(' ') : 'Citizen';
+        const locationSummary = (dup.location_address || '').trim() || 'your reported location';
+        const smsMessage = `Hello ${reporterName}, Team ${teamName} is now responding to your ${dup.emergency_type} report at ${locationSummary}. Please stay safe.`;
+
+        void fetch('/api/alerts/send-sms', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            reportId: dup.id,
+            message: smsMessage,
+          }),
+        }).then(async (res) => {
+          if (!res.ok) {
+            const payload = await res.json().catch(() => null);
+            console.warn('Failed to send SMS to duplicate user', payload);
+          }
+        }).catch((err) => {
+          console.error('Semaphore SMS request error for duplicate', err);
+        });
+      }
+
+      const duplicatesToDelete = duplicates.map((r: any) => r.id);
 
       // Remove related admin notifications first
       const { error: notifDelErr } = await supabase
@@ -508,7 +561,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       if (dupDeleteError) {
         console.error('Error deleting duplicate reports:', dupDeleteError);
       } else {
-        console.log(`Deleted ${duplicatesToDelete.length} duplicate report(s) within 50m and ±30min.`);
+        console.log(`Deleted ${duplicatesToDelete.length} duplicate report(s) within 50m and ±1hr.`);
       }
 
       // Refresh lists
@@ -517,7 +570,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     } catch (e) {
       console.error('Unexpected error during dedupe:', e);
     }
-  }, [fetchAllReports]);
+  }, [fetchAllReports, erTeams, selectedTeamId]);
 
   const handleLogout = async () => {
     try {
