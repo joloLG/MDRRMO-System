@@ -626,10 +626,35 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
     window.open(mapsUrl, '_blank', 'noopener,noreferrer')
   }, [userLocation])
 
-  // Check location permission on component mount
+  // Automatically get location when component mounts and periodically update
   React.useEffect(() => {
-    void checkLocationPermission()
-  }, [checkLocationPermission])
+    const autoRequestLocation = async () => {
+      // Only auto-request if we don't already have location and permission is granted or prompt
+      if (userLocation || locationPermission === 'denied' || locationPermission === 'unknown') {
+        return
+      }
+
+      console.log('🌍 Auto-requesting ER team location...')
+      await requestLocation()
+    }
+
+    // Check permission first, then auto-request location
+    void checkLocationPermission().then(() => {
+      void autoRequestLocation()
+    })
+
+    // Set up periodic location updates (every 5 minutes)
+    const locationInterval = setInterval(() => {
+      if (locationPermission === 'granted' && navigator.onLine) {
+        console.log('🔄 Periodic location update for ER team')
+        void requestLocation()
+      }
+    }, 5 * 60 * 1000) // 5 minutes
+
+    return () => {
+      clearInterval(locationInterval)
+    }
+  }, [userLocation, locationPermission, checkLocationPermission, requestLocation])
 
   const handleNotificationPopoverChange = React.useCallback((open: boolean) => {
     setIsNotificationDropdownOpen(open)
@@ -822,40 +847,61 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   }, [profileStatus, teamId])
 
   const refreshAssignedIncidents = React.useCallback(async () => {
+    console.log('🔄 refreshAssignedIncidents called')
+
     if (profileStatus !== "authorized" || !teamId) {
-      console.log('refreshAssignedIncidents: Not authorized or no teamId', { profileStatus, teamId })
+      console.log('❌ refreshAssignedIncidents: Not authorized or no teamId', { profileStatus, teamId })
       return
     }
 
+    console.log('📡 refreshAssignedIncidents: Starting for team', teamId)
+
     if (!navigator.onLine) {
-      console.log('refreshAssignedIncidents: Offline, skipping')
+      console.log('📴 refreshAssignedIncidents: Offline, skipping')
       setAssignedLoading(false)
       setAssignedError((prev) => prev ?? "Assigned incidents will refresh when you're back online.")
       return
     }
 
-    console.log('refreshAssignedIncidents: Starting refresh for team', teamId)
+    console.log('🚀 refreshAssignedIncidents: Making API call')
     setAssignedLoading(true)
     setAssignedError(null)
+
     try {
+      console.log('🌐 Fetching from /api/er-team/assigned')
       const response = await fetch("/api/er-team/assigned", { credentials: "include" })
+
+      console.log('📥 Response status:', response.status)
+      console.log('📥 Response ok:', response.ok)
+
       if (!response.ok) {
         const message = await extractErrorMessage(response)
+        console.error('❌ API error:', message)
         throw new Error(message)
       }
+
       const body = (await response.json().catch(() => ({}))) as { incidents?: AssignedIncident[] }
+      console.log('📦 Raw API response:', body)
+
       const incidents = Array.isArray(body?.incidents) ? body.incidents : []
-      console.log('refreshAssignedIncidents: Received incidents', incidents.length, 'incidents')
+      console.log('📋 Parsed incidents:', incidents.length, 'items')
+
       const filteredIncidents = incidents.filter((incident) => !incident.er_team_report?.internal_report_id)
+      console.log('🔍 Filtered incidents:', filteredIncidents.length, 'items')
+
       const ordered = sortAssignedIncidents(filteredIncidents)
-      console.log('refreshAssignedIncidents: Setting', ordered.length, 'filtered incidents')
+      console.log('📊 Final ordered incidents:', ordered.length, 'items')
+
       setAssignedIncidents(ordered)
       applyDraftMerge(ordered)
+
+      console.log('✅ Successfully set assigned incidents')
     } catch (error: any) {
-      console.error("Failed to load assigned incidents", error)
+      console.error("❌ Failed to load assigned incidents", error)
       setAssignedError(error?.message ?? "Unable to load assigned incidents")
     } finally {
       setAssignedLoading(false)
+      console.log('🏁 refreshAssignedIncidents completed')
     }
   }, [profileStatus, teamId, applyDraftMerge])
 
@@ -1137,11 +1183,13 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
 
   React.useEffect(() => {
     if (profileStatus !== "authorized" || !teamId) {
+      console.log('❌ Realtime subscription: Not authorized or no teamId', { profileStatus, teamId })
       return
     }
 
-    console.log('Setting up realtime subscription for team', teamId)
+    console.log('🔗 Setting up realtime subscription for team', teamId)
     const channel = supabase.channel(`${SUPABASE_CHANNEL_PREFIX}${teamId}`)
+    console.log('📡 Created channel:', `${SUPABASE_CHANNEL_PREFIX}${teamId}`)
 
     const handleInternalReportChange = (payload: { new?: Record<string, any> | null; old?: Record<string, any> | null }) => {
       const candidateId = (payload?.new?.original_report_id ?? payload?.old?.original_report_id) as string | null | undefined
@@ -1318,8 +1366,14 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
       .on("postgres_changes", { event: "*", schema: "public", table: "emergency_reports" }, handleEmergencyReportChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "internal_reports" }, handleInternalReportChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "er_team_reports" }, handleReportChange)
-      .subscribe((status) => {
-        console.log('Realtime subscription status:', status)
+      .subscribe((status, err) => {
+        console.log('🔗 Realtime subscription status:', status, err ? `Error: ${err}` : '')
+        if (err) {
+          console.error('❌ Realtime subscription error:', err)
+        }
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Successfully subscribed to realtime channel:', `${SUPABASE_CHANNEL_PREFIX}${teamId}`)
+        }
       })
 
     return () => {
@@ -1868,7 +1922,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
             <CardHeader>
               <CardTitle className="text-base font-semibold text-orange-900">Location Services</CardTitle>
               <CardDescription className="text-xs text-orange-700">
-                Manage your location permissions for routing and navigation
+                Your location is automatically tracked for routing and navigation
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1887,24 +1941,9 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                        locationPermission === 'prompt' ? 'Prompt' : 'Unknown'}
                     </span>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={requestLocation}
-                    disabled={isGettingLocation}
-                    className="border-orange-300 text-orange-600 hover:bg-orange-50 w-full"
-                  >
-                    {isGettingLocation ? (
-                      <>
-                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                        Getting location...
-                      </>
-                    ) : userLocation ? (
-                      'Update location'
-                    ) : (
-                      'Get my location'
-                    )}
-                  </Button>
+                  <div className="text-xs text-gray-600 bg-orange-50 p-2 rounded">
+                    Location automatically updates every 5 minutes when online
+                  </div>
                   {locationError && (
                     <p className="text-xs text-red-600">{locationError}</p>
                   )}
@@ -1917,10 +1956,13 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                         <div>Lat: {userLocation.lat.toFixed(6)}</div>
                         <div>Lng: {userLocation.lng.toFixed(6)}</div>
                       </div>
+                      <p className="text-xs text-green-600 mt-2">
+                        ✓ Ready for Google Maps routing
+                      </p>
                     </div>
                   ) : (
                     <div className="text-sm text-gray-500 italic">
-                      Location not available. Please enable location permissions and get your location.
+                      Location not available. Please enable location permissions in your browser.
                     </div>
                   )}
                 </div>

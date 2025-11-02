@@ -24,11 +24,15 @@ interface EmergencyReportWithDraft {
   } | null
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  console.log("[er-team assigned] API called at", new Date().toISOString())
+  console.log("[er-team assigned] Request headers:", Object.fromEntries(request.headers.entries()))
+
   const supabase = createRouteHandlerClient({ cookies })
 
   try {
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+    console.log("[er-team assigned] Session check:", { hasSession: !!sessionData?.session, userId: sessionData?.session?.user?.id, sessionError })
     if (sessionError || !sessionData?.session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }

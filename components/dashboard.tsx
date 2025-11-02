@@ -101,13 +101,12 @@ interface PublishedNarrative {
   created_at: string
 }
 
-// Define Incident Types with their corresponding Lucide React icons
 const INCIDENT_TYPES = [
-  { type: 'Fire Incident', icon: FireExtinguisher }, // Changed name
+  { type: 'Fire Incident', icon: FireExtinguisher }, 
   { type: 'Medical Emergency', icon: HeartPulse },
-  { type: 'Vehicular Incident', icon: Car }, // Changed name
-  { type: 'Weather Disturbance', icon: CloudRain }, // Changed name
-  { type: 'Public Disturbance', icon: PersonStanding }, // Changed name, new icon
+  { type: 'Vehicular Incident', icon: Car }, 
+  { type: 'Weather Disturbance', icon: CloudRain }, 
+  { type: 'Public Disturbance', icon: PersonStanding }, 
   { type: 'Others', icon: (props: any) => <HelpCircle className="text-orange-500" {...props} /> },
 ];
 
@@ -133,7 +132,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
-  // Desktop detection with proper responsive handling
   const [isDesktop, setIsDesktop] = useState(false)
   const [isTabletOrDesktop, setIsTabletOrDesktop] = useState(false)
   const [isSidebarVisible, setIsSidebarVisible] = useState(false)
@@ -142,7 +140,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     const checkScreenSize = () => {
       const width = window.innerWidth
       setIsDesktop(width >= 1024)
-      setIsTabletOrDesktop(width >= 768) // Tablet and desktop (md breakpoint and above)
+      setIsTabletOrDesktop(width >= 768) 
     }
     
     checkScreenSize()
@@ -164,7 +162,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     getFreshLocation,
   } = useLocationPermission({ userId: currentUser?.id });
 
-  // Enhanced location permission handling
   const isNativePlatform = useMemo(() => Capacitor.isNativePlatform(), []);
 
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -174,7 +171,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [reportPage, setReportPage] = useState<number>(1);
   const PAGE_SIZE = 10;
-  const MIN_HIDDEN_MS_BEFORE_REFRESH = 5000; // Skip refresh for quick tab switches (<5s)
+  const MIN_HIDDEN_MS_BEFORE_REFRESH = 5000; 
 
   const INCIDENT_PAGE_SIZE = 10
   const [incidentPosts, setIncidentPosts] = useState<PublishedNarrative[]>([])
@@ -186,24 +183,20 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [incidentPostsError, setIncidentPostsError] = useState<string | null>(null)
   const incidentPostsTotalPages = useMemo(() => Math.max(1, Math.ceil(incidentPostsTotal / INCIDENT_PAGE_SIZE)), [incidentPostsTotal])
 
-  // State for deep-linked report modal
   const [deepLinkedReport, setDeepLinkedReport] = useState<Report | null>(null);
   const [isReportDetailModalOpen, setIsReportDetailModalOpen] = useState(false);
 
-  // Minimal Zustand sync (currentUser provisioning for other components if needed)
   const setStoreCurrentUser = useAppStore((s: AppState) => s.setCurrentUser)
   const isOnline = useAppStore((s: AppState) => s.isOnline)
   const connectionType = useAppStore((s: AppState) => s.connectionType)
 
-  // Refs for click outside detection
   const notificationsRef = useRef<HTMLDivElement>(null);
   const notificationsButtonRef = useRef<HTMLButtonElement>(null);
   const isResumingRef = useRef<boolean>(false);
   const lastResumeAtRef = useRef<number>(0);
-  const RESUME_COOLDOWN_MS = 1000; // Tighter throttle: single refresh within ~1s on resume
+  const RESUME_COOLDOWN_MS = 1000; 
   const lastHiddenAtRef = useRef<number | null>(null);
 
-  // States for User Profile editing
   const [editingMobileNumber, setEditingMobileNumber] = useState<string>('');
   const [editingUsername, setEditingUsername] = useState<string>('');
   const [profileEditSuccess, setProfileEditSuccess] = useState<string | null>(null);
@@ -261,17 +254,14 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     return () => clearInterval(timer);
   }, [profileOtpResendTimer]);
 
-  // Ban gate: if user is banned (permanent or until future), block app usage and show notice
   const isUserBanned = useMemo(() => {
     const u = currentUser;
     if (!u || !u.is_banned) return false;
-    // Permanent ban if no banned_until; otherwise ban active until future date
     if (!u.banned_until) return true;
     const until = new Date(u.banned_until).getTime();
     return isFinite(until) && until > Date.now();
   }, [currentUser]);
 
-  // Close notifications when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (showNotifications && 
@@ -289,7 +279,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     };
   }, [showNotifications]);
 
-  // State for Send Feedback
   const [feedbackText, setFeedbackText] = useState<string>('');
   const [feedbackSentMessage, setFeedbackSentMessage] = useState<string | null>(null);
   const [feedbackErrorMessage, setFeedbackErrorMessage] = useState<string | null>(null);
@@ -301,7 +290,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const feedbackCharsLeft = useMemo(() => FEEDBACK_MAX - feedbackText.length, [feedbackText]);
   const feedbackTooShort = useMemo(() => feedbackText.trim().length < FEEDBACK_MIN, [feedbackText]);
 
-  // States for fetched data for new sections
   const [userReports, setUserReports] = useState<Report[]>([]);
   const [mdrrmoInformation, setMdrrmoInformation] = useState<MdrrmoInfo | null>(null);
   const [bulanHotlines, setBulanHotlines] = useState<Hotline[]>([]);
@@ -327,28 +315,22 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     if (reportPage > totalReportPages) setReportPage(totalReportPages);
   }, [totalReportPages, reportPage]);
 
-  // New states for incident type buttons and cooldown
   const [selectedIncidentTypeForConfirmation, setSelectedIncidentTypeForConfirmation] = useState<string | null>(null);
   const [customEmergencyType, setCustomEmergencyType] = useState<string>('');
   const [showCustomEmergencyInput, setShowCustomEmergencyInput] = useState<boolean>(false);
   const [casualties, setCasualties] = useState<string>('');
   const [cooldownActive, setCooldownActive] = useState<boolean>(false);
-  const [cooldownRemaining, setCooldownRemaining] = useState<number>(0); // in seconds
+  const [cooldownRemaining, setCooldownRemaining] = useState<number>(0); 
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // New state for report credits, initialized from localStorage with user-specific keys
-  const [reportCredits, setReportCredits] = useState<number>(3); // Default to max 3 credits
-  
-  // Track when credits were consumed for replenishment
+  const [reportCredits, setReportCredits] = useState<number>(3); 
   const [creditConsumptionTimes, setCreditConsumptionTimes] = useState<number[]>([]);
   const provisionalTimeRef = useRef<number | null>(null);
   
-  // Get user-specific storage key
   const getCreditStorageKey = useCallback((suffix: string) => {
     return currentUser ? `mdrrmo_${currentUser.id}_${suffix}` : null;
   }, [currentUser?.id]);
   
-  // Load user's credits when user changes
   useEffect(() => {
     if (!currentUser?.id) return;
     
@@ -356,13 +338,11 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     const timesKey = getCreditStorageKey('creditConsumptionTimes');
     
     if (creditsKey && timesKey) {
-      // Load consumption times (source of truth) and compute credits
       const storedTimes = localStorage.getItem(timesKey);
       if (storedTimes) {
         try {
           const parsedTimes = JSON.parse(storedTimes);
           if (Array.isArray(parsedTimes)) {
-            // Keep only last 10 minutes
             const now = Date.now();
             const tenMinutes = 10 * 60 * 1000;
             const validTimes = parsedTimes.filter((ts: number) => (now - ts) < tenMinutes);
@@ -382,30 +362,23 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   }, [currentUser?.id, getCreditStorageKey]);
   
-  // Track active cooldown timers
   const [activeCooldowns, setActiveCooldowns] = useState<number[]>([]);
 
-  // Recompute credits and cooldowns based on stored consumption times
   const reconcileCooldownsAndCredits = useCallback(() => {
     const now = Date.now();
     const tenMinutes = 10 * 60 * 1000;
 
-    // Keep only recent consumption timestamps (within last 10 minutes)
     const validTimes = creditConsumptionTimes.filter(ts => (now - ts) < tenMinutes);
     if (validTimes.length !== creditConsumptionTimes.length) {
       setCreditConsumptionTimes(validTimes);
     }
 
-    // Build cooldown deadlines from valid times
     const newCooldowns = validTimes.map(ts => ts + tenMinutes);
     setActiveCooldowns(newCooldowns);
 
-    // Compute credits from remaining uses
     const used = validTimes.length;
     const newCredits = Math.max(0, 3 - used);
     setReportCredits(newCredits);
-
-    // Update cooldown visual states
     if (newCooldowns.length > 0) {
       const nextMs = Math.max(0, Math.min(...newCooldowns) - now);
       setCooldownRemaining(Math.ceil(nextMs / 1000));
@@ -675,9 +648,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     } catch {}
   }, []);
 
-  // setupRealtime is defined after loader functions
-
-  // Function to load notifications for the current user
   const loadNotifications = useCallback(async (userId: string) => {
     if (!userId) return;
 
@@ -686,7 +656,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       .select("id, emergency_report_id, message, is_read, created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
-      .limit(50); // Limit for low bandwidth environments
+      .limit(50); 
 
     if (!error && data) {
       setNotifications(data as Notification[]);
@@ -695,15 +665,14 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   }, []);
 
-  // Function to load user's report history
   const loadUserReports = useCallback(async (userId: string) => {
     if (!userId) return;
     const { data, error } = await supabase
       .from('emergency_reports')
-      .select('id, emergency_type, status, admin_response, resolved_at, created_at') // Narrow columns for lower egress
+      .select('id, emergency_type, status, admin_response, resolved_at, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-      .limit(100); // Limit for low bandwidth environments
+      .limit(100); 
 
     if (!error && data) {
       setUserReports(data as Report[]);
@@ -712,24 +681,22 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   }, []);
 
-  // Function to load MDRRMO Information
   const loadMdrrmoInfo = useCallback(async () => {
     const { data, error } = await supabase
       .from('mdrrmo_info')
       .select('id, content')
-      .single(); // Assuming only one row for general info
+      .single(); 
 
     if (!error && data) {
       setMdrrmoInformation(data as MdrrmoInfo);
-    } else if (error && error.code !== 'PGRST116') { // PGRST116 is "No rows found"
+    } else if (error && error.code !== 'PGRST116') { 
       console.error("Error loading MDRRMO Information:", error);
     } else if (error && error.code === 'PGRST116') {
       console.log("No MDRRMO Information found. It might not be set by admin yet.");
-      setMdrrmoInformation(null); // Explicitly set to null if no data
+      setMdrrmoInformation(null); 
     }
   }, []);
 
-  // Function to load Bulan Hotlines
   const loadBulanHotlines = useCallback(async () => {
     const { data, error } = await supabase
       .from('hotlines')
@@ -743,7 +710,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   }, []);
 
-  // Function to load Active Advisory (only non-expired advisories are returned via RLS)
   const loadActiveAdvisory = useCallback(async () => {
     try {
       const { data, error } = await supabase
@@ -764,21 +730,18 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   }, []);
 
-  // Auto-refresh advisory display exactly at expiry so Welcome card returns
-  useEffect(() => {
+    useEffect(() => {
     if (!activeAdvisory?.expires_at) return;
     const expiryMs = new Date(activeAdvisory.expires_at).getTime();
     const now = Date.now();
     if (!isFinite(expiryMs) || expiryMs <= now) return;
-    const delay = Math.min(Math.max(0, expiryMs - now + 300), 24 * 60 * 60 * 1000); // cap 24h
+    const delay = Math.min(Math.max(0, expiryMs - now + 300), 24 * 60 * 60 * 1000); 
     const timer = setTimeout(() => { void loadActiveAdvisory(); }, delay);
     return () => clearTimeout(timer);
   }, [activeAdvisory?.expires_at, loadActiveAdvisory]);
 
-  // Realtime setup after loaders are defined
   const setupRealtime = useCallback((userId: string) => {
     if (!userId) return;
-    // Ensure clean state
     cleanupRealtime();
 
     notificationsChannelRef.current = supabase
@@ -789,8 +752,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         (payload) => {
           void loadNotifications(userId)
           try {
-            // Play a lightweight notification sound for new inserts only
-            // Avoid playing for updates/deletes
             if ((payload as any)?.eventType === 'INSERT') {
               void playAlertSound('notification')
             }
@@ -806,7 +767,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         { event: '*', schema: 'public', table: 'emergency_reports', filter: `user_id=eq.${userId}` },
         (payload) => {
           loadUserReports(userId);
-          // Refine cooldown with server timestamp
           if (payload.eventType === 'INSERT' && payload.new.user_id === userId) {
             const serverCreatedAt = new Date(payload.new.created_at).getTime();
             setCreditConsumptionTimes(prev => {
@@ -847,7 +807,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       )
       .subscribe();
 
-    // Listen for broadcast alerts (earthquake/tsunami) for all users
     broadcastAlertsChannelRef.current = supabase
       .channel('broadcast_alerts_channel')
       .on(
@@ -859,7 +818,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
             const t = String(payload?.new?.type || '').toLowerCase();
             const title = payload?.new?.title || 'MDRRMO Alert';
             const body = payload?.new?.body || '';
-            // Show a lightweight in-app notice
             try { console.log('[Broadcast Alert]', title, body); } catch {}
             if (t === 'earthquake' || t === 'tsunami') {
               showBroadcastAlert({
@@ -880,7 +838,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       )
       .subscribe();
 
-    // Advisories: watch for create/update/expire and refresh active advisory
     advisoriesChannelRef.current = supabase
       .channel('advisories_channel')
       .on(
@@ -891,7 +848,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       .subscribe();
   }, [cleanupRealtime, loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines, playAlertSound, showBroadcastAlert]);
 
-  // Unified refresh helper to fetch all user-dependent data
   const refreshUserData = useCallback(async (userId: string) => {
     try {
       await Promise.all([
@@ -902,13 +858,10 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       console.warn('Partial failure while refreshing user lists:', e);
     }
 
-    // Fetch global data in parallel (not user-dependent)
     void loadMdrrmoInfo();
     void loadBulanHotlines();
     void loadActiveAdvisory();
   }, [loadNotifications, loadUserReports, loadMdrrmoInfo, loadBulanHotlines, loadActiveAdvisory]);
-
-  // Shared refresh helper (optionally shows overlay)
   const runRefresh = useCallback(async (showSpinner: boolean) => {
     const now = Date.now();
     if (now - lastResumeAtRef.current < RESUME_COOLDOWN_MS) return;
@@ -960,7 +913,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     await runRefresh(false);
   }, [runRefresh]);
 
-  // Force full re-initialization (session -> user -> data -> realtime -> location -> cooldowns)
   const forceReinit = useCallback(async () => {
     setIsRefreshing(true);
     try {
@@ -986,10 +938,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       await refreshUserData(userId);
       setupRealtime(userId);
 
-      // Try to refresh location silently
       await ensureLocationReady();
 
-      // Reconcile credits/cooldowns
       reconcileCooldownsAndCredits();
     } catch (e) {
       console.warn('forceReinit error:', e);
@@ -998,9 +948,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   }, [onLogout, refreshUserData, setupRealtime, ensureLocationReady, reconcileCooldownsAndCredits]);
 
-  // Removed old generic, non-user-scoped localStorage loader to prevent resets across app restarts
-
-  // Effect to sync credits from storage on an interval (no cross-effects to avoid loops)
   useEffect(() => {
     const timesKey = getCreditStorageKey('creditConsumptionTimes');
     if (!timesKey) return;
@@ -1021,12 +968,9 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       const tenMinutes = 10 * 60 * 1000;
       const validTimes = consumptionTimes.filter(ts => (now - ts) < tenMinutes);
 
-      // Persist pruned list if it changed length
       if (validTimes.length !== consumptionTimes.length) {
         localStorage.setItem(timesKey, JSON.stringify(validTimes));
       }
-
-      // Update state only if actually changed (prevents render loops)
       setCreditConsumptionTimes(prev => {
         if (prev.length === validTimes.length && prev.every((v, i) => v === validTimes[i])) return prev;
         return validTimes;
@@ -1041,7 +985,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     return () => clearInterval(interval);
   }, [getCreditStorageKey]);
   
-  // Effect to initialize cooldowns from credit consumption times
   useEffect(() => {
     const now = Date.now();
     const tenMinutes = 10 * 60 * 1000;
@@ -1061,7 +1004,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     setCooldownActive(reportCredits === 0 && newCooldowns.length > 0);
   }, [creditConsumptionTimes, reportCredits]);
 
-  // Effect to persist report credits, consumption times to user-specific localStorage
   useEffect(() => {
     if (!currentUser?.id) return;
     
@@ -1075,12 +1017,10 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   }, [reportCredits, creditConsumptionTimes, currentUser?.id, getCreditStorageKey]);
 
 
-  // Main effect for initialization, data fetching, and real-time subscriptions
   useEffect(() => {
     let locationInitTimer: ReturnType<typeof setTimeout> | null = null;
 
     const initialize = async () => {
-      // 1. Get session and user profile
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       if (sessionError || !sessionData?.session?.user) {
         onLogout();
@@ -1104,7 +1044,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       setEditingMobileNumber(formatMobileNumberForInput(userProfile.mobileNumber));
       setEditingUsername(userProfile.username || '');
 
-      // 2. Initial data fetch
       await Promise.all([
         loadNotifications(user.id),
         loadUserReports(user.id),
@@ -1113,21 +1052,17 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         loadActiveAdvisory(),
       ]);
 
-      // 3. Set up real-time subscriptions
       setupRealtime(user.id);
       
-      // 4. Handle location
       locationInitTimer = setTimeout(() => {
         void ensureLocationReady();
       }, 100);
       
-      // 5. Reconcile credits
       reconcileCooldownsAndCredits();
     };
     
     initialize();
 
-    // Listen for auth changes to re-initialize
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (session?.user?.id !== currentUser?.id) {
@@ -1147,7 +1082,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     };
   }, []); // Run only once on mount
 
-  // Web: silent refresh when returning from background after minimum hidden duration
   useEffect(() => {
     if (isNativePlatform) return;
     const handleVisibility = () => {
@@ -1170,7 +1104,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     };
   }, [isNativePlatform, silentRefresh, ensureLocationReady]);
 
-  // Native: silent refresh on resume (runs in background) and check for deep-link intent
   useEffect(() => {
     if (!isNativePlatform) return;
     let resumeListener: PluginListenerHandle | undefined;
@@ -1178,13 +1111,11 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       void ensureLocationReady();
       if (currentUser?.id) {
         void silentRefresh();
-        // Check for notification intent on resume
         const intentKey = `mdrrmo_${currentUser.id}_notificationIntent`;
         const intent = localStorage.getItem(intentKey);
         if (intent) {
           try {
             const { emergencyReportId, timestamp } = JSON.parse(intent);
-            // Only handle if recent (e.g., within last minute)
             if (Date.now() - timestamp < 60000) {
               const report = userReports.find(r => r.id === emergencyReportId);
               if (report) {
@@ -1195,7 +1126,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
           } catch (e) {
             console.error("Error parsing notification intent:", e);
           }
-          localStorage.removeItem(intentKey); // Clear intent after handling
+          localStorage.removeItem(intentKey);
         }
       }
     })
@@ -1206,7 +1137,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     };
   }, [isNativePlatform, silentRefresh, currentUser?.id, ensureLocationReady, userReports]);
 
-  // Heartbeat to check for deep-link intent on web
   useEffect(() => {
     if (isNativePlatform || !currentUser?.id) return;
 
@@ -1226,7 +1156,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         } catch (e) {
           console.error("Error parsing notification intent:", e);
         }
-        localStorage.removeItem(intentKey); // Clear intent after handling
+        localStorage.removeItem(intentKey);
       }
     };
 
@@ -1234,7 +1164,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     return () => clearInterval(interval);
   }, [currentUser?.id, isNativePlatform, userReports]);
 
-  // Native (Ionic/Capacitor) mobile state: subscribe to RxJS streams
   useEffect(() => {
     if (!isNativePlatform || !currentUser?.id) return;
     initMobileState(currentUser.id);
@@ -1248,14 +1177,12 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   }, [isNativePlatform, currentUser?.id]);
 
 
-  // Modified confirmSOS to accept emergencyType
   const confirmSOS = async (emergencyType: string) => {
     if (!currentUser) {
       console.error("User not logged in");
       return;
     }
 
-    // Ensure we have a fresh location right before sending
     let effectiveLocation = location;
     if (!effectiveLocation) {
       effectiveLocation = await getFreshLocation(10000);
@@ -1268,7 +1195,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       return;
     }
 
-    // Check if casualties are required and valid
     const requiresCasualties = [
       'Medical Emergency', 
       'Vehicular Incident', 
@@ -1288,7 +1214,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       }
     }
 
-    // Double-check credits before proceeding (in case of race conditions)
     const currentCredits = reportCredits;
     if (currentCredits <= 0) {
       console.log("No credits remaining. Cannot send alert.");
@@ -1296,27 +1221,21 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       return;
     }
 
-    // Immediately update UI to prevent double-clicks
     setIsEmergencyActive(true);
     setShowSOSConfirm(false);
     
-    // Record a provisional time when credit was consumed
     const consumptionTime = Date.now();
     provisionalTimeRef.current = consumptionTime;
     
-    // Immediately update the credit state to prevent double submissions
     setReportCredits(prev => {
       const newCredits = Math.max(0, prev - 1);
       return newCredits;
     });
     
-    // Add a new cooldown timer for this consumption
     setActiveCooldowns(prev => [...prev, consumptionTime + (10 * 60 * 1000)]);
     
-    // Save the consumption time for persistence
     setCreditConsumptionTimes(prev => [...prev, consumptionTime]);
 
-    // Persist immediately to avoid losing state if app is closed quickly
     try {
       const timesKey = getCreditStorageKey('creditConsumptionTimes');
       const creditsKey = getCreditStorageKey('reportCredits');
@@ -1443,8 +1362,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       console.error("SOS Error:", error);
       console.error("Failed to send emergency alert: " + error.message);
       setIsEmergencyActive(false);
-      // Optionally, if the report fails due to a network error *after* credit deduction,
-      // you might want to refund the credit here.
     }
   }
 
@@ -1453,24 +1370,18 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     setShowCustomEmergencyInput(false);
     setSelectedIncidentTypeForConfirmation(null);
     setCustomEmergencyType('');
-    setCasualties(''); // Reset casualties state
-    // Reset any selected incident type to clear the "click again to confirm" text
-    // No credit deduction or cooldown initiation here
+    setCasualties('');
   }
 
   const handleLogout = async () => {
     console.log("LOGOUT FUNCTION CALLED!")
     try {
-      // Clear local session first
       localStorage.removeItem("mdrrmo_user");
       setShowUserMenu(false);
-      
-      // Then call the parent's logout handler which will handle the Supabase sign out
       onLogout();
     } catch (err) {
       console.error("Error during logout:", err);
-      // Even if there's an error, we should still proceed with the logout
-      onLogout();
+        onLogout();
     }
   }
 
@@ -1596,7 +1507,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   };
 
-  // Handle Profile Update
   const handleProfileUpdate = async () => {
     if (!currentUser) {
       setProfileEditError("User not logged in.");
@@ -1605,7 +1515,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     setProfileEditSuccess(null);
     setProfileEditError(null);
 
-    // Validate mobile number
     if (!/^09\d{9}$/.test(editingMobileNumber)) {
       setMobileNumberError('Please provide a valid mobile number starting with 09 (11 digits).');
       return;
@@ -1643,7 +1552,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   };
 
-  // Handle Send Feedback
   const handleSendFeedback = async () => {
     if (!currentUser) return;
     const trimmed = feedbackText.trim();
@@ -1692,14 +1600,11 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   };
 
-  // Handle click on an incident type button
   const handleIncidentTypeClick = (type: string) => {
     if (cooldownActive || reportCredits === 0) {
       console.log("Cannot send alert: Cooldown active or no credits remaining.");
       return;
     }
-    
-    // Reset casualties when changing incident type
     setCasualties('');
     
     if (type === 'Others') {
@@ -1712,7 +1617,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     }
   };
 
-  // Format cooldown time for display
   const formatTime = (totalSeconds: number) => {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
@@ -1761,14 +1665,12 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         backgroundRepeat: "no-repeat",
       }}
     >
-      {/* Report Detail Modal for deep-linking */}
       <ReportDetailModal
         report={deepLinkedReport}
         isOpen={isReportDetailModalOpen}
         onClose={() => setIsReportDetailModalOpen(false)}
       />
 
-      {/* Global Refreshing Overlay */}
       {isRefreshing && (
         <div className="fixed inset-0 z-50 pointer-events-none">
           <div className="absolute top-2 right-2 bg-black/60 text-white px-3 py-2 rounded-md text-sm flex items-center space-x-2">
@@ -1780,10 +1682,8 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
           </div>
         </div>
       )}
-      {/* Overlay for better readability */}
       <div className="absolute inset-0 bg-black/30 z-0"></div>
       
-      {/* Location Permission Modal */}
       <LocationPermissionModal
         open={showLocationModal}
         onOpenChange={setShowLocationModal}
@@ -1791,9 +1691,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         error={locationError}
       />
 
-      {/* Desktop Layout with Sidebar */}
       <div className="relative min-h-screen">
-        {/* Header - Full width */}
         <div className="sticky top-0 z-30 bg-orange-500/95 backdrop-blur-sm text-white p-4 shadow-lg">
           {(queuedReports.length > 0 || showQueuedNotice) && (
             <Alert
@@ -1840,7 +1738,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
           )}
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-              {/* Hamburger Menu Button - Visible on all screens */}
               <button 
                 onClick={() => {
                   if (isTabletOrDesktop) {
@@ -1855,7 +1752,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                 <Menu className="w-6 h-6" />
               </button>
               
-              {/* Desktop Title - Hidden on small screens */}
               <div className="hidden md:flex items-center space-x-3 ml-2">
                 <span className="font-medium text-lg">BULAN EMERGENCY APP</span>
               </div>
@@ -1867,7 +1763,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
             </div>
 
             <div className="flex items-center space-x-4">
-              {/* Notifications */}
               <div className="relative">
                 <button
                   ref={notificationsButtonRef}
@@ -1885,7 +1780,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                 </button>
               </div>
 
-              {/* Manual Refresh */}
               <div className="relative">
                 <button
                   onClick={() => window.location.reload()}
@@ -1897,7 +1791,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                 </button>
               </div>
 
-              {/* User Menu */}
               <div className="relative">
                 <div
                   className="flex items-center space-x-2 cursor-pointer hover:bg-orange-600 p-2 rounded-full transition-colors"
@@ -1910,17 +1803,13 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
           </div>
         </div>
 
-        {/* Main Layout Container */}
         <div className="flex min-h-[calc(100vh-80px)]">
-          {/* Sidebar Overlay for tablet and desktop */}
           {isTabletOrDesktop && isSidebarVisible && (
             <>
-              {/* Overlay background */}
               <div 
                 className="fixed inset-0 bg-black/50 z-30"
                 onClick={() => setIsSidebarVisible(false)}
               />
-              {/* Sidebar */}
               <div className="fixed top-20 left-0 h-[calc(100vh-80px)] w-64 z-40">
                 <UserSidebar 
                   isOpen={true} 
@@ -1934,7 +1823,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
             </>
           )}
 
-          {/* Mobile Sidebar Overlay */}
           {!isTabletOrDesktop && (
             <UserSidebar 
               isOpen={effectiveSidebarOpen} 
@@ -1943,11 +1831,9 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
             />
           )}
 
-          {/* Main Content Area */}
           <div className="flex-1 flex flex-col items-center p-4 sm:p-8 min-h-full">
             {currentView === 'main' && (
               <>
-                {/* Welcome Card with Logo */}
                 {activeAdvisory ? (
                   <Card className="w-full max-w-2xl mx-auto mb-6 bg-white/90 backdrop-blur-sm shadow-lg rounded-lg border border-orange-300">
                     <CardHeader className="pb-2 flex flex-col items-center justify-center">
@@ -1990,11 +1876,9 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
               </div>
             </div>
 
-            {/* Incident Type Buttons Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-6 max-w-3xl w-full mx-auto mb-24">
               {INCIDENT_TYPES.map((incident) => {
                 const IconComponent = incident.icon;
-                // Buttons are disabled if cooldown is active OR if credits are 0
                 const isDisabled = cooldownActive || reportCredits === 0;
                 const isSelected = selectedIncidentTypeForConfirmation === incident.type;
 
@@ -2039,7 +1923,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
               })}
             </div>
 
-            {/* Emergency Active Status Indicator */}
             {isEmergencyActive && (
               <div className="mt-6 bg-red-500 text-white px-4 py-2 sm:px-6 sm:py-3 rounded-full animate-bounce text-sm sm:text-base shadow-xl">
                 <span className="font-bold">🚨 EMERGENCY ALERT SENT! 🚨</span>
@@ -2059,7 +1942,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                   <p className="text-gray-600 text-center py-4">No emergency reports found.</p>
                 ) : (
                   <>
-                    {/* Mobile List View */}
                     <div className="block sm:hidden space-y-2">
                       {paginatedReports.map((report: Report) => (
                         <div key={report.id} className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
@@ -2085,7 +1967,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                       ))}
                     </div>
                     
-                    {/* Desktop Table View */}
                     <div className="hidden sm:block h-full overflow-auto">
                       <table className="min-w-full divide-y divide-gray-200 text-xs sm:text-sm">
                         <thead className="bg-gray-50 sticky top-0 z-10">
@@ -2127,7 +2008,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                       </table>
                     </div>
                     
-                    {/* Pagination */}
                     <div className="flex items-center justify-between mt-2 px-2">
                       <div className="text-xs text-gray-600">
                         Page {reportPage} of {totalReportPages}

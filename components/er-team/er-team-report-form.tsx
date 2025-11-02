@@ -40,7 +40,7 @@ export interface ErTeamDraft {
   synced: boolean
   lastSyncError?: string | null
   submittedAt?: string | null
-  patientPayload: Record<string, any>
+  patientsPayload: ErTeamPatientPayload[] // Changed from single patientPayload to array
   incidentPayload?: Record<string, any>
   injuryPayload?: InjuryMap
   notes?: string | null
@@ -95,12 +95,19 @@ export interface ErTeamPatientPayload {
   receivingHospitalId: string
   receivingDate: string
   emtErtDate: string
+  // Injury data per patient
+  injuryPayload?: InjuryMap
   // Legacy fields for backward compatibility
   firstName?: string
   middleName?: string
   lastName?: string
   suffix?: string
   contactNumber?: string
+}
+
+export const DEFAULT_INJURY_TEMPLATE: InjuryMap = {
+  front: {},
+  back: {},
 }
 
 export const DEFAULT_PATIENT_TEMPLATE: ErTeamPatientPayload = {
@@ -137,13 +144,13 @@ export const DEFAULT_PATIENT_TEMPLATE: ErTeamPatientPayload = {
   receivingHospitalId: "",
   receivingDate: "",
   emtErtDate: "",
+  injuryPayload: DEFAULT_INJURY_TEMPLATE,
   firstName: "",
   middleName: "",
   lastName: "",
   suffix: "",
   contactNumber: "",
 }
-
 
 const EMERGENCY_CATEGORY_OPTIONS = [
   "Cardiac",
@@ -188,11 +195,6 @@ export const HOSPITAL_OPTIONS: ReferenceOption[] = [
   { id: "sorsogon_provincial", name: "Sorsogon Provincial Hospital" },
   { id: "irosin_district", name: "Irosin District Hospital" },
 ]
-
-export const DEFAULT_INJURY_TEMPLATE: InjuryMap = {
-  front: {},
-  back: {},
-}
 
 const flattenLegacyPatientPayload = (source: unknown): Partial<ErTeamPatientPayload> => {
   if (!source || typeof source !== "object") return {}
@@ -649,6 +651,17 @@ const clone = <T,>(value: T): T => {
   return JSON.parse(JSON.stringify(value))
 }
 
+const normalizeInjuryView = (source: unknown): Record<string, string[]> => {
+  if (!source || typeof source !== "object" || Array.isArray(source)) return {}
+  const result: Record<string, string[]> = {}
+  for (const [region, codes] of Object.entries(source as Record<string, unknown>)) {
+    if (Array.isArray(codes)) {
+      result[region] = codes.filter((code): code is string => typeof code === "string")
+    }
+  }
+  return result
+}
+
 const parseDate = (value: string | undefined) => {
   if (!value) return undefined
   const date = new Date(value)
@@ -774,38 +787,32 @@ export function ErTeamReportForm({
   isSubmitting = false,
 }: ErTeamReportFormProps) {
   const [activeTab, setActiveTab] = React.useState<string>("patient")
+  const [activePatientIndex, setActivePatientIndex] = React.useState<number>(0)
 
   const ensurePayloads = React.useCallback(() => {
-    const patientPayload: ErTeamPatientPayload = {
-      ...DEFAULT_PATIENT_TEMPLATE,
-      ...flattenLegacyPatientPayload(draft.patientPayload),
-      ...(draft.patientPayload ?? {}),
-    }
+    // Ensure we have at least one patient
+    const patientsPayload = Array.isArray(draft.patientsPayload) && draft.patientsPayload.length > 0
+      ? draft.patientsPayload.map((patient) => ({
+          ...DEFAULT_PATIENT_TEMPLATE,
+          ...flattenLegacyPatientPayload(patient),
+          ...(patient ?? {}),
+        }))
+      : [
+          {
+            ...DEFAULT_PATIENT_TEMPLATE,
+            // Auto-fill dates for new patients
+            receivingDate: format(new Date(), "yyyy-MM-dd"),
+            emtErtDate: format(new Date(), "yyyy-MM-dd"),
+            // Migrate global injury data to first patient for backward compatibility
+            injuryPayload: draft.injuryPayload || DEFAULT_INJURY_TEMPLATE,
+            ...flattenLegacyPatientPayload(draft.patientsPayload && draft.patientsPayload[0] ? draft.patientsPayload[0] : {}), // Backward compatibility
+          },
+        ]
 
-    if (!Array.isArray(patientPayload.typeOfEmergencySelections)) {
-      patientPayload.typeOfEmergencySelections = []
-    }
+    return { patientsPayload }
+  }, [draft.patientsPayload, draft.injuryPayload])
 
-    const normalizeInjuryView = (view: unknown): Record<string, string[]> => {
-      if (!view || typeof view !== "object" || Array.isArray(view)) return {}
-      const result: Record<string, string[]> = {}
-      for (const [region, codes] of Object.entries(view as Record<string, unknown>)) {
-        if (Array.isArray(codes)) {
-          result[region] = codes.filter((code): code is string => typeof code === "string")
-        }
-      }
-      return result
-    }
-
-    const injuryPayload: InjuryMap = {
-      front: normalizeInjuryView(draft.injuryPayload?.front),
-      back: normalizeInjuryView(draft.injuryPayload?.back),
-    }
-
-    return { patientPayload, injuryPayload }
-  }, [draft.patientPayload, draft.injuryPayload])
-
-  const { patientPayload, injuryPayload } = ensurePayloads()
+  const { patientsPayload } = ensurePayloads()
 
   const updateDraft = React.useCallback(
     (partial: Partial<ErTeamDraft>) => {
@@ -818,19 +825,52 @@ export function ErTeamReportForm({
     [draft, onDraftChange]
   )
 
+  // Functions to manage multiple patients
+  const addPatient = React.useCallback(() => {
+    const newPatient = {
+      ...DEFAULT_PATIENT_TEMPLATE,
+      receivingDate: format(new Date(), "yyyy-MM-dd"),
+      emtErtDate: format(new Date(), "yyyy-MM-dd"),
+      injuryPayload: DEFAULT_INJURY_TEMPLATE, // Each patient gets their own injury data
+    }
+    updateDraft({
+      patientsPayload: [...patientsPayload, newPatient]
+    })
+    setActivePatientIndex(patientsPayload.length)
+  }, [patientsPayload, updateDraft])
+
+  const removePatient = React.useCallback((index: number) => {
+    if (patientsPayload.length <= 1) return // Keep at least one patient
+    const newPatients = patientsPayload.filter((_, i) => i !== index)
+    updateDraft({ patientsPayload: newPatients })
+    if (activePatientIndex >= newPatients.length) {
+      setActivePatientIndex(newPatients.length - 1)
+    }
+  }, [patientsPayload, activePatientIndex, updateDraft])
+
+  const updatePatient = React.useCallback((index: number, partial: Partial<ErTeamPatientPayload>) => {
+    const newPatients = [...patientsPayload]
+    newPatients[index] = { ...newPatients[index], ...partial }
+    updateDraft({ patientsPayload: newPatients })
+  }, [patientsPayload, updateDraft])
+
+  // Get current active patient
+  const activePatient = patientsPayload[activePatientIndex] || patientsPayload[0]
+
   const [diagramView, setDiagramView] = React.useState<InjuryView>("front")
   const [activeRegionSelection, setActiveRegionSelection] = React.useState<{ view: InjuryView; region: string } | null>(null)
 
   const getInjuryMapForView = React.useCallback(
     (view: InjuryView) => {
-      return view === "front" ? injuryPayload.front : injuryPayload.back
+      return view === "front" ? activePatient.injuryPayload?.front || {} : activePatient.injuryPayload?.back || {}
     },
-    [injuryPayload.front, injuryPayload.back]
+    [activePatient.injuryPayload]
   )
 
   const updateInjuryMap = React.useCallback(
     (view: InjuryView, region: string, codes: string[]) => {
-      const next = clone(injuryPayload)
+      const currentInjuryPayload = activePatient.injuryPayload || DEFAULT_INJURY_TEMPLATE
+      const next = clone(currentInjuryPayload)
       const viewMap = { ...(view === "front" ? next.front : next.back) }
       if (codes.length) {
         viewMap[region] = codes
@@ -842,9 +882,9 @@ export function ErTeamReportForm({
       } else {
         next.back = viewMap
       }
-      updateDraft({ injuryPayload: next })
+      updatePatient(activePatientIndex, { injuryPayload: next })
     },
-    [injuryPayload, updateDraft]
+    [activePatient.injuryPayload, activePatientIndex, updatePatient]
   )
 
   const handleRegionSelect = React.useCallback(
@@ -877,25 +917,25 @@ export function ErTeamReportForm({
 
   const frontRegionColors = React.useMemo(() => {
     const result: Record<string, string> = {}
-    Object.entries(injuryPayload.front).forEach(([region, codes]) => {
+    Object.entries(activePatient.injuryPayload?.front || {}).forEach(([region, codes]) => {
       const primary = codes[0]
       if (primary) {
         result[region] = INJURY_TYPE_COLOR_MAP[primary] ?? REGION_ACTIVE_STROKE
       }
     })
     return result
-  }, [injuryPayload.front])
+  }, [activePatient.injuryPayload?.front])
 
   const backRegionColors = React.useMemo(() => {
     const result: Record<string, string> = {}
-    Object.entries(injuryPayload.back).forEach(([region, codes]) => {
+    Object.entries(activePatient.injuryPayload?.back || {}).forEach(([region, codes]) => {
       const primary = codes[0]
       if (primary) {
         result[region] = INJURY_TYPE_COLOR_MAP[primary] ?? REGION_ACTIVE_STROKE
       }
     })
     return result
-  }, [injuryPayload.back])
+  }, [activePatient.injuryPayload?.back])
 
   const activeRegionInjuries = React.useMemo(() => {
     if (!activeRegionSelection) return []
@@ -912,17 +952,32 @@ export function ErTeamReportForm({
     }
   }, [activeRegionSelection])
 
-  const handlePatientField = React.useCallback(
-    (partial: Partial<ErTeamPatientPayload>) => {
-      updateDraft({
-        patientPayload: {
-          ...patientPayload,
-          ...partial,
-        },
+  const handleFormSubmit = React.useCallback(async (event: React.FormEvent) => {
+    event.preventDefault()
+
+    // When on patient tab, only navigate to injuries tab - NEVER submit
+    if (activeTab === "patient") {
+      setActiveTab("injuries")
+      return // Explicit return to prevent any submission logic
+    }
+
+    // Only submit when on injuries tab
+    if (activeTab === "injuries") {
+      await onSubmitForReview({
+        ...draft,
+        patientsPayload,
       })
-    },
-    [patientPayload, updateDraft]
-  )
+    }
+  }, [activeTab, draft, patientsPayload, onSubmitForReview])
+
+  const getSubmitButtonText = () => {
+    if (activeTab === "patient") {
+      return "Next"
+    } else if (activeTab === "injuries") {
+      return isSubmitting ? "Sending…" : "Submit for review"
+    }
+    return "Submit for review"
+  }
 
   const handleBirthdayChange = React.useCallback(
     (value: string) => {
@@ -936,41 +991,36 @@ export function ErTeamReportForm({
       } else if (!value) {
         nextFields.patientAge = DEFAULT_PATIENT_TEMPLATE.patientAge
       }
-      handlePatientField(nextFields)
+      updatePatient(activePatientIndex, nextFields)
     },
-    [handlePatientField]
+    [activePatientIndex, updatePatient]
   )
 
   React.useEffect(() => {
-    if (!patientPayload.patientBirthday) {
-      if (patientPayload.patientAge !== DEFAULT_PATIENT_TEMPLATE.patientAge) {
-        handlePatientField({ patientAge: DEFAULT_PATIENT_TEMPLATE.patientAge })
+    if (!activePatient.patientBirthday) {
+      if (activePatient.patientAge !== DEFAULT_PATIENT_TEMPLATE.patientAge) {
+        updatePatient(activePatientIndex, { patientAge: DEFAULT_PATIENT_TEMPLATE.patientAge })
       }
       return
     }
-    const parsed = parseISO(patientPayload.patientBirthday)
-    if (!isValid(parsed)) return
-    const years = differenceInYears(new Date(), parsed)
-    if (Number.isNaN(years) || years < 0) return
-    const nextAge = String(years)
-    if (nextAge !== patientPayload.patientAge) {
-      handlePatientField({ patientAge: nextAge })
+    const parsed = parseISO(activePatient.patientBirthday)
+    if (!isValid(parsed)) {
+      if (activePatient.patientAge !== DEFAULT_PATIENT_TEMPLATE.patientAge) {
+        updatePatient(activePatientIndex, { patientAge: DEFAULT_PATIENT_TEMPLATE.patientAge })
+      }
+      return
     }
-  }, [handlePatientField, patientPayload.patientAge, patientPayload.patientBirthday])
+    const years = differenceInYears(new Date(), parsed)
+    if (!Number.isNaN(years) && years >= 0 && String(years) !== activePatient.patientAge) {
+      updatePatient(activePatientIndex, { patientAge: String(years) })
+    }
+  }, [activePatient.patientBirthday, activePatient.patientAge, activePatientIndex, updatePatient])
 
   const handleNotesChange = React.useCallback(
     (value: string) => {
       updateDraft({ notes: value })
     },
     [updateDraft]
-  )
-
-  const handleSubmit = React.useCallback(
-    async (event: React.FormEvent) => {
-      event.preventDefault()
-      await onSubmitForReview(draft)
-    },
-    [draft, onSubmitForReview]
   )
 
   const statusMeta = STATUS_BADGE[draft.status]
@@ -997,7 +1047,7 @@ export function ErTeamReportForm({
         </div>
       </header>
 
-      <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
+      <form onSubmit={handleFormSubmit} className="flex-1 overflow-y-auto">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
           <div className="border-b border-gray-100 px-4 pt-3 sm:px-6">
             <TabsList className="grid grid-cols-2 rounded-xl bg-gray-100 p-1 text-xs sm:text-sm">
@@ -1012,8 +1062,51 @@ export function ErTeamReportForm({
 
           <TabsContent value="patient" className="flex-1 overflow-y-auto px-4 py-5 sm:px-6">
             <section className="space-y-4">
+              {/* Patient Tabs */}
+              <div className="flex items-center justify-between">
+                <Tabs value={`patient-${activePatientIndex}`} className="flex-1">
+                  <TabsList className="grid grid-cols-4 gap-1">
+                    {patientsPayload.map((_, index) => (
+                      <TabsTrigger
+                        key={index}
+                        value={`patient-${index}`}
+                        onClick={() => setActivePatientIndex(index)}
+                        className="text-xs"
+                      >
+                        Patient {index + 1}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addPatient}
+                  className="ml-2"
+                >
+                  <User className="mr-1 h-4 w-4" />
+                  Add Patient
+                </Button>
+              </div>
+
+              {/* Remove Patient Button (only show if more than 1 patient) */}
+              {patientsPayload.length > 1 && (
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => removePatient(activePatientIndex)}
+                  >
+                    <XCircle className="mr-1 h-4 w-4" />
+                    Remove Patient {activePatientIndex + 1}
+                  </Button>
+                </div>
+              )}
+
               <Card className="border-none shadow-sm">
-                <CardContent className="space-y-4 pt-4">
+                <CardContent className="space-y-6 pt-4">
                   <div className="flex flex-wrap gap-4 text-xs text-gray-500">
                     <span className="inline-flex items-center gap-1"><User className="h-3 w-3" /> Patient details</span>
                     <span className="inline-flex items-center gap-1"><Pill className="h-3 w-3" /> Medical info</span>
@@ -1026,8 +1119,8 @@ export function ErTeamReportForm({
                       </Label>
                       <Input
                         id="patient-name"
-                        value={patientPayload.patientName}
-                        onChange={(event) => handlePatientField({ patientName: event.target.value })}
+                        value={activePatient.patientName}
+                        onChange={(event) => updatePatient(activePatientIndex, { patientName: event.target.value })}
                         placeholder="Juan Dela Cruz"
                         required
                       />
@@ -1038,8 +1131,8 @@ export function ErTeamReportForm({
                       </Label>
                       <Input
                         id="patient-number"
-                        value={patientPayload.patientNumber}
-                        onChange={(event) => handlePatientField({ patientNumber: event.target.value.replace(/[^0-9]/g, "").slice(0, 11) })}
+                        value={activePatient.patientNumber}
+                        onChange={(event) => updatePatient(activePatientIndex, { patientNumber: event.target.value.replace(/[^0-9]/g, "").slice(0, 11) })}
                         inputMode="tel"
                         placeholder="09XX XXX XXXX"
                         required
@@ -1051,7 +1144,7 @@ export function ErTeamReportForm({
                     <DatePickerField
                       id="patient-birthday"
                       label="Birthday"
-                      value={patientPayload.patientBirthday}
+                      value={activePatient.patientBirthday}
                       onChange={handleBirthdayChange}
                       required
                       initialFocus
@@ -1067,7 +1160,7 @@ export function ErTeamReportForm({
                         id="patient-age"
                         type="number"
                         min="0"
-                        value={patientPayload.patientAge}
+                        value={activePatient.patientAge}
                         readOnly
                         required
                       />
@@ -1078,8 +1171,8 @@ export function ErTeamReportForm({
                         {(["male", "female"] as const).map((sexOption) => (
                           <label key={sexOption} className="inline-flex items-center gap-2 text-sm text-gray-700">
                             <Checkbox
-                              checked={patientPayload.patientSex === sexOption}
-                              onCheckedChange={(checked) => handlePatientField({ patientSex: checked ? sexOption : "" })}
+                              checked={activePatient.patientSex === sexOption}
+                              onCheckedChange={(checked) => updatePatient(activePatientIndex, { patientSex: checked ? sexOption : "" })}
                             />
                             {sexOption.charAt(0).toUpperCase() + sexOption.slice(1)}
                           </label>
@@ -1095,8 +1188,8 @@ export function ErTeamReportForm({
                       </Label>
                       <Textarea
                         id="patient-address"
-                        value={patientPayload.patientAddress}
-                        onChange={(event) => handlePatientField({ patientAddress: event.target.value })}
+                        value={activePatient.patientAddress}
+                        onChange={(event) => updatePatient(activePatientIndex, { patientAddress: event.target.value })}
                         rows={2}
                         required
                       />
@@ -1107,8 +1200,8 @@ export function ErTeamReportForm({
                       </Label>
                       <Textarea
                         id="incident-location"
-                        value={patientPayload.incidentLocation}
-                        onChange={(event) => handlePatientField({ incidentLocation: event.target.value })}
+                        value={activePatient.incidentLocation}
+                        onChange={(event) => updatePatient(activePatientIndex, { incidentLocation: event.target.value })}
                         rows={2}
                       />
                     </div>
@@ -1121,56 +1214,47 @@ export function ErTeamReportForm({
                   <p className="text-sm font-medium text-gray-800">Vitals</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     <div>
+                      <Label htmlFor="pulse-rate" className="block text-xs font-semibold text-gray-600 mb-1">
+                        Pulse rate (BPM)
+                      </Label>
+                      <Input
+                        id="pulse-rate"
+                        value={activePatient.pulseRate}
+                        onChange={(event) => updatePatient(activePatientIndex, { pulseRate: event.target.value })}
+                        placeholder="e.g., 80"
+                      />
+                    </div>
+                    <div>
                       <Label htmlFor="blood-pressure" className="block text-xs font-semibold text-gray-600 mb-1">
                         Blood pressure
                       </Label>
                       <Input
                         id="blood-pressure"
-                        value={patientPayload.bloodPressure}
-                        onChange={(event) => handlePatientField({ bloodPressure: event.target.value })}
-                        placeholder="120/80"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="pulse-rate" className="block text-xs font-semibold text-gray-600 mb-1">
-                        Pulse rate
-                      </Label>
-                      <Input
-                        id="pulse-rate"
-                        value={patientPayload.pulseRate}
-                        onChange={(event) => handlePatientField({ pulseRate: event.target.value })}
-                        placeholder="80 bpm"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="loc-avpu" className="block text-xs font-semibold text-gray-600 mb-1">
-                        LOC / AVPU
-                      </Label>
-                      <Input
-                        id="loc-avpu"
-                        value={patientPayload.locAvpu}
-                        onChange={(event) => handlePatientField({ locAvpu: event.target.value })}
-                        placeholder="Alert"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="oxygen-saturation" className="block text-xs font-semibold text-gray-600 mb-1">
-                        O₂ saturation (%)
-                      </Label>
-                      <Input
-                        id="oxygen-saturation"
-                        value={patientPayload.oxygenSaturation}
-                        onChange={(event) => handlePatientField({ oxygenSaturation: event.target.value })}
+                        value={activePatient.bloodPressure}
+                        onChange={(event) => updatePatient(activePatientIndex, { bloodPressure: event.target.value })}
+                        placeholder="e.g., 120/80"
                       />
                     </div>
                     <div>
                       <Label htmlFor="respiratory-rate" className="block text-xs font-semibold text-gray-600 mb-1">
-                        Respiratory rate (RR)
+                        Respiratory rate
                       </Label>
                       <Input
                         id="respiratory-rate"
-                        value={patientPayload.respiratoryRate}
-                        onChange={(event) => handlePatientField({ respiratoryRate: event.target.value })}
+                        value={activePatient.respiratoryRate}
+                        onChange={(event) => updatePatient(activePatientIndex, { respiratoryRate: event.target.value })}
+                        placeholder="e.g., 16"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="oxygen-saturation" className="block text-xs font-semibold text-gray-600 mb-1">
+                        Oxygen saturation (%)
+                      </Label>
+                      <Input
+                        id="oxygen-saturation"
+                        value={activePatient.oxygenSaturation}
+                        onChange={(event) => updatePatient(activePatientIndex, { oxygenSaturation: event.target.value })}
+                        placeholder="e.g., 98"
                       />
                     </div>
                     <div>
@@ -1179,31 +1263,22 @@ export function ErTeamReportForm({
                       </Label>
                       <Input
                         id="temperature"
-                        value={patientPayload.temperature}
-                        onChange={(event) => handlePatientField({ temperature: event.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="bpm" className="block text-xs font-semibold text-gray-600 mb-1">
-                        BPM
-                      </Label>
-                      <Input
-                        id="bpm"
-                        value={patientPayload.bpm}
-                        onChange={(event) => handlePatientField({ bpm: event.target.value })}
+                        value={activePatient.temperature}
+                        onChange={(event) => updatePatient(activePatientIndex, { temperature: event.target.value })}
+                        placeholder="e.g., 36.5"
                       />
                     </div>
                     <div>
                       <Label htmlFor="pain-scale" className="block text-xs font-semibold text-gray-600 mb-1">
-                        Pain (1-10)
+                        Pain scale (0-10)
                       </Label>
                       <Input
                         id="pain-scale"
                         type="number"
                         min="0"
                         max="10"
-                        value={patientPayload.painScale}
-                        onChange={(event) => handlePatientField({ painScale: event.target.value.replace(/[^0-9]/g, "").slice(0, 2) })}
+                        value={activePatient.painScale}
+                        onChange={(event) => updatePatient(activePatientIndex, { painScale: event.target.value.replace(/[^0-9]/g, "").slice(0, 2) })}
                       />
                     </div>
                   </div>
@@ -1219,12 +1294,12 @@ export function ErTeamReportForm({
                               <Button
                                 key={value}
                                 type="button"
-                                variant={patientPayload.gcsEye === value ? "default" : "outline"}
+                                variant={activePatient.gcsEye === value ? "default" : "outline"}
                                 className={cn(
                                   "py-2",
-                                  patientPayload.gcsEye === value ? "bg-orange-500 text-white" : "bg-white text-gray-700 hover:bg-gray-50",
+                                  activePatient.gcsEye === value ? "bg-orange-500 text-white" : "bg-white text-gray-700 hover:bg-gray-50",
                                 )}
-                                onClick={() => handlePatientField({ gcsEye: value })}
+                                onClick={() => updatePatient(activePatientIndex, { gcsEye: value })}
                               >
                                 {value}
                               </Button>
@@ -1238,12 +1313,12 @@ export function ErTeamReportForm({
                               <Button
                                 key={value}
                                 type="button"
-                                variant={patientPayload.gcsVerbal === value ? "default" : "outline"}
+                                variant={activePatient.gcsVerbal === value ? "default" : "outline"}
                                 className={cn(
                                   "py-2",
-                                  patientPayload.gcsVerbal === value ? "bg-orange-500 text-white" : "bg-white text-gray-700 hover:bg-gray-50",
+                                  activePatient.gcsVerbal === value ? "bg-orange-500 text-white" : "bg-white text-gray-700 hover:bg-gray-50",
                                 )}
-                                onClick={() => handlePatientField({ gcsVerbal: value })}
+                                onClick={() => updatePatient(activePatientIndex, { gcsVerbal: value })}
                               >
                                 {value}
                               </Button>
@@ -1257,12 +1332,12 @@ export function ErTeamReportForm({
                               <Button
                                 key={value}
                                 type="button"
-                                variant={patientPayload.gcsMotor === value ? "default" : "outline"}
+                                variant={activePatient.gcsMotor === value ? "default" : "outline"}
                                 className={cn(
                                   "py-2",
-                                  patientPayload.gcsMotor === value ? "bg-orange-500 text-white" : "bg-white text-gray-700 hover:bg-gray-50",
+                                  activePatient.gcsMotor === value ? "bg-orange-500 text-white" : "bg-white text-gray-700 hover:bg-gray-50",
                                 )}
-                                onClick={() => handlePatientField({ gcsMotor: value })}
+                                onClick={() => updatePatient(activePatientIndex, { gcsMotor: value })}
                               >
                                 {value}
                               </Button>
@@ -1273,7 +1348,7 @@ export function ErTeamReportForm({
                       <div className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2">
                         <span className="text-sm font-semibold text-gray-700">Total GCS</span>
                         <span className="text-lg font-bold text-gray-900">
-                          {Number(patientPayload.gcsEye || 0) + Number(patientPayload.gcsVerbal || 0) + Number(patientPayload.gcsMotor || 0)}
+                          {Number(activePatient.gcsEye || 0) + Number(activePatient.gcsVerbal || 0) + Number(activePatient.gcsMotor || 0)}
                         </span>
                       </div>
                       <div>
@@ -1282,8 +1357,8 @@ export function ErTeamReportForm({
                         </Label>
                         <Textarea
                           id="gcs-other"
-                          value={patientPayload.gcsOther}
-                          onChange={(event) => handlePatientField({ gcsOther: event.target.value })}
+                          value={activePatient.gcsOther}
+                          onChange={(event) => updatePatient(activePatientIndex, { gcsOther: event.target.value })}
                           rows={2}
                         />
                       </div>
@@ -1299,19 +1374,19 @@ export function ErTeamReportForm({
                               <Button
                                 key={option}
                                 type="button"
-                                variant={patientPayload.airwaySelections.includes(option) ? "default" : "outline"}
+                                variant={activePatient.airwaySelections.includes(option) ? "default" : "outline"}
                                 className={cn(
                                   "justify-start",
-                                  patientPayload.airwaySelections.includes(option)
+                                  activePatient.airwaySelections.includes(option)
                                     ? "bg-orange-100 text-orange-700 border-orange-400"
                                     : "bg-white text-gray-700 hover:bg-gray-50",
                                 )}
                                 onClick={() => {
-                                  const existing = patientPayload.airwaySelections
+                                  const existing = activePatient.airwaySelections
                                   const next = existing.includes(option)
                                     ? existing.filter((item) => item !== option)
                                     : [...existing, option]
-                                  handlePatientField({ airwaySelections: next })
+                                  updatePatient(activePatientIndex, { airwaySelections: next })
                                 }}
                               >
                                 {option}
@@ -1327,19 +1402,19 @@ export function ErTeamReportForm({
                               <Button
                                 key={option}
                                 type="button"
-                                variant={patientPayload.breathingSelections.includes(option) ? "default" : "outline"}
+                                variant={activePatient.breathingSelections.includes(option) ? "default" : "outline"}
                                 className={cn(
                                   "justify-start",
-                                  patientPayload.breathingSelections.includes(option)
+                                  activePatient.breathingSelections.includes(option)
                                     ? "bg-orange-100 text-orange-700 border-orange-400"
                                     : "bg-white text-gray-700 hover:bg-gray-50",
                                 )}
                                 onClick={() => {
-                                  const existing = patientPayload.breathingSelections
+                                  const existing = activePatient.breathingSelections
                                   const next = existing.includes(option)
                                     ? existing.filter((item) => item !== option)
                                     : [...existing, option]
-                                  handlePatientField({ breathingSelections: next })
+                                  updatePatient(activePatientIndex, { breathingSelections: next })
                                 }}
                               >
                                 {option}
@@ -1355,19 +1430,19 @@ export function ErTeamReportForm({
                               <Button
                                 key={option}
                                 type="button"
-                                variant={patientPayload.circulationSelections.includes(option) ? "default" : "outline"}
+                                variant={activePatient.circulationSelections.includes(option) ? "default" : "outline"}
                                 className={cn(
                                   "justify-start",
-                                  patientPayload.circulationSelections.includes(option)
+                                  activePatient.circulationSelections.includes(option)
                                     ? "bg-orange-100 text-orange-700 border-orange-400"
                                     : "bg-white text-gray-700 hover:bg-gray-50",
                                 )}
                                 onClick={() => {
-                                  const existing = patientPayload.circulationSelections
+                                  const existing = activePatient.circulationSelections
                                   const next = existing.includes(option)
                                     ? existing.filter((item) => item !== option)
                                     : [...existing, option]
-                                  handlePatientField({ circulationSelections: next })
+                                  updatePatient(activePatientIndex, { circulationSelections: next })
                                 }}
                               >
                                 {option}
@@ -1384,8 +1459,8 @@ export function ErTeamReportForm({
                           </Label>
                           <Input
                             id="incident-location"
-                            value={patientPayload.incidentLocation}
-                            onChange={(event) => handlePatientField({ incidentLocation: event.target.value })}
+                            value={activePatient.incidentLocation}
+                            onChange={(event) => updatePatient(activePatientIndex, { incidentLocation: event.target.value })}
                             required
                           />
                         </div>
@@ -1396,29 +1471,38 @@ export function ErTeamReportForm({
                               <Button
                                 key={priority.value}
                                 type="button"
-                                variant={patientPayload.evacPriority === priority.value ? "default" : "outline"}
+                                variant={activePatient.evacPriority === priority.value ? "default" : "outline"}
                                 className={cn(
                                   "justify-start",
-                                  patientPayload.evacPriority === priority.value
-                                    ? `${PRIORITY_COLORS[priority.value]} text-white`
+                                  activePatient.evacPriority === priority.value
+                                    ? priority.value === "4"
+                                      ? "bg-black text-white border-transparent"  // Pure black background for Priority 4
+                                      : `${PRIORITY_COLORS[priority.value]} text-white border-transparent`
                                     : "bg-white text-gray-700 hover:bg-gray-50",
                                 )}
                                 onClick={() =>
-                                  handlePatientField({
-                                    evacPriority: patientPayload.evacPriority === priority.value ? "" : priority.value,
+                                  updatePatient(activePatientIndex, {
+                                    evacPriority: activePatient.evacPriority === priority.value ? "" : priority.value,
                                   })
                                 }
                               >
                                 <span
                                   className={cn(
-                                    "inline-flex h-2.5 w-2.5 rounded-full",
-                                    PRIORITY_COLORS[priority.value],
-                                    patientPayload.evacPriority !== priority.value && "bg-gray-300",
+                                    "inline-flex h-2.5 w-2.5 rounded-full mr-2",
+                                    activePatient.evacPriority === priority.value
+                                      ? priority.value === "4"
+                                        ? "bg-black"  // Keep black for Priority 4 when selected
+                                        : "bg-white"  // White for other priorities when selected
+                                      : priority.value === "2"
+                                        ? "bg-yellow-400"
+                                        : priority.value === "4"
+                                          ? "bg-black"
+                                          : "bg-red-500",
                                   )}
                                 />
-                                <span className="ml-2 text-left">
+                                <span className="text-left">
                                   <span className="block text-sm font-semibold">{priority.label}</span>
-                                  <span className={cn("text-[11px]", patientPayload.evacPriority === priority.value ? "text-white/80" : "text-gray-500")}> 
+                                  <span className={cn("text-[11px]", activePatient.evacPriority === priority.value ? "text-white/80" : "text-gray-500")}>
                                     {priority.description}
                                   </span>
                                 </span>
@@ -1426,14 +1510,34 @@ export function ErTeamReportForm({
                             ))}
                           </div>
                         </div>
-                        <div className="md:col-span-2">
+                        <div>
+                          <Label htmlFor="receiving-hospital" className="block text-xs font-semibold text-gray-600 mb-1">
+                            Receiving hospital
+                          </Label>
+                          <Select
+                            value={activePatient.receivingHospitalId ?? ""}
+                            onValueChange={(value: string) => updatePatient(activePatientIndex, { receivingHospitalId: value })}
+                          >
+                            <SelectTrigger id="receiving-hospital">
+                              <SelectValue placeholder="Select hospital" />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-56 overflow-y-auto">
+                              {hospitals.map((hospital) => (
+                                <SelectItem key={hospital.id} value={hospital.id}>
+                                  {hospital.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
                           <Label htmlFor="moi-poi-toi" className="block text-xs font-semibold text-gray-600 mb-1">
                             MOI / POI / TOI
                           </Label>
                           <Textarea
                             id="moi-poi-toi"
-                            value={patientPayload.moiPoiToi}
-                            onChange={(event) => handlePatientField({ moiPoiToi: event.target.value })}
+                            value={activePatient.moiPoiToi}
+                            onChange={(event) => updatePatient(activePatientIndex, { moiPoiToi: event.target.value })}
                             rows={2}
                             required
                           />
@@ -1444,8 +1548,8 @@ export function ErTeamReportForm({
                           </Label>
                           <Textarea
                             id="noi"
-                            value={patientPayload.noi}
-                            onChange={(event) => handlePatientField({ noi: event.target.value })}
+                            value={activePatient.noi}
+                            onChange={(event) => updatePatient(activePatientIndex, { noi: event.target.value })}
                             rows={2}
                           />
                         </div>
@@ -1455,8 +1559,8 @@ export function ErTeamReportForm({
                           </Label>
                           <Textarea
                             id="signs-symptoms"
-                            value={patientPayload.signsSymptoms}
-                            onChange={(event) => handlePatientField({ signsSymptoms: event.target.value })}
+                            value={activePatient.signsSymptoms}
+                            onChange={(event) => updatePatient(activePatientIndex, { signsSymptoms: event.target.value })}
                             rows={2}
                             required
                           />
@@ -1470,19 +1574,19 @@ export function ErTeamReportForm({
                             <Button
                               key={option}
                               type="button"
-                              variant={patientPayload.typeOfEmergencySelections.includes(option) ? "default" : "outline"}
+                              variant={activePatient.typeOfEmergencySelections.includes(option) ? "default" : "outline"}
                               className={cn(
                                 "justify-start",
-                                patientPayload.typeOfEmergencySelections.includes(option)
+                                activePatient.typeOfEmergencySelections.includes(option)
                                   ? "bg-orange-500 text-white"
                                   : "bg-white text-gray-700 hover:bg-gray-50",
                               )}
                               onClick={() => {
-                                const existing = patientPayload.typeOfEmergencySelections
+                                const existing = activePatient.typeOfEmergencySelections
                                 const next = existing.includes(option)
                                   ? existing.filter((item) => item !== option)
                                   : [...existing, option]
-                                handlePatientField({ typeOfEmergencySelections: next })
+                                updatePatient(activePatientIndex, { typeOfEmergencySelections: next })
                               }}
                             >
                               {option}
@@ -1501,8 +1605,8 @@ export function ErTeamReportForm({
                           Receiving hospital
                         </Label>
                         <Select
-                          value={patientPayload.receivingHospitalId ?? ""}
-                          onValueChange={(value: string) => handlePatientField({ receivingHospitalId: value })}
+                          value={activePatient.receivingHospitalId ?? ""}
+                          onValueChange={(value: string) => updatePatient(activePatientIndex, { receivingHospitalId: value })}
                         >
                           <SelectTrigger id="receiving-hospital">
                             <SelectValue placeholder="Select hospital" />
@@ -1520,8 +1624,8 @@ export function ErTeamReportForm({
                         <DatePickerField
                           id="receiving-date"
                           label="Receiving date"
-                          value={patientPayload.receivingDate}
-                          onChange={(next) => handlePatientField({ receivingDate: next })}
+                          value={activePatient.receivingDate}
+                          onChange={(next) => updatePatient(activePatientIndex, { receivingDate: next })}
                           required
                         />
                       </div>
@@ -1529,8 +1633,8 @@ export function ErTeamReportForm({
                         <DatePickerField
                           id="emt-date"
                           label="EMT/ERT date"
-                          value={patientPayload.emtErtDate}
-                          onChange={(next) => handlePatientField({ emtErtDate: next })}
+                          value={activePatient.emtErtDate}
+                          onChange={(next) => updatePatient(activePatientIndex, { emtErtDate: next })}
                           required
                         />
                       </div>
@@ -1540,8 +1644,8 @@ export function ErTeamReportForm({
                         </Label>
                         <Input
                           id="turnover-in-charge"
-                          value={patientPayload.turnoverInCharge}
-                          onChange={(event) => handlePatientField({ turnoverInCharge: event.target.value })}
+                          value={activePatient.turnoverInCharge}
+                          onChange={(event) => updatePatient(activePatientIndex, { turnoverInCharge: event.target.value })}
                           required
                         />
                       </div>
@@ -1554,14 +1658,14 @@ export function ErTeamReportForm({
                             <Button
                               key={option}
                               type="button"
-                              variant={patientPayload.bloodLossLevel === option ? "default" : "outline"}
+                              variant={activePatient.bloodLossLevel === option ? "default" : "outline"}
                               className={cn(
                                 "px-4",
-                                patientPayload.bloodLossLevel === option
+                                activePatient.bloodLossLevel === option
                                   ? "bg-orange-500 text-white"
                                   : "bg-white text-gray-700 hover:bg-gray-50",
                               )}
-                              onClick={() => handlePatientField({ bloodLossLevel: patientPayload.bloodLossLevel === option ? "" : option })}
+                              onClick={() => updatePatient(activePatientIndex, { bloodLossLevel: activePatient.bloodLossLevel === option ? "" : option })}
                             >
                               {option}
                             </Button>
@@ -1574,8 +1678,8 @@ export function ErTeamReportForm({
                         </Label>
                         <Input
                           id="estimated-blood-loss"
-                          value={patientPayload.estimatedBloodLoss}
-                          onChange={(event) => handlePatientField({ estimatedBloodLoss: event.target.value })}
+                          value={activePatient.estimatedBloodLoss}
+                          onChange={(event) => updatePatient(activePatientIndex, { estimatedBloodLoss: event.target.value })}
                           placeholder="e.g., 0.5"
                         />
                       </div>
@@ -1588,6 +1692,49 @@ export function ErTeamReportForm({
 
           <TabsContent value="injuries" className="flex-1 overflow-y-auto px-4 py-5 sm:px-6">
             <section className="space-y-4">
+              {/* Patient Tabs for Injuries */}
+              <div className="flex items-center justify-between">
+                <Tabs value={`patient-${activePatientIndex}`} className="flex-1">
+                  <TabsList className="grid grid-cols-4 gap-1">
+                    {patientsPayload.map((_, index) => (
+                      <TabsTrigger
+                        key={index}
+                        value={`patient-${index}`}
+                        onClick={() => setActivePatientIndex(index)}
+                        className="text-xs"
+                      >
+                        Patient {index + 1}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addPatient}
+                  className="ml-2"
+                >
+                  <User className="mr-1 h-4 w-4" />
+                  Add Patient
+                </Button>
+              </div>
+
+              {/* Remove Patient Button (only show if more than 1 patient) */}
+              {patientsPayload.length > 1 && (
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => removePatient(activePatientIndex)}
+                  >
+                    <XCircle className="mr-1 h-4 w-4" />
+                    Remove Patient {activePatientIndex + 1}
+                  </Button>
+                </div>
+              )}
+
               <Card className="border-none shadow-sm">
                 <CardContent className="space-y-5 pt-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1700,8 +1847,8 @@ export function ErTeamReportForm({
                 <CardContent className="space-y-4 pt-4">
                   <p className="text-sm font-semibold text-gray-800">Logged injuries summary</p>
                   <div className="space-y-3 text-xs text-gray-600">
-                    <InjurySummaryList view="front" regionMap={injuryPayload.front} />
-                    <InjurySummaryList view="back" regionMap={injuryPayload.back} />
+                    <InjurySummaryList view="front" regionMap={activePatient.injuryPayload?.front || {}} />
+                    <InjurySummaryList view="back" regionMap={activePatient.injuryPayload?.back || {}} />
                   </div>
                 </CardContent>
               </Card>
@@ -1726,7 +1873,7 @@ export function ErTeamReportForm({
                     <Loader2 className="h-4 w-4 animate-spin" /> Sending…
                   </span>
                 ) : (
-                  "Submit for review"
+                  getSubmitButtonText()
                 )}
               </Button>
             </div>

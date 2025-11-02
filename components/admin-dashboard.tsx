@@ -40,7 +40,6 @@ interface Notification {
   reportLocationAddress?: string;
 }
 
-// Define Report interface
 interface Report {
   id: string;
   user_id: string;
@@ -62,7 +61,6 @@ interface Report {
   casualties?: number;
 }
 
-// Define InternalReport interface (matching report-history-table.tsx)
 interface InternalReport {
   id: number;
   original_report_id: string | null;
@@ -77,7 +75,6 @@ interface InternalReport {
   created_at: string; 
 }
 
-// Define BaseEntry for reference tables (used for ER Teams)
 interface BaseEntry {
   id: number;
   name: string;
@@ -119,7 +116,6 @@ interface ErTeamReportSummary {
   } | null
 }
 
-// Props for the AdminDashboard component
 interface AdminDashboardProps {
   onLogout: () => void;
   userData: any;
@@ -154,13 +150,9 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     if (!selectedReport) return null
     return erTeamReports.find((report) => report.emergency_report_id === selectedReport.id) ?? null
   }, [erTeamReports, selectedReport])
-
-  // Refs for click outside detection
   const overlayRef = useRef<AdminRealtimeOverlayRef>(null)
   const notificationsDropdownRef = useRef<HTMLDivElement>(null);
   const notificationsButtonRef = useRef<HTMLButtonElement>(null);
-
-  // Alert sound management state
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('mdrrmo_admin_sound_enabled');
@@ -174,7 +166,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   });
   const [activeAlertPath, setActiveAlertPath] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  // Ensure we only auto-select a default report once per mount
   const hasAutoSelectedRef = useRef<boolean>(false);
 
   const loadActiveAlert = useCallback(async () => {
@@ -236,9 +227,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       }
       return next;
     });
-    // Optionally play a short test when enabling
-    try {
-      // Delay to let state update
+      try {
       setTimeout(() => {
         if (!audioRef.current) audioRef.current = new Audio();
         if (soundEnabled === false && activeAlertPath) {
@@ -248,13 +237,10 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     } catch {}
   }, [soundEnabled]);
 
-  // Auto-select the most relevant latest report on first load
   useEffect(() => {
     if (hasAutoSelectedRef.current) return;
-    if (selectedReport) return; // respect manual selection
+    if (selectedReport) return;
     if (!allReports || allReports.length === 0) return;
-
-    // Prefer active/pending, otherwise the newest (already sorted desc by created_at)
     const prioritized = allReports.find(r => {
       const s = (r.status || '').trim().toLowerCase();
       return s === 'pending' || s === 'active';
@@ -263,19 +249,15 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     setSelectedReport(prioritized);
     hasAutoSelectedRef.current = true;
 
-    // Preselect first ER team if available
     if (!selectedTeamId && erTeams.length > 0) {
       setSelectedTeamId(String(erTeams[0].id));
     }
   }, [allReports, selectedReport, erTeams, selectedTeamId]);
-
-  // New states for filtering and modals
   const [resolvedFilterDate, setResolvedFilterDate] = useState<Date | undefined>(new Date());
   const [showActiveModal, setShowActiveModal] = useState(false);
   const [showRespondedModal, setShowRespondedModal] = useState(false);
   const [hasCustomResolvedDate, setHasCustomResolvedDate] = useState<boolean>(false);
 
-  // Set admin user data from props
   useEffect(() => {
     if (userData) {
       setAdminUser(userData);
@@ -298,7 +280,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     }
   }, [userData]);
 
-  // Close notifications when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -318,7 +299,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     };
   }, [showNotificationsDropdown]);
 
-  // Function to fetch notifications
   const fetchAdminNotifications = useCallback(async () => {
     const { data, error } = await supabase
       .from('admin_notifications')
@@ -346,14 +326,12 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
     if (error) {
       console.error("Error fetching admin notifications:", error);
-      // Non-blocking: keep UI running; mark degraded for transient network failures
       if (String(error?.message || '').toLowerCase().includes('failed to fetch')) {
         setConnectionStatus('degraded');
       }
       return [];
     }
-
-    // Success: connection OK
+    
     setConnectionStatus('ok');
 
     const fetchedNotifications: Notification[] = data.map((item: any) => ({
@@ -376,7 +354,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     return fetchedNotifications;
   }, []);
 
-  // Function to fetch all emergency reports
   const fetchAllReports = useCallback(async () => {
     const { data, error } = await supabase
       .from('emergency_reports')
@@ -394,7 +371,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     return data || [];
   }, []);
 
-  // Function to fetch internal reports
   const fetchInternalReports = useCallback(async () => {
     const { data, error } = await supabase
       .from('internal_reports')
@@ -412,7 +388,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     return data || [];
   }, []);
 
-  // Function to fetch ER Teams
   const fetchErTeams = useCallback(async () => {
     const { data, error } = await supabase
       .from('er_teams')
@@ -429,7 +404,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     return data as BaseEntry[] || [];
   }, []);
 
-  // De-duplicate reports: keep selected report, remove others within 50m, same type, and ±30 minutes, status pending/active
   const dedupeNearbyReports = useCallback(async (base: Report) => {
     try {
       const baseLat = (base as any).latitude as number | undefined;
@@ -501,7 +475,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       }
       console.log(`Found ${duplicates.length} duplicates to delete`);
 
-      // Notify duplicate report users that the team is responding
       const selectedTeam = erTeams.find(team => team.id === parseInt(selectedTeamId || ''));
       const teamName = selectedTeam ? selectedTeam.name : 'a response team';
 
@@ -518,7 +491,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
           console.error('Error sending notification to duplicate user:', notificationError);
         }
 
-        // Optionally send SMS to duplicate users
         const reporterNameParts = [dup.firstName, dup.lastName].filter(Boolean);
         const reporterName = reporterNameParts.length > 0 ? reporterNameParts.join(' ') : 'Citizen';
         const locationSummary = (dup.location_address || '').trim() || 'your reported location';
@@ -545,7 +517,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
       const duplicatesToDelete = duplicates.map((r: any) => r.id);
 
-      // Remove related admin notifications first
       const { error: notifDelErr } = await supabase
         .from('admin_notifications')
         .delete()
@@ -554,7 +525,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         console.warn('Error deleting related admin notifications for duplicates:', notifDelErr);
       }
 
-      // Delete duplicate reports
       const { error: dupDeleteError } = await supabase
         .from('emergency_reports')
         .delete()
@@ -565,7 +535,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         console.log(`Deleted ${duplicatesToDelete.length} duplicate report(s) within 50m and ±30min.`);
       }
 
-      // Refresh lists
       const refreshed = await fetchAllReports();
       setAllReports(refreshed.map((item: any) => ({ ...item })));
     } catch (e) {
@@ -653,7 +622,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     [fetchErTeamReports, selectedErTeamReport]
   )
 
-  // Consolidated Real-time Listener for Reports, Notifications, and ER Teams
   useEffect(() => {
     const fetchAllDashboardData = async () => {
       try {
@@ -661,16 +629,15 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
           fetchAllReports(),
           fetchAdminNotifications(),
           fetchInternalReports(),
-          fetchErTeams(), // Fetch ER Teams
+          fetchErTeams(),
         ]);
 
         setAllReports(reportsData.map((item: any) => ({ ...item })));
         setInternalReports(internalReportsData.map((item: any) => ({ ...item })));
-        setErTeams(erTeamsData); // Set ER Teams
+        setErTeams(erTeamsData);
 
-        // Set initial selectedTeamId if teams are available and not already set
         if (erTeamsData.length > 0 && !selectedTeamId) {
-          setSelectedTeamId(String(erTeamsData[0].id)); // Select the first team by default
+          setSelectedTeamId(String(erTeamsData[0].id));
         }
 
         setNotifications(notificationsData);
@@ -686,7 +653,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     loadActiveAlert();
     void fetchErTeamReports(true);
 
-    // Set up real-time channels for all relevant tables
     const reportsChannel = supabase
       .channel('emergency-reports-channel')
       .on(
@@ -707,12 +673,10 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         (payload) => {
           console.log('Change received on admin_notifications, refetching all dashboard data:', payload);
           fetchAllDashboardData();
-          // Play sound only for new incoming reports
           try {
             // @ts-ignore
             if ((payload?.eventType === 'INSERT') && (payload?.new?.type === 'new_report')) {
               playAlertSound();
-              // Trigger overlay for new reports
               if (overlayRef.current && payload?.new) {
                 console.log('Triggering overlay for new report:', payload.new);
                 overlayRef.current.showNotificationOverlay(payload.new as AdminNotificationRow);
@@ -725,7 +689,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       )
       .subscribe();
 
-    // Subscribe to alert_settings changes to update active alert path
     const alertSettingsChannel = supabase
       .channel('dashboard-alert-settings-channel')
       .on(
@@ -745,7 +708,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         { event: '*', schema: 'public', table: 'internal_reports' },
         (payload) => {
           console.log('Change received on internal_reports, refetching internal reports:', payload);
-          // Debugging: Log selectedReport.id and relevant internal reports
           console.log('Selected Report ID:', selectedReport?.id);
           console.log('Internal Reports (original_report_id):', internalReports.map(ir => ir.original_report_id));
           fetchInternalReports().then(setInternalReports);
@@ -777,7 +739,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       )
       .subscribe();
 
-    // Cleanup subscriptions on component unmount
+
     return () => {
       supabase.removeChannel(reportsChannel);
       supabase.removeChannel(adminNotificationsChannel);
@@ -786,9 +748,8 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       supabase.removeChannel(alertSettingsChannel);
       supabase.removeChannel(erTeamReportsChannel);
     };
-  }, [fetchAllReports, fetchAdminNotifications, fetchInternalReports, fetchErTeams, selectedReport, internalReports, loadActiveAlert, playAlertSound, fetchErTeamReports]); // include alert handlers
+  }, [fetchAllReports, fetchAdminNotifications, fetchInternalReports, fetchErTeams, selectedReport, internalReports, loadActiveAlert, playAlertSound, fetchErTeamReports]);
 
-  // Effect to get barangay from coordinates
   useEffect(() => {
     if (selectedReport?.latitude && selectedReport?.longitude) {
       setBarangay('Fetching...');
@@ -812,7 +773,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     }
   }, [selectedReport]);
 
-  // Broadcast Alerts: Earthquake/Tsunami
   const triggerBroadcastAlert = useCallback((type: 'earthquake' | 'tsunami') => {
     setPendingBroadcastType(type)
     setBroadcastMessage('')
@@ -865,7 +825,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const markAllNotificationsAsRead = useCallback(async () => {
     if (unreadCount === 0) return;
     
-    // Get all unread notification IDs
     const unreadNotifications = notifications.filter(n => !n.is_read);
     const unreadIds = unreadNotifications.map(n => n.id);
     
@@ -876,7 +835,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     setError(null);
     
     try {
-      // First, update the UI optimistically
       setNotifications(prev => 
         prev.map(n => ({
           ...n,
@@ -885,20 +843,17 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       );
       setUnreadCount(0);
       
-      // Then update the database
       console.log('Updating notifications in database...');
       
-      // Try updating all at once first
       const { data, error } = await supabase
         .from('admin_notifications')
         .update({ is_read: true })
         .in('id', unreadIds)
-        .select(); // Add select to see what was updated
+        .select(); 
         
       if (error) {
         console.error('Batch update failed, trying one by one:', error);
         
-        // If batch update fails, try updating one by one
         for (const id of unreadIds) {
           const { error: singleError } = await supabase
             .from('admin_notifications')
@@ -907,14 +862,12 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
             
           if (singleError) {
             console.error(`Failed to update notification ${id}:`, singleError);
-            // Continue with next notification even if one fails
           }
         }
       } else {
         console.log('Successfully updated notifications:', data);
       }
       
-      // Force a refresh of notifications to ensure sync
       const refreshedNotifications = await fetchAdminNotifications();
       setNotifications(refreshedNotifications);
       setUnreadCount(refreshedNotifications.filter(n => !n.is_read).length);
@@ -923,7 +876,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       console.error("Error in markAllNotificationsAsRead:", error);
       setError("Failed to mark all notifications as read. Please try again.");
       
-      // Revert optimistic update on error
       const refreshedNotifications = await fetchAdminNotifications();
       setNotifications(refreshedNotifications);
       setUnreadCount(refreshedNotifications.filter(n => !n.is_read).length);
@@ -934,10 +886,8 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
   const handleReportClick = useCallback((report: Report) => {
     setSelectedReport(report);
-    // Only reset the selected team if we're clicking on a different report
     if (!selectedReport || selectedReport.id !== report.id) {
       if (erTeams.length > 0) {
-        // Set to the first team's ID
         setSelectedTeamId(String(erTeams[0].id));
       } else {
         setSelectedTeamId('');
@@ -974,7 +924,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     setError(null);
     
     try {
-      // Find the selected team
       const selectedTeamObj = erTeams.find(team => team.id === parseInt(selectedTeamId));
       if (!selectedTeamObj) {
         throw new Error('Selected team not found');
@@ -985,7 +934,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         status: 'responded', 
         admin_response: responseMessage, 
         responded_at: new Date().toISOString(),
-        er_team_id: selectedTeamObj.id // Store the team ID in the report
+        er_team_id: selectedTeamObj.id 
       };
       
       const { data: updatedReport, error: updateError } = await supabase
@@ -997,7 +946,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         
       if (updateError) throw updateError;
 
-      // Send notification to user
       const selectedTeam = erTeams.find(team => team.id === parseInt(selectedTeamId));
       const teamName = selectedTeam ? selectedTeam.name : 'a response team';
       
@@ -1036,10 +984,8 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         console.error('Semaphore SMS request error', err);
       });
 
-      // De-duplicate across accounts: within 50m and ±30 minutes, same type
       await dedupeNearbyReports(updatedReport as Report);
 
-      // Refresh data
       await fetchAllReports();
       setSelectedReport(updatedReport as Report);
       
@@ -1088,20 +1034,18 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     }
   }, [selectedReport]);
 
-  // Check if an internal report already exists for the selected emergency report
   const hasInternalReportBeenMade = React.useMemo(() => {
     if (!selectedReport?.id) return false;
     return internalReports.some(ir => ir.original_report_id === selectedReport.id);
   }, [selectedReport?.id, internalReports]);
   
-  // Debug log - only when the value changes
   React.useEffect(() => {
     if (selectedReport?.id) {
       console.log(`hasInternalReportBeenMade for ${selectedReport.id}:`, hasInternalReportBeenMade);
     }
   }, [selectedReport?.id, hasInternalReportBeenMade]);
 
-  // This handleMakeReport is for the context-specific button (resolved incidents)
+  
   const handleMakeReport = () => {
     if (selectedReport?.id) {
       window.open(`/admin/report?incidentId=${selectedReport.id}`, '_blank');
@@ -1110,7 +1054,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     }
   };
 
-  // Filtered counts for dashboard cards
+  
   const totalReportsCount = allReports.length;
   const activeEmergenciesCount = allReports.filter(r => r.status.trim().toLowerCase() === 'active' || r.status.trim().toLowerCase() === 'pending').length;
   const respondedCount = allReports.filter(r => r.status.trim().toLowerCase() === 'responded').length;
@@ -1119,17 +1063,16 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     if (!resolvedFilterDate) return 0;
     return allReports.filter(r =>
       r.status.trim().toLowerCase() === 'resolved' &&
-      isSameDay(new Date(r.resolved_at || r.created_at), resolvedFilterDate) // Use resolved_at if available, otherwise created_at
+      isSameDay(new Date(r.resolved_at || r.created_at), resolvedFilterDate) 
     ).length;
   }, [allReports, resolvedFilterDate]);
 
 
-  // Filtered lists for modals
+  
   const activeReportsList = allReports.filter(r => r.status.trim().toLowerCase() === 'active' || r.status.trim().toLowerCase() === 'pending');
   const respondedReportsList = allReports.filter(r => r.status.trim().toLowerCase() === 'responded');
 
 
-  // Greeting based on local time with 1-minute updates
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good morning';
@@ -1144,7 +1087,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // Philippine time and date (Asia/Manila)
   const phDateFormatter = React.useMemo(() => new Intl.DateTimeFormat('en-PH', {
     timeZone: 'Asia/Manila',
     weekday: 'long',
@@ -1422,7 +1364,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                           <div className="space-y-4">
                             <div>
                               <label htmlFor="team-select" className="block text-sm font-medium mb-1">Select response team:</label>
-                              {/* Modified Select component */}
+                             
                               <Select 
                                 value={selectedTeamId} 
                                 onValueChange={setSelectedTeamId}
@@ -1453,7 +1395,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                         {selectedReport.status.trim().toLowerCase() === 'responded' && (
                             <Button onClick={handleRescueDone} disabled={isLoadingAction} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><CheckCircle size={18} className="mr-2" />{isLoadingAction ? 'Resolving...' : 'Rescue Done'}</Button>
                         )}
-                        {/* Make a Report Button - Only for resolved incidents and if no internal report exists */}
+                        
                         {selectedReport.status.trim().toLowerCase() === 'resolved' && !hasInternalReportBeenMade && (
                           <Button
                             onClick={handleMakeReport}
@@ -1617,7 +1559,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
           </>
       </main>
 
-      {/* Active Reports Modal */}
+      
       <Dialog open={showActiveModal} onOpenChange={setShowActiveModal}>
         <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1663,7 +1605,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Responded Reports Modal */}
+      
       <Dialog open={showRespondedModal} onOpenChange={setShowRespondedModal}>
         <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
