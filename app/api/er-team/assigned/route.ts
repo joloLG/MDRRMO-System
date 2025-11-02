@@ -62,6 +62,10 @@ export async function GET() {
       .order("responded_at", { ascending: false })
       .order("created_at", { ascending: false })
 
+    console.log("[er-team assigned] Query params:", { userId, er_team_id: mapping.er_team_id })
+    console.log("[er-team assigned] Raw data from DB:", data)
+    console.log("[er-team assigned] Query error:", error)
+
     if (error) {
       console.error("[er-team assigned] fetch error", error)
       return NextResponse.json({ error: "Failed to load assigned incidents" }, { status: 500 })
@@ -87,12 +91,10 @@ export async function GET() {
       }
     }
 
+    console.log("[er-team assigned] Incidents before filtering:", (data ?? []).length)
+    console.log("[er-team assigned] Admin completed IDs:", Array.from(adminCompletedIds))
+
     const incidents: EmergencyReportWithDraft[] = (data ?? [])
-      .filter((row) => {
-        const report = Array.isArray(row.er_team_report) ? row.er_team_report[0] ?? null : (row.er_team_report as EmergencyReportWithDraft["er_team_report"] | null)
-        const hasAdminReport = adminCompletedIds.has(row.id) || Boolean(report?.internal_report_id)
-        return !hasAdminReport
-      })
       .map((row) => {
         const report = Array.isArray(row.er_team_report) ? row.er_team_report[0] ?? null : (row.er_team_report as EmergencyReportWithDraft["er_team_report"] | null)
         return {
@@ -110,6 +112,8 @@ export async function GET() {
           er_team_report: report,
         }
       })
+
+    console.log("[er-team assigned] Final incidents returned:", incidents.length, incidents)
 
     return NextResponse.json({ ok: true, incidents })
   } catch (error: any) {

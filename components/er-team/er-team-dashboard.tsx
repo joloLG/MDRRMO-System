@@ -495,6 +495,17 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   const [userId, setUserId] = React.useState<string | null>(null)
   const [selectedIncidentId, setSelectedIncidentId] = React.useState<string | null>(null)
   const [resolvingIncidentId, setResolvingIncidentId] = React.useState<string | null>(null)
+  const [userLocation, setUserLocation] = React.useState<{ lat: number; lng: number } | null>(null)
+  const [locationPermission, setLocationPermission] = React.useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown')
+  const [locationError, setLocationError] = React.useState<string | null>(null)
+  const [isGettingLocation, setIsGettingLocation] = React.useState(false)
+
+  const assignedIncidentIdsRef = React.useRef<Set<string>>(new Set())
+  const dispatchAlertAudioRef = React.useRef<HTMLAudioElement | null>(null)
+  const [dispatchNotifications, setDispatchNotifications] = React.useState<TeamDispatchNotification[]>([])
+  const [hasUnreadDispatchAlert, setHasUnreadDispatchAlert] = React.useState(false)
+  const [isNotificationDropdownOpen, setIsNotificationDropdownOpen] = React.useState(false)
+  const isNotificationDropdownOpenRef = React.useRef(false)
 
   const latestAssignedIncident = assignedIncidents[0] ?? null
   const selectedIncident = selectedIncidentId
@@ -536,12 +547,89 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
     [selectedIncident]
   )
 
-  const assignedIncidentIdsRef = React.useRef<Set<string>>(new Set())
-  const dispatchAlertAudioRef = React.useRef<HTMLAudioElement | null>(null)
-  const [dispatchNotifications, setDispatchNotifications] = React.useState<TeamDispatchNotification[]>([])
-  const [hasUnreadDispatchAlert, setHasUnreadDispatchAlert] = React.useState(false)
-  const [isNotificationDropdownOpen, setIsNotificationDropdownOpen] = React.useState(false)
-  const isNotificationDropdownOpenRef = React.useRef(false)
+  const checkLocationPermission = React.useCallback(async () => {
+    if (!navigator.permissions) {
+      setLocationPermission('unknown')
+      return
+    }
+
+    try {
+      const result = await navigator.permissions.query({ name: 'geolocation' })
+      setLocationPermission(result.state as 'granted' | 'denied' | 'prompt')
+
+      result.addEventListener('change', () => {
+        setLocationPermission(result.state as 'granted' | 'denied' | 'prompt')
+      })
+    } catch (error) {
+      console.warn('Permission API not supported:', error)
+      setLocationPermission('unknown')
+    }
+  }, [])
+
+  const requestLocation = React.useCallback(async () => {
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported by this browser')
+      return
+    }
+
+    setIsGettingLocation(true)
+    setLocationError(null)
+
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 300000 // 5 minutes
+        })
+      })
+
+      const coords = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude
+      }
+
+      setUserLocation(coords)
+      setLocationPermission('granted')
+      console.log('ER Team location obtained:', coords)
+    } catch (error: any) {
+      console.error('Failed to get location:', error)
+      let errorMessage = 'Failed to get your location'
+
+      if (error.code === error.PERMISSION_DENIED) {
+        errorMessage = 'Location permission denied. Please enable location access.'
+        setLocationPermission('denied')
+      } else if (error.code === error.POSITION_UNAVAILABLE) {
+        errorMessage = 'Location information is unavailable'
+      } else if (error.code === error.TIMEOUT) {
+        errorMessage = 'Location request timed out'
+      }
+
+      setLocationError(errorMessage)
+    } finally {
+      setIsGettingLocation(false)
+    }
+  }, [])
+
+  const openGoogleMapsDirections = React.useCallback((destination: { lat: number; lng: number }) => {
+    if (!userLocation) {
+      setLocationError('Your location is not available. Please get your location first.')
+      return
+    }
+
+    // Create Google Maps URL with origin (ER team location) and destination (incident location)
+    const origin = `${userLocation.lat},${userLocation.lng}`
+    const dest = `${destination.lat},${destination.lng}`
+    const mapsUrl = `https://www.google.com/maps/dir/${origin}/${dest}/@${userLocation.lat},${userLocation.lng},15z`
+
+    // Open in new tab/window
+    window.open(mapsUrl, '_blank', 'noopener,noreferrer')
+  }, [userLocation])
+
+  // Check location permission on component mount
+  React.useEffect(() => {
+    void checkLocationPermission()
+  }, [checkLocationPermission])
 
   const handleNotificationPopoverChange = React.useCallback((open: boolean) => {
     setIsNotificationDropdownOpen(open)
@@ -633,6 +721,8 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
         setTeamId(resolvedTeamId)
         setProfileStatus(resolvedTeamId ? "authorized" : "unauthorized")
         writeCachedProfile({ teamId: resolvedTeamId, teamName: team?.name ?? null, cachedAt: new Date().toISOString() })
+
+        console.log("ER Team profile loaded:", { resolvedTeamId, teamName: team?.name, userId })
       } catch (error: any) {
         if (controller.signal.aborted || !isActive) {
           return
@@ -733,15 +823,18 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
 
   const refreshAssignedIncidents = React.useCallback(async () => {
     if (profileStatus !== "authorized" || !teamId) {
+      console.log('refreshAssignedIncidents: Not authorized or no teamId', { profileStatus, teamId })
       return
     }
 
     if (!navigator.onLine) {
+      console.log('refreshAssignedIncidents: Offline, skipping')
       setAssignedLoading(false)
       setAssignedError((prev) => prev ?? "Assigned incidents will refresh when you're back online.")
       return
     }
 
+    console.log('refreshAssignedIncidents: Starting refresh for team', teamId)
     setAssignedLoading(true)
     setAssignedError(null)
     try {
@@ -752,8 +845,10 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
       }
       const body = (await response.json().catch(() => ({}))) as { incidents?: AssignedIncident[] }
       const incidents = Array.isArray(body?.incidents) ? body.incidents : []
+      console.log('refreshAssignedIncidents: Received incidents', incidents.length, 'incidents')
       const filteredIncidents = incidents.filter((incident) => !incident.er_team_report?.internal_report_id)
       const ordered = sortAssignedIncidents(filteredIncidents)
+      console.log('refreshAssignedIncidents: Setting', ordered.length, 'filtered incidents')
       setAssignedIncidents(ordered)
       applyDraftMerge(ordered)
     } catch (error: any) {
@@ -1045,61 +1140,8 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
       return
     }
 
+    console.log('Setting up realtime subscription for team', teamId)
     const channel = supabase.channel(`${SUPABASE_CHANNEL_PREFIX}${teamId}`)
-
-    const handleAssignedChange = (payload: { new?: Record<string, any> | null; old?: Record<string, any> | null }) => {
-      const newRow = payload?.new ?? null
-      const oldRow = payload?.old ?? null
-      const newAssigned = isRowAssignedToTeam(newRow, teamId)
-      const wasAssigned = isRowAssignedToTeam(oldRow, teamId)
-      if (!newAssigned && !wasAssigned) {
-        return
-      }
-      if (typeof navigator !== "undefined" && !navigator.onLine) {
-        return
-      }
-
-      if (newAssigned && newRow) {
-        const parseCoordinate = (value: unknown): number | null => {
-          if (typeof value === "number" && Number.isFinite(value)) return value
-          if (typeof value === "string") {
-            const parsed = Number(value)
-            if (Number.isFinite(parsed)) return parsed
-          }
-          return null
-        }
-
-        const optimisticIncident: AssignedIncident = {
-          id: String(newRow.id),
-          status: String(newRow.status ?? ""),
-          emergency_type: typeof newRow.emergency_type === "string" ? newRow.emergency_type : null,
-          location_address: typeof newRow.location_address === "string" ? newRow.location_address : null,
-          firstName: typeof newRow.firstName === "string" ? newRow.firstName : null,
-          lastName: typeof newRow.lastName === "string" ? newRow.lastName : null,
-          created_at: typeof newRow.created_at === "string" ? newRow.created_at : new Date().toISOString(),
-          responded_at: typeof newRow.responded_at === "string" ? newRow.responded_at : null,
-          resolved_at: typeof newRow.resolved_at === "string" ? newRow.resolved_at : null,
-          latitude: parseCoordinate(newRow.latitude),
-          longitude: parseCoordinate(newRow.longitude),
-          er_team_report: undefined,
-        }
-        insertOrUpdateIncident(optimisticIncident)
-      }
-
-      if (!newAssigned && wasAssigned && oldRow && typeof oldRow.id === "string") {
-        setAssignedIncidents((previous) => {
-          const next = sortAssignedIncidents(previous.filter((incident) => incident.id !== oldRow.id))
-          applyDraftMerge(next)
-          return next
-        })
-      }
-
-      const now = Date.now()
-      if (!assignedLoading && now - lastAssignedRefresh > ASSIGNED_REFRESH_DEBOUNCE_MS) {
-        setLastAssignedRefresh(now)
-        void refreshAssignedIncidents()
-      }
-    }
 
     const handleInternalReportChange = (payload: { new?: Record<string, any> | null; old?: Record<string, any> | null }) => {
       const candidateId = (payload?.new?.original_report_id ?? payload?.old?.original_report_id) as string | null | undefined
@@ -1125,6 +1167,59 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
       if (typeof navigator !== "undefined" && !navigator.onLine) {
         return
       }
+
+      // Handle PCR report notifications
+      const payloadWithEvent = payload as { new?: Record<string, any> | null; old?: Record<string, any> | null; eventType?: string }
+      const newRow = payloadWithEvent.new as any
+      const oldRow = payloadWithEvent.old as any
+      if (newRow && newRow.emergency_report_id && assignedIncidentIdsRef.current.has(newRow.emergency_report_id)) {
+        const emergencyReport = assignedIncidents.find(inc => inc.id === newRow.emergency_report_id)
+        if (emergencyReport) {
+          const reporterName = `${emergencyReport.firstName ?? ''} ${emergencyReport.lastName ?? ''}`.trim() || 'Unknown reporter'
+
+          let notificationMessage = ''
+          let eventType: NotificationEventType = 'assignment'
+
+          if (payloadWithEvent.eventType === 'INSERT') {
+            notificationMessage = `New PCR draft started for ${emergencyReport.emergency_type ?? 'incident'}`
+          } else if (payloadWithEvent.eventType === 'UPDATE' && newRow.status !== oldRow?.status) {
+            eventType = 'status_change'
+            notificationMessage = `PCR report status changed to ${formatStatusDisplay(newRow.status)}`
+          }
+
+          if (notificationMessage) {
+            const notification: TeamDispatchNotification = {
+              id: `pcr-${newRow.id}-${Date.now()}`,
+              eventType,
+              emergencyReportId: newRow.emergency_report_id,
+              erTeamId: teamId,
+              erTeamReportId: newRow.id,
+              reporterName,
+              incidentType: emergencyReport.emergency_type,
+              locationAddress: emergencyReport.location_address,
+              reportedAt: emergencyReport.created_at,
+              respondedAt: emergencyReport.responded_at,
+              createdAt: new Date().toISOString(),
+              oldStatus: oldRow?.status,
+              newStatus: newRow.status,
+              previousTeamId: null,
+              originLatitude: userLocation?.lat ?? null,
+              originLongitude: userLocation?.lng ?? null,
+              incidentLatitude: emergencyReport.latitude,
+              incidentLongitude: emergencyReport.longitude,
+            }
+
+            setDispatchNotifications(prev => [notification, ...prev.slice(0, MAX_DISPATCH_NOTIFICATIONS - 1)])
+            setHasUnreadDispatchAlert(true)
+
+            // Play notification sound if available
+            if (dispatchAlertAudioRef.current) {
+              dispatchAlertAudioRef.current.play().catch(() => {})
+            }
+          }
+        }
+      }
+
       void refreshReports()
       const now = Date.now()
       if (!assignedLoading && now - lastAssignedRefresh > ASSIGNED_REFRESH_DEBOUNCE_MS) {
@@ -1133,13 +1228,102 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
       }
     }
 
+    const handleEmergencyReportChange = (payload: { new?: Record<string, any> | null; old?: Record<string, any> | null }) => {
+      console.log('🔔 Emergency report realtime event received:', payload)
+
+      if (!payload.new) {
+        console.log('⚠️ No new row in payload, skipping')
+        return
+      }
+
+      const newRow = payload.new
+      console.log('📊 Processing new row:', newRow)
+
+      // Check if this report is assigned to our team (handle both number and string comparisons)
+      const newTeamId = newRow.er_team_id
+      const oldTeamId = payload.old?.er_team_id
+      const isAssignedToTeam = newTeamId != null && (newTeamId === teamId || String(newTeamId) === String(teamId))
+      const wasAssignedToTeam = oldTeamId != null && (oldTeamId === teamId || String(oldTeamId) === String(teamId))
+
+      console.log('👥 Team assignment check:', {
+        teamId,
+        newTeamId,
+        oldTeamId,
+        isAssignedToTeam,
+        wasAssignedToTeam,
+        teamIdType: typeof teamId,
+        newTeamIdType: typeof newTeamId
+      })
+
+      // Check if responded_at was just filled (notification trigger)
+      const respondedAtFilled = newRow.responded_at && (!payload.old?.responded_at)
+
+      console.log('⏰ Response check:', {
+        newRespondedAt: newRow.responded_at,
+        oldRespondedAt: payload.old?.responded_at,
+        respondedAtFilled
+      })
+
+      if (respondedAtFilled && isAssignedToTeam) {
+        console.log('📢 Creating notification for new assignment')
+        // Create notification for new assignment/response
+        const reporterName = `${newRow.firstName ?? ''} ${newRow.lastName ?? ''}`.trim() || 'Unknown reporter'
+
+        const notification: TeamDispatchNotification = {
+          id: `emergency-${newRow.id}-${Date.now()}`,
+          eventType: 'assignment',
+          emergencyReportId: newRow.id,
+          erTeamId: teamId,
+          erTeamReportId: null,
+          reporterName,
+          incidentType: newRow.emergency_type,
+          locationAddress: newRow.location_address,
+          reportedAt: newRow.created_at,
+          respondedAt: newRow.responded_at,
+          createdAt: new Date().toISOString(),
+          oldStatus: payload.old?.status,
+          newStatus: newRow.status,
+          previousTeamId: payload.old?.er_team_id,
+          originLatitude: userLocation?.lat ?? null,
+          originLongitude: userLocation?.lng ?? null,
+          incidentLatitude: parseCoordinate(newRow.latitude),
+          incidentLongitude: parseCoordinate(newRow.longitude),
+        }
+
+        setDispatchNotifications(prev => [notification, ...prev.slice(0, MAX_DISPATCH_NOTIFICATIONS - 1)])
+        setHasUnreadDispatchAlert(true)
+
+        // Play notification sound if available
+        if (dispatchAlertAudioRef.current) {
+          dispatchAlertAudioRef.current.play().catch(() => {})
+        }
+
+        console.log('✅ ER Team notified of new assignment:', notification)
+      }
+
+      // Always refresh assigned incidents when there's any change to emergency_reports
+      // This ensures the ER team gets the latest data even if team assignment logic has issues
+      console.log('🔄 Emergency report change detected - refreshing assigned incidents for team', teamId)
+      const now = Date.now()
+      if (!assignedLoading && now - lastAssignedRefresh > ASSIGNED_REFRESH_DEBOUNCE_MS) {
+        setLastAssignedRefresh(now)
+        console.log('⚡ Triggering refreshAssignedIncidents due to emergency_reports change')
+        void refreshAssignedIncidents()
+      } else {
+        console.log('⏳ Skipping refresh - loading or debounce active')
+      }
+    }
+
     channel
-      .on("postgres_changes", { event: "*", schema: "public", table: "emergency_reports" }, handleAssignedChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "emergency_reports" }, handleEmergencyReportChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "internal_reports" }, handleInternalReportChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "er_team_reports" }, handleReportChange)
-      .subscribe()
+      .subscribe((status) => {
+        console.log('Realtime subscription status:', status)
+      })
 
     return () => {
+      console.log('Cleaning up realtime subscription for team', teamId)
       supabase.removeChannel(channel)
     }
   }, [
@@ -1152,6 +1336,8 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
     refreshReports,
     userId,
     applyDraftMerge,
+    assignedIncidents,
+    userLocation,
   ])
 
   const handleProfileReload = React.useCallback(() => {
@@ -1264,10 +1450,22 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   }, [profileStatus, teamId, refreshAssignedIncidents])
 
   React.useEffect(() => {
-    if (!isOnline) return
-    if (profileStatus !== "authorized" || !teamId) return
-    void refreshAssignedIncidents()
-  }, [isOnline, profileStatus, refreshAssignedIncidents, teamId])
+    if (profileStatus !== "authorized" || !teamId) {
+      return
+    }
+
+    // Set up periodic refresh as fallback for realtime subscription
+    const intervalId = setInterval(() => {
+      if (!assignedLoading) {
+        console.log('Periodic refresh: checking for new assigned incidents')
+        void refreshAssignedIncidents()
+      }
+    }, 30000) // Refresh every 30 seconds as fallback
+
+    return () => {
+      clearInterval(intervalId)
+    }
+  }, [profileStatus, teamId, assignedLoading, refreshAssignedIncidents])
 
   const assignedIncidentLookup = React.useMemo(() => {
     const map = new Map<string, AssignedIncident>()
@@ -1505,6 +1703,12 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                               ) : null}
                               <div className="mt-1 text-xs text-gray-600">
                                 Incident ID: <span className="font-mono">{incidentIdLabel}</span>
+                                {notification.erTeamReportId && (
+                                  <>
+                                    {" • "}
+                                    PCR ID: <span className="font-mono">{notification.erTeamReportId.slice(0, 8)}</span>
+                                  </>
+                                )}
                               </div>
                               {notification.locationAddress ? (
                                 <div className="mt-1 text-xs text-gray-500">{notification.locationAddress}</div>
@@ -1512,6 +1716,10 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                               {notification.eventType === "status_change" && notification.newStatus ? (
                                 <div className="mt-2 inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-sky-700">
                                   {formatStatusDisplay(notification.newStatus)}
+                                </div>
+                              ) : notification.eventType === "assignment" && notification.erTeamReportId ? (
+                                <div className="mt-2 inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-orange-700">
+                                  PCR Draft Started
                                 </div>
                               ) : null}
                               {gmapsUrl ? (
@@ -1549,7 +1757,17 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
           ) : null}
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {summaryCards.map((card) => (
+            {summaryCards.slice(0, 2).map((card) => (
+              <div key={card.label} className="rounded-lg border border-orange-100 bg-white/80 p-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-wide text-orange-600">{card.label}</p>
+                <p className="mt-2 text-2xl font-semibold text-gray-900">{card.value}</p>
+                <p className="mt-1 text-xs text-gray-600">{card.detail}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-2">
+            {summaryCards.slice(2).map((card) => (
               <div key={card.label} className="rounded-lg border border-orange-100 bg-white/80 p-4 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-wide text-orange-600">{card.label}</p>
                 <p className="mt-2 text-2xl font-semibold text-gray-900">{card.value}</p>
@@ -1601,17 +1819,13 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button
-                        asChild
                         variant="outline"
+                        size="sm"
+                        onClick={() => openGoogleMapsDirections(selectedIncidentCoords)}
+                        disabled={!userLocation}
                         className="border-orange-300 text-orange-600 hover:bg-orange-50 text-xs"
                       >
-                        <a
-                          href={`https://www.google.com/maps/dir/?api=1&destination=${selectedIncidentCoords.lat},${selectedIncidentCoords.lng}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          Open in Google Maps
-                        </a>
+                        Start Route on Google Maps
                       </Button>
                     </div>
                   </div>
@@ -1649,11 +1863,77 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
             </Card>
           ) : null}
 
+          {/* Location Services Section */}
+          <Card className="border-orange-200/60 bg-white/95 shadow-lg">
+            <CardHeader>
+              <CardTitle className="text-base font-semibold text-orange-900">Location Services</CardTitle>
+              <CardDescription className="text-xs text-orange-700">
+                Manage your location permissions for routing and navigation
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-700">Permission Status:</span>
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${
+                      locationPermission === 'granted' ? 'bg-green-100 text-green-700' :
+                      locationPermission === 'denied' ? 'bg-red-100 text-red-700' :
+                      locationPermission === 'prompt' ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {locationPermission === 'granted' ? 'Granted' :
+                       locationPermission === 'denied' ? 'Denied' :
+                       locationPermission === 'prompt' ? 'Prompt' : 'Unknown'}
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={requestLocation}
+                    disabled={isGettingLocation}
+                    className="border-orange-300 text-orange-600 hover:bg-orange-50 w-full"
+                  >
+                    {isGettingLocation ? (
+                      <>
+                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                        Getting location...
+                      </>
+                    ) : userLocation ? (
+                      'Update location'
+                    ) : (
+                      'Get my location'
+                    )}
+                  </Button>
+                  {locationError && (
+                    <p className="text-xs text-red-600">{locationError}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {userLocation ? (
+                    <div>
+                      <p className="text-sm font-medium text-gray-700 mb-2">Current Location:</p>
+                      <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
+                        <div>Lat: {userLocation.lat.toFixed(6)}</div>
+                        <div>Lng: {userLocation.lng.toFixed(6)}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-500 italic">
+                      Location not available. Please enable location permissions and get your location.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card className="border-orange-200/60 bg-white/95 shadow-md">
             <CardHeader className="space-y-3 lg:flex lg:flex-row lg:items-center lg:justify-between lg:space-y-0">
               <div>
                 <CardTitle className="text-base font-semibold text-orange-900">Assigned incidents</CardTitle>
                 <p className="mt-1 text-sm text-orange-700/75">Focus on the drafts currently assigned to your team.</p>
+                <p className="mt-1 text-xs text-orange-600/75">Team ID: {teamId} | Online: {isOnline ? 'Yes' : 'No'}</p>
               </div>
               <div className="flex flex-wrap gap-3">
                 <Button
@@ -1662,7 +1942,8 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                   disabled={!isOnline || assignedLoading}
                   className="border-orange-300 text-orange-600 hover:bg-orange-50"
                 >
-                  <RefreshCw className="mr-2 h-4 w-4" /> Refresh list
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  {assignedLoading ? 'Loading...' : 'Refresh'}
                 </Button>
               </div>
             </CardHeader>

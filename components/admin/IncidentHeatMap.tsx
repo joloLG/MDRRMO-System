@@ -94,6 +94,8 @@ export function IncidentHeatMap({ barangays, incidentTypes, erTeams }: IncidentH
         zoom: 12,
         minZoom: 10,
         maxZoom: 18,
+        maxBounds: BULAN_BOUNDS,
+        maxBoundsViscosity: 1.0,
       })
 
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -110,6 +112,33 @@ export function IncidentHeatMap({ barangays, incidentTypes, erTeams }: IncidentH
 
       map.whenReady(() => {
         map.fitBounds(BULAN_BOUNDS, { padding: [20, 20] })
+
+        // Add geo-fencing event listeners
+        map.on('moveend', () => {
+          const bounds = map.getBounds()
+          const currentCenter = map.getCenter()
+
+          // Check if center is outside allowed bounds
+          if (currentCenter.lat < BULAN_BOUNDS[0][0] || currentCenter.lat > BULAN_BOUNDS[1][0] ||
+              currentCenter.lng < BULAN_BOUNDS[0][1] || currentCenter.lng > BULAN_BOUNDS[1][1]) {
+            console.log('[heatmap] Map moved outside Bulan bounds, recentering...')
+            map.panTo(BULAN_CENTER)
+          }
+        })
+
+        map.on('dragend', () => {
+          const bounds = map.getBounds()
+          // If the dragged view is outside bounds, snap back
+          const sw = bounds.getSouthWest()
+          const ne = bounds.getNorthEast()
+          const isOutsideBounds = sw.lat < BULAN_BOUNDS[0][0] || ne.lat > BULAN_BOUNDS[1][0] ||
+                                  sw.lng < BULAN_BOUNDS[0][1] || ne.lng > BULAN_BOUNDS[1][1]
+
+          if (isOutsideBounds) {
+            console.log('[heatmap] Drag moved outside Bulan bounds, recentering...')
+            map.panTo(BULAN_CENTER)
+          }
+        })
 
         const heatLayer = (L as any).heatLayer([], {
           radius: 35,
@@ -239,23 +268,30 @@ export function IncidentHeatMap({ barangays, incidentTypes, erTeams }: IncidentH
       ...heatData.map(p => p[0]),
       BULAN_BOUNDS[0][0],
       BULAN_BOUNDS[1][0]
-    ]
+    ].filter(lat => lat >= BULAN_BOUNDS[0][0] && lat <= BULAN_BOUNDS[1][0])
+
     const lngValues = [
       ...heatData.map(p => p[1]),
       BULAN_BOUNDS[0][1],
       BULAN_BOUNDS[1][1]
-    ]
+    ].filter(lng => lng >= BULAN_BOUNDS[0][1] && lng <= BULAN_BOUNDS[1][1])
 
-    const minLat = Math.min(...latValues)
-    const maxLat = Math.max(...latValues)
-    const minLng = Math.min(...lngValues)
-    const maxLng = Math.max(...lngValues)
+    // Ensure we have valid bounds within Bulan area
+    if (latValues.length > 0 && lngValues.length > 0) {
+      const minLat = Math.max(BULAN_BOUNDS[0][0], Math.min(...latValues))
+      const maxLat = Math.min(BULAN_BOUNDS[1][0], Math.max(...latValues))
+      const minLng = Math.max(BULAN_BOUNDS[0][1], Math.min(...lngValues))
+      const maxLng = Math.min(BULAN_BOUNDS[1][1], Math.max(...lngValues))
 
-    const padding = heatData.length > 0 ? 0.01 : 0
-    mapRef.current.fitBounds([
-      [minLat - padding, minLng - padding],
-      [maxLat + padding, maxLng + padding]
-    ], { padding: [20, 20] })
+      const padding = heatData.length > 0 ? 0.001 : 0
+      mapRef.current.fitBounds([
+        [minLat - padding, minLng - padding],
+        [maxLat + padding, maxLng + padding]
+      ], { padding: [20, 20], maxZoom: 16 })
+    } else {
+      // No valid points within bounds, center on Bulan
+      mapRef.current.setView(BULAN_CENTER, 12)
+    }
     hasAutoFittedRef.current = true
   }, [points])
 
