@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
 import { Bell, BellOff, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon, FireExtinguisher, HeartPulse, Car, CloudRain, Swords, HelpCircle, PersonStanding, Navigation, Clock } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
-import AdminRealtimeOverlay from "@/components/admin/AdminRealtimeOverlay"
+import AdminRealtimeOverlay, { AdminRealtimeOverlayRef, AdminNotificationRow } from "@/components/admin/AdminRealtimeOverlay"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Calendar } from "@/components/ui/calendar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -156,6 +156,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   }, [erTeamReports, selectedReport])
 
   // Refs for click outside detection
+  const overlayRef = useRef<AdminRealtimeOverlayRef>(null)
   const notificationsDropdownRef = useRef<HTMLDivElement>(null);
   const notificationsButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -441,8 +442,8 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       }
 
       const baseTime = new Date(base.created_at).getTime();
-      const startWindow = new Date(baseTime - 60 * 60 * 1000).toISOString();
-      const endWindow = new Date(baseTime + 60 * 60 * 1000).toISOString();
+      const startWindow = new Date(baseTime - 30 * 60 * 1000).toISOString();
+      const endWindow = new Date(baseTime + 30 * 60 * 1000).toISOString();
 
       const { data: candidates, error } = await supabase
         .from('emergency_reports')
@@ -561,7 +562,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       if (dupDeleteError) {
         console.error('Error deleting duplicate reports:', dupDeleteError);
       } else {
-        console.log(`Deleted ${duplicatesToDelete.length} duplicate report(s) within 50m and ±1hr.`);
+        console.log(`Deleted ${duplicatesToDelete.length} duplicate report(s) within 50m and ±30min.`);
       }
 
       // Refresh lists
@@ -711,6 +712,11 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
             // @ts-ignore
             if ((payload?.eventType === 'INSERT') && (payload?.new?.type === 'new_report')) {
               playAlertSound();
+              // Trigger overlay for new reports
+              if (overlayRef.current && payload?.new) {
+                console.log('Triggering overlay for new report:', payload.new);
+                overlayRef.current.showNotificationOverlay(payload.new as AdminNotificationRow);
+              }
             }
           } catch (e) {
             console.warn('Failed to process notification payload for sound:', e);
@@ -1176,7 +1182,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
-      <AdminRealtimeOverlay />
+      <AdminRealtimeOverlay ref={overlayRef} />
       <Dialog open={broadcastModalOpen} onOpenChange={handleBroadcastModalChange}>
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>

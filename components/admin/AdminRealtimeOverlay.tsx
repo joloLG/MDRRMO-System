@@ -1,12 +1,11 @@
 "use client"
 
-import React, { useEffect, useRef, useState } from "react"
+import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import { useRouter } from "next/navigation"
 import { Flame, Car } from "lucide-react"
 import { getAlertSoundSignedUrl, clearAlertSoundCache } from '@/lib/alertSounds'
 
-interface AdminNotificationRow {
+export interface AdminNotificationRow {
   id: string
   type: string
   message: string
@@ -16,9 +15,12 @@ interface AdminNotificationRow {
 
 type OverlayVariant = "default" | "fire" | "vehicular"
 
-export default function AdminRealtimeOverlay() {
+export interface AdminRealtimeOverlayRef {
+  showNotificationOverlay: (row: AdminNotificationRow) => void
+}
+
+const AdminRealtimeOverlay = forwardRef<AdminRealtimeOverlayRef>((props, ref) => {
   const supabase = createClientComponentClient()
-  const router = useRouter()
 
   const [visible, setVisible] = useState(false)
   const [message, setMessage] = useState<string>("")
@@ -28,59 +30,17 @@ export default function AdminRealtimeOverlay() {
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [adminSoundPath, setAdminSoundPath] = useState<string | null>('/sounds/alert.mp3')
 
+  // Expose method to parent component
+  useImperativeHandle(ref, () => ({
+    showNotificationOverlay: (row: AdminNotificationRow) => {
+      console.log('[AdminOverlay] External trigger for notification:', row)
+      void processNotification(row)
+    }
+  }))
+
   useEffect(() => {
-    console.log('[AdminOverlay] Setting up realtime subscription')
-    const notifChannel = supabase
-      .channel("admin-overlay-new-report")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "admin_notifications" },
-        (payload: any) => {
-          console.log('[AdminOverlay] Received postgres change:', payload)
-          const row = payload?.new as AdminNotificationRow
-          if (row?.type === "new_report") {
-            console.log('[AdminOverlay] Processing new report notification:', row)
-            alert('Admin Overlay Triggered: New emergency report received!')  
-            void processNotification(row)
-          }
-        }
-      )
-      .subscribe((status) => {
-        console.log('[AdminOverlay] Subscription status:', status)
-      })
-
-    const loadAdminSound = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('alert_sounds')
-          .select('file_path')
-          .eq('is_active', true)
-          .single()
-        if (!error && data?.file_path) {
-          setAdminSoundPath(data.file_path)
-        } else {
-          setAdminSoundPath('/sounds/alert.mp3')
-        }
-      } catch {
-        setAdminSoundPath('/sounds/alert.mp3')
-      }
-    }
-    void loadAdminSound()
-
-    const settingsChannel = supabase
-      .channel('admin-overlay-alert-sounds')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'alert_sounds' }, () => {
-        void loadAdminSound()
-      })
-      .subscribe()
-
-    return () => {
-      try { supabase.removeChannel(notifChannel) } catch {}
-      try { supabase.removeChannel(settingsChannel) } catch {}
-      if (dismissTimer.current) clearTimeout(dismissTimer.current)
-      stopSound()
-    }
-   
+    console.log('[AdminOverlay] Component mounted - waiting for external triggers')
+    // No longer managing own subscription - triggered externally from dashboard
   }, [])
 
   const detectVariant = (text?: string): OverlayVariant => {
@@ -118,12 +78,14 @@ export default function AdminRealtimeOverlay() {
 
   const showOverlay = (msg: string, v: OverlayVariant = "default") => {
     console.log('[AdminOverlay] showOverlay called with msg:', msg, 'variant:', v)
+    console.log('[AdminOverlay] Setting visible to true')
     setMessage(msg)
     setVariant(v)
     setVisible(true)
     startSound()
     if (dismissTimer.current) clearTimeout(dismissTimer.current)
     dismissTimer.current = setTimeout(() => {
+      console.log('[AdminOverlay] Auto-dismissing overlay after 15 seconds')
       hideOverlay()
     }, 15000)
   }
@@ -196,7 +158,7 @@ export default function AdminRealtimeOverlay() {
           <p className="text-gray-800 mb-4 break-words">{message}</p>
           <div className="flex gap-3 justify-end">
             <button
-              onClick={() => { hideOverlay(); router.push("/") }}
+              onClick={() => { hideOverlay() }}
               className={`px-4 py-2 rounded-md text-white font-semibold focus:outline-none focus:ring-2 ${variant === 'fire' ? 'bg-orange-600 hover:bg-orange-700 focus:ring-orange-400' : variant === 'vehicular' ? 'bg-yellow-600 hover:bg-yellow-700 focus:ring-yellow-400' : 'bg-red-600 hover:bg-red-700 focus:ring-red-400'}`}
             >
               Okay
@@ -206,4 +168,8 @@ export default function AdminRealtimeOverlay() {
       </div>
     </div>
   )
-}
+})
+
+AdminRealtimeOverlay.displayName = 'AdminRealtimeOverlay'
+
+export default AdminRealtimeOverlay
