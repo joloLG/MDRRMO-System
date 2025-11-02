@@ -63,8 +63,6 @@ interface ReportHistoryTableProps {
   setCurrentPage: (page: number) => void;
   totalPages: number;
   totalReports: number;
-  onViewReport: (report: InternalReportRow) => void | Promise<void>;
-  // --------------------------------
 }
 
 export function ReportHistoryTable({ 
@@ -86,7 +84,6 @@ export function ReportHistoryTable({
   setCurrentPage,
   totalPages,
   totalReports,
-  onViewReport,
 }: ReportHistoryTableProps) {
 
   const router = useRouter()
@@ -465,7 +462,6 @@ export function ReportHistoryTable({
                   <TableHead className="font-semibold text-gray-700">Prepared By</TableHead>
                   <TableHead className="font-semibold text-gray-700">Created At</TableHead>
                   <TableHead className="font-semibold text-gray-700">Hospitals Patient Status</TableHead>
-                  <TableHead className="font-semibold text-gray-700 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -519,19 +515,6 @@ export function ReportHistoryTable({
                       ) : (
                         <span className="text-sm text-gray-400">No patients recorded</span>
                       )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="border-orange-300 text-orange-600 hover:bg-orange-50"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void onViewReport(report);
-                        }}
-                      >
-                        View report
-                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}

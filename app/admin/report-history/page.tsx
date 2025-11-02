@@ -1,8 +1,6 @@
 "use client"
 
 import { ReportHistoryTable } from "@/components/admin/report-history-table"
-import { InternalReportDetail, type InternalReportRecord, type InternalReportPatientRecord } from "@/components/admin/internal-report-detail"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { supabase } from "@/lib/supabase"
 import { useState, useEffect, useCallback, useMemo } from "react"
 
@@ -82,16 +80,6 @@ export default function ReportHistoryPage() {
   const [hospitalsCache, setHospitalsCache] = useState<HospitalEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [viewDialogOpen, setViewDialogOpen] = useState(false);
-  const [viewLoading, setViewLoading] = useState(false);
-  const [viewError, setViewError] = useState<string | null>(null);
-  const [selectedReportDetail, setSelectedReportDetail] = useState<InternalReportRecord | null>(null);
-  const [selectedPatients, setSelectedPatients] = useState<InternalReportPatientRecord[]>([]);
-  const [selectedMeta, setSelectedMeta] = useState<{ barangay: string; incidentType: string; erTeam: string }>({
-    barangay: "",
-    incidentType: "",
-    erTeam: "",
-  });
   const hospitalNameLookup = useMemo(() => {
     const map: Record<string, string> = {};
     hospitalsCache.forEach((hospital) => {
@@ -333,92 +321,6 @@ export default function ReportHistoryPage() {
     [erTeams],
   );
 
-  const handleViewReport = useCallback(
-    async (report: InternalReport) => {
-      setViewDialogOpen(true);
-      setViewLoading(true);
-      setViewError(null);
-      setSelectedReportDetail(null);
-      setSelectedPatients([]);
-
-      try {
-        const [reportRes, patientsRes] = await Promise.all([
-          supabase.from("internal_reports").select("*").eq("id", report.id).maybeSingle(),
-          supabase
-            .from("internal_report_patients")
-            .select(`
-              *,
-              receiving_hospital:hospitals!internal_report_patients_receiving_hospital_id_fkey ( name )
-            `)
-            .eq("internal_report_id", report.id)
-            .order("created_at", { ascending: true }),
-        ]);
-
-        if (reportRes.error) throw reportRes.error;
-        if (!reportRes.data) throw new Error("Report not found");
-        if (patientsRes.error) throw patientsRes.error;
-
-        const patientRows = (patientsRes.data ?? []).map((row: any) => {
-          const { receiving_hospital, ...rest } = row;
-          return {
-            ...rest,
-            receiving_hospital_name: receiving_hospital?.name ?? rest.receiving_hospital_name ?? null,
-          } as InternalReportPatientRecord;
-        });
-
-        let hospitalsToUse = hospitalsCache;
-        if (!hospitalsToUse || hospitalsToUse.length === 0) {
-          hospitalsToUse = await fetchHospitals();
-          setHospitalsCache(hospitalsToUse);
-        }
-
-        const hospitalLookup = new Map<string, string>();
-        hospitalsToUse.forEach((hospital) => {
-          hospitalLookup.set(String(hospital.id), hospital.name);
-        });
-
-        const patientsWithHospitalNames = patientRows.map((patient) => {
-          if (patient.receiving_hospital_name) {
-            return patient;
-          }
-
-          const hospitalId = patient.receiving_hospital_id ? String(patient.receiving_hospital_id) : null;
-          if (!hospitalId) {
-            return patient;
-          }
-
-          const fallbackName = hospitalLookup.get(hospitalId) ?? null;
-          return {
-            ...patient,
-            receiving_hospital_name: fallbackName,
-          };
-        });
-
-        const reportDetail = reportRes.data as InternalReportRecord;
-        setSelectedReportDetail(reportDetail);
-        setSelectedPatients(patientsWithHospitalNames);
-        setSelectedMeta({
-          barangay: getBarangayNameById(reportDetail.barangay_id),
-          incidentType: getIncidentTypeNameById(reportDetail.incident_type_id),
-          erTeam: getErTeamNameById(reportDetail.er_team_id),
-        });
-      } catch (err: any) {
-        console.error("Failed to load report detail:", err);
-        setViewError(err?.message ?? "Failed to load report detail.");
-      } finally {
-        setViewLoading(false);
-      }
-    },
-    [getBarangayNameById, getIncidentTypeNameById, getErTeamNameById, hospitalsCache, fetchHospitals],
-  );
-
-  const handleCloseViewDialog = useCallback(() => {
-    setViewDialogOpen(false);
-    setViewError(null);
-    setSelectedReportDetail(null);
-    setSelectedPatients([]);
-  }, []);
-
   // Reset page number whenever filters or search term change
   useEffect(() => {
     setCurrentPage(1);
@@ -500,35 +402,8 @@ export default function ReportHistoryPage() {
         setCurrentPage={setCurrentPage}
         totalPages={totalPages}
         totalReports={filteredReports.length}
-        onViewReport={handleViewReport}
       />
 
-      <Dialog open={viewDialogOpen} onOpenChange={(open) => { if (!open) handleCloseViewDialog(); }}>
-        <DialogContent className="max-w-6xl w-full overflow-hidden">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-semibold text-gray-900">Internal Report Detail</DialogTitle>
-            <DialogDescription>Review the complete incident report, patient information, and injury mapping.</DialogDescription>
-          </DialogHeader>
-          {viewLoading ? (
-            <div className="flex h-64 items-center justify-center text-sm text-gray-600">Loading report…</div>
-          ) : viewError ? (
-            <div className="rounded-md bg-red-50 p-4 text-sm text-red-600">{viewError}</div>
-          ) : selectedReportDetail ? (
-            <div className="max-h-[70vh] overflow-y-auto pr-2">
-              <InternalReportDetail
-                report={selectedReportDetail}
-                patients={selectedPatients}
-                barangayName={selectedMeta.barangay}
-                incidentTypeName={selectedMeta.incidentType}
-                erTeamName={selectedMeta.erTeam}
-                hospitalNameLookup={hospitalNameLookup}
-              />
-            </div>
-          ) : (
-            <div className="flex h-48 items-center justify-center text-sm text-gray-500">Select a report to view its details.</div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

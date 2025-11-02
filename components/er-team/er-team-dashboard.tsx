@@ -27,6 +27,7 @@ import {
   type ErTeamDraftStatus,
   type InjuryMap,
   type ReferenceOption,
+  type ErTeamPatientPayload,
 } from "./er-team-report-form"
 
 const LocationMap = dynamic(() => import("@/components/LocationMap"), { ssr: false })
@@ -192,18 +193,23 @@ async function migrateLegacyReferences() {
 
 const VALID_DRAFT_STATUSES: ErTeamDraftStatus[] = ["draft", "pending_review", "in_review", "approved", "rejected"]
 const ASSIGNED_PAGE_SIZE = 10
+const REPORTS_PAGE_SIZE = 10
+
+type ReportsStatusFilter = "all" | ErTeamDraftStatus
+const REPORT_STATUS_OPTIONS: ReportsStatusFilter[] = ["all", ...VALID_DRAFT_STATUSES]
+const DISPATCH_OVERLAY_DURATION_MS = 10_000
 
 const STATUS_BADGE_STYLES: Record<ErTeamDraftStatus, string> = {
-  draft: "border-orange-200 bg-orange-100/90 text-orange-700",
-  pending_review: "border-amber-200 bg-amber-100/90 text-amber-700",
-  in_review: "border-sky-200 bg-sky-100/90 text-sky-700",
-  approved: "border-emerald-200 bg-emerald-100/90 text-emerald-700",
-  rejected: "border-red-200 bg-red-100/90 text-red-700",
+  draft: "bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800 border border-gray-300 shadow-sm",
+  pending_review: "bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-800 border border-amber-300 shadow-sm",
+  in_review: "bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-800 border border-blue-300 shadow-sm",
+  approved: "bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 border border-green-300 shadow-sm",
+  rejected: "bg-gradient-to-r from-red-100 to-pink-100 text-red-800 border border-red-300 shadow-sm",
 }
 
 const SYNC_BADGE_CLASSES: Record<"synced" | "pending", string> = {
-  synced: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  pending: "border-amber-200 bg-amber-50 text-amber-700",
+  synced: "bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 border border-green-300 shadow-sm",
+  pending: "bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-800 border border-amber-300 shadow-sm",
 }
 
 const formatStatusLabel = (status: ErTeamDraftStatus) =>
@@ -344,7 +350,7 @@ function createDraftForIncident(incident: AssignedIncident): LocalDraft {
   const nowIso = new Date().toISOString()
 
   const basePatientPayload = incident.er_team_report?.patient_payload
-  const patientPayload = basePatientPayload && typeof basePatientPayload === "object"
+  const patientPayload: Partial<ErTeamPatientPayload> = basePatientPayload && typeof basePatientPayload === "object"
     ? deepCopy(basePatientPayload as Record<string, any>)
     : (deepCopy(DEFAULT_PATIENT_TEMPLATE) as Record<string, any>)
 
@@ -386,7 +392,8 @@ function createDraftForIncident(incident: AssignedIncident): LocalDraft {
     synced: Boolean(incident.er_team_report),
     lastSyncError: null,
     submittedAt: syncedAt,
-    patientPayload: {
+    patientsPayload: [{
+      ...DEFAULT_PATIENT_TEMPLATE,
       ...patientPayload,
       estimatedBloodLoss: "",
       turnoverInCharge: "",
@@ -398,7 +405,7 @@ function createDraftForIncident(incident: AssignedIncident): LocalDraft {
       lastName: "",
       suffix: "",
       contactNumber: "",
-    },
+    }],
     injuryPayload,
     notes: typeof incident.er_team_report?.notes === "string" ? incident.er_team_report.notes : null,
     internalReportId: incident.er_team_report?.internal_report_id ?? null,
@@ -444,7 +451,7 @@ function mergeDraftsWithAssigned(existingDrafts: LocalDraft[], incidents: Assign
       lastSyncError: existing.lastSyncError ?? null,
       submittedAt: baseDraft.submittedAt ?? existing.submittedAt ?? null,
       updatedAt: nextUpdatedAt,
-      patientPayload: existing.patientPayload ?? baseDraft.patientPayload,
+      patientsPayload: existing.patientsPayload ?? baseDraft.patientsPayload,
       incidentPayload: existing.incidentPayload ?? baseDraft.incidentPayload,
       injuryPayload: existing.injuryPayload ?? baseDraft.injuryPayload,
       notes: existing.notes ?? baseDraft.notes ?? null,
@@ -499,6 +506,38 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   const [locationPermission, setLocationPermission] = React.useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown')
   const [locationError, setLocationError] = React.useState<string | null>(null)
   const [isGettingLocation, setIsGettingLocation] = React.useState(false)
+  const [reportsStatusFilter, setReportsStatusFilter] = React.useState<ReportsStatusFilter>("all")
+  const [reportsPage, setReportsPage] = React.useState(1)
+  const [dispatchOverlay, setDispatchOverlay] = React.useState<TeamDispatchNotification | null>(null)
+  const dispatchOverlayTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const showDispatchOverlay = React.useCallback((notification: TeamDispatchNotification) => {
+    setDispatchOverlay(notification)
+    if (dispatchOverlayTimeoutRef.current) {
+      clearTimeout(dispatchOverlayTimeoutRef.current)
+    }
+    dispatchOverlayTimeoutRef.current = setTimeout(() => {
+      setDispatchOverlay(null)
+      dispatchOverlayTimeoutRef.current = null
+    }, DISPATCH_OVERLAY_DURATION_MS)
+  }, [])
+
+  const handleDismissDispatchOverlay = React.useCallback(() => {
+    if (dispatchOverlayTimeoutRef.current) {
+      clearTimeout(dispatchOverlayTimeoutRef.current)
+      dispatchOverlayTimeoutRef.current = null
+    }
+    setDispatchOverlay(null)
+  }, [])
+
+  React.useEffect(() => {
+    return () => {
+      if (dispatchOverlayTimeoutRef.current) {
+        clearTimeout(dispatchOverlayTimeoutRef.current)
+        dispatchOverlayTimeoutRef.current = null
+      }
+    }
+  }, [])
 
   const assignedIncidentIdsRef = React.useRef<Set<string>>(new Set())
   const dispatchAlertAudioRef = React.useRef<HTMLAudioElement | null>(null)
@@ -506,6 +545,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   const [hasUnreadDispatchAlert, setHasUnreadDispatchAlert] = React.useState(false)
   const [isNotificationDropdownOpen, setIsNotificationDropdownOpen] = React.useState(false)
   const isNotificationDropdownOpenRef = React.useRef(false)
+  const lastDispatchOverlayIdRef = React.useRef<string | null>(null)
 
   const latestAssignedIncident = assignedIncidents[0] ?? null
   const selectedIncident = selectedIncidentId
@@ -643,13 +683,13 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
       void autoRequestLocation()
     })
 
-    // Set up periodic location updates (every 5 minutes)
+    // Set up periodic location updates (every 1 minute)
     const locationInterval = setInterval(() => {
       if (locationPermission === 'granted' && navigator.onLine) {
         console.log('🔄 Periodic location update for ER team')
         void requestLocation()
       }
-    }, 5 * 60 * 1000) // 5 minutes
+    }, 1 * 60 * 1000) // 1 minute
 
     return () => {
       clearInterval(locationInterval)
@@ -1009,7 +1049,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
           clientDraftId: draft.clientDraftId,
           emergencyReportId: draft.emergencyReportId,
           status: draft.status,
-          patientPayload: draft.patientPayload ?? {},
+          patientPayload: draft.patientsPayload?.[0] ?? {},
           incidentPayload: draft.incidentPayload ?? undefined,
           injuryPayload: draft.injuryPayload ?? undefined,
           notes: typeof draft.notes === "string" ? draft.notes : undefined,
@@ -1236,8 +1276,9 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
           }
 
           if (notificationMessage) {
+            const notificationId = `pcr-${newRow.id}-${Date.now()}`
             const notification: TeamDispatchNotification = {
-              id: `pcr-${newRow.id}-${Date.now()}`,
+              id: notificationId,
               eventType,
               emergencyReportId: newRow.emergency_report_id,
               erTeamId: teamId,
@@ -1259,6 +1300,10 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
 
             setDispatchNotifications(prev => [notification, ...prev.slice(0, MAX_DISPATCH_NOTIFICATIONS - 1)])
             setHasUnreadDispatchAlert(true)
+            if (lastDispatchOverlayIdRef.current !== notificationId) {
+              showDispatchOverlay(notification)
+              lastDispatchOverlayIdRef.current = notificationId
+            }
 
             // Play notification sound if available
             if (dispatchAlertAudioRef.current) {
@@ -1317,8 +1362,9 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
         // Create notification for new assignment/response
         const reporterName = `${newRow.firstName ?? ''} ${newRow.lastName ?? ''}`.trim() || 'Unknown reporter'
 
+        const notificationId = `emergency-${newRow.id}-${Date.now()}`
         const notification: TeamDispatchNotification = {
-          id: `emergency-${newRow.id}-${Date.now()}`,
+          id: notificationId,
           eventType: 'assignment',
           emergencyReportId: newRow.id,
           erTeamId: teamId,
@@ -1340,6 +1386,10 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
 
         setDispatchNotifications(prev => [notification, ...prev.slice(0, MAX_DISPATCH_NOTIFICATIONS - 1)])
         setHasUnreadDispatchAlert(true)
+        if (lastDispatchOverlayIdRef.current !== notificationId) {
+          showDispatchOverlay(notification)
+          lastDispatchOverlayIdRef.current = notificationId
+        }
 
         // Play notification sound if available
         if (dispatchAlertAudioRef.current) {
@@ -1620,6 +1670,29 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
     [reports]
   )
 
+  const filteredReports = React.useMemo(() => {
+    if (reportsStatusFilter === "all") {
+      return sortedReports
+    }
+    return sortedReports.filter((report) => report.status === reportsStatusFilter)
+  }, [sortedReports, reportsStatusFilter])
+
+  const totalReportsPages = Math.ceil(filteredReports.length / REPORTS_PAGE_SIZE)
+  const maxReportsPage = Math.max(1, totalReportsPages)
+
+  React.useEffect(() => {
+    setReportsPage((previous) => {
+      if (previous < 1) return 1
+      if (previous > maxReportsPage) return maxReportsPage
+      return previous
+    })
+  }, [maxReportsPage])
+
+  const pagedReports = React.useMemo(() => {
+    const startIndex = (reportsPage - 1) * REPORTS_PAGE_SIZE
+    return filteredReports.slice(startIndex, startIndex + REPORTS_PAGE_SIZE)
+  }, [filteredReports, reportsPage])
+
   if (isLoading || profileStatus === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center" style={DASHBOARD_BACKGROUND_STYLE}>
@@ -1671,24 +1744,112 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   }
 
   return (
-    <div className="min-h-screen" style={DASHBOARD_BACKGROUND_STYLE}>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20" style={{ ...DASHBOARD_BACKGROUND_STYLE, backgroundBlendMode: "overlay" }}>
       <div className="flex min-h-screen flex-col">
-        <header className="sticky top-0 z-20 flex flex-col gap-1 bg-orange-500/95 px-4 py-3 text-white shadow-lg sm:px-6">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <h1 className="text-lg font-semibold sm:text-xl">ER Team PCR Reports</h1>
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-orange-100/90 sm:text-sm">
-                {teamName ? <span>Logged in as {teamName}</span> : null}
-                <span className="inline-flex items-center gap-1 rounded-full bg-white/15 px-3 py-1 text-white">
-                  {isOnline ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-                  {isOnline ? "Online" : "Offline - Draft mode"}
-                </span>
+        <audio ref={dispatchAlertAudioRef} src="/sounds/alert.mp3" preload="auto" className="hidden" />
+        {dispatchOverlay ? (
+          <div className="pointer-events-none fixed inset-0 z-40 flex items-start justify-center bg-black/40 px-4 py-8">
+            <div className="pointer-events-auto w-full max-w-3xl overflow-hidden rounded-3xl border border-white/30 bg-white/95 shadow-[0_28px_80px_-24px_rgba(16,24,40,0.45)] backdrop-blur-lg">
+              <div className="bg-gradient-to-r from-orange-500 via-orange-600 to-red-500 px-6 py-5 text-white">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/25 text-white">
+                      <Bell className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.32em] text-white/80">New Dispatch</p>
+                      <h2 className="text-xl font-semibold leading-tight">{dispatchOverlay.incidentType ?? "Incident assignment"}</h2>
+                    </div>
+                  </div>
+                  <Button variant="ghost" onClick={handleDismissDispatchOverlay} className="text-white hover:bg-white/20">
+                    Close
+                  </Button>
+                </div>
               </div>
-              {profileError ? (
-                <p className="mt-1 text-xs text-white/90">{profileError}</p>
-              ) : null}
+              <div className="space-y-6 px-6 py-6 text-gray-900">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-orange-600">Reporter</p>
+                    <p className="text-base font-medium text-gray-900">{dispatchOverlay.reporterName ?? "Unknown"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-orange-600">Reported</p>
+                    <p className="text-base text-gray-700">{dispatchOverlay.reportedAt ? formatDateTime(dispatchOverlay.reportedAt) ?? dispatchOverlay.reportedAt : "Just now"}</p>
+                  </div>
+                </div>
+                {dispatchOverlay.locationAddress ? (
+                  <div className="rounded-2xl border border-orange-100 bg-orange-50/80 px-4 py-3 text-sm text-orange-800">
+                    <p className="font-medium">Location</p>
+                    <p>{dispatchOverlay.locationAddress}</p>
+                  </div>
+                ) : null}
+                <div className="flex flex-wrap gap-3 justify-end">
+                  <Button variant="outline" onClick={handleDismissDispatchOverlay} className="border-orange-200 text-orange-600 hover:bg-orange-50">
+                    Dismiss
+                  </Button>
+                  {(() => {
+                    const overlayIncident = assignedIncidents.find((incident) => incident.id === dispatchOverlay.emergencyReportId)
+                    const overlayDraft = drafts.find((draft) => draft.emergencyReportId === dispatchOverlay.emergencyReportId)
+                    const canOpenOverlayDraft = Boolean(overlayDraft)
+                    return canOpenOverlayDraft ? (
+                      <Button
+                        className="bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg hover:from-orange-600 hover:to-red-600"
+                        onClick={() => {
+                          if (overlayDraft) {
+                            handleOpenDraft(overlayDraft.clientDraftId)
+                            handleDismissDispatchOverlay()
+                          }
+                        }}
+                      >
+                        Open Draft
+                      </Button>
+                    ) : overlayIncident ? (
+                      <Button
+                        variant="outline"
+                        className="border-orange-200 text-orange-600 hover:bg-orange-50"
+                        onClick={() => {
+                          setSelectedIncidentId(overlayIncident.id)
+                          handleDismissDispatchOverlay()
+                        }}
+                      >
+                        View Incident
+                      </Button>
+                    ) : null
+                  })()}
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-1 sm:gap-2">
+          </div>
+        ) : null}
+
+        <header className="sticky top-0 z-20 flex flex-col gap-2 bg-gradient-to-r from-orange-500 via-orange-600 to-red-500/95 px-4 py-4 text-white shadow-xl backdrop-blur-sm border-b border-orange-400/30 sm:px-6">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
+                <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-xl font-bold sm:text-2xl bg-gradient-to-r from-white to-orange-100 bg-clip-text text-transparent">ER Team PCR Reports</h1>
+                <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-orange-100/90">
+                  {teamName ? <span className="flex items-center gap-1"><span className="w-2 h-2 bg-green-400 rounded-full"></span>Logged in as {teamName}</span> : null}
+                  <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium ${
+                    isOnline
+                      ? 'bg-green-500/20 text-green-100 border border-green-400/30'
+                      : 'bg-gray-500/20 text-gray-300 border border-gray-400/30'
+                  }`}>
+                    {isOnline ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+                    {isOnline ? "Online" : "Offline - Draft mode"}
+                  </span>
+                </div>
+                {profileError ? (
+                  <p className="mt-2 text-sm text-red-200 bg-red-500/20 px-3 py-1 rounded-md border border-red-400/30">{profileError}</p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 sm:gap-3">
               <Popover open={isNotificationDropdownOpen} onOpenChange={handleNotificationPopoverChange}>
                 <PopoverTrigger asChild>
                   <Button
@@ -1697,18 +1858,18 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                     size="icon"
                     aria-label={hasUnreadDispatchAlert ? "View new dispatch notification" : "Dispatch notifications"}
                     className={cn(
-                      "relative text-white/80 hover:bg-orange-400/20",
-                      hasUnreadDispatchAlert && "text-white",
+                      "relative text-white/90 hover:bg-white/20 hover:text-white rounded-full p-2 transition-all duration-200 backdrop-blur-sm",
+                      hasUnreadDispatchAlert && "text-white bg-white/20 animate-pulse",
                     )}
                   >
-                    <Bell className="h-4 w-4" />
+                    <Bell className="h-5 w-5" />
                     {hasUnreadDispatchAlert ? (
-                      <span className="absolute right-2 top-2 inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                      <span className="absolute -top-1 -right-1 inline-flex h-3 w-3 rounded-full bg-red-500 animate-ping"></span>
                     ) : null}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent align="end" className="w-80 border-orange-200 bg-white/95 p-0 shadow-xl">
-                  <div className="flex items-center justify-between border-b border-orange-100 px-3 py-2">
+                <PopoverContent align="end" className="w-80 border-orange-200/50 bg-white/95 backdrop-blur-md p-0 shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-orange-100/50 px-4 py-3 bg-gradient-to-r from-orange-50 to-white">
                     <span className="text-sm font-semibold text-orange-900">Dispatch notifications</span>
                     {dispatchNotifications.length > 0 ? (
                       <Button
@@ -1716,7 +1877,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                         variant="ghost"
                         size="sm"
                         onClick={handleClearDispatchNotifications}
-                        className="h-auto px-2 py-1 text-xs font-medium text-orange-600 hover:bg-orange-50"
+                        className="h-auto px-3 py-1 text-xs font-medium text-orange-600 hover:bg-orange-50 rounded-full transition-colors"
                       >
                         Clear
                       </Button>
@@ -1724,11 +1885,12 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                   </div>
                   <div className="max-h-80 overflow-y-auto">
                     {dispatchNotifications.length === 0 ? (
-                      <div className="px-4 py-6 text-center text-sm text-gray-500">
+                      <div className="px-4 py-8 text-center text-sm text-gray-500">
+                        <Bell className="h-8 w-8 mx-auto mb-2 text-gray-300" />
                         When an admin dispatches a new incident to your team, it will appear here.
                       </div>
                     ) : (
-                      <ul className="divide-y divide-orange-100">
+                      <ul className="divide-y divide-orange-100/30">
                         {dispatchNotifications.map((notification) => {
                           const timeLabel =
                             formatDateTime(notification.respondedAt ?? notification.createdAt) ?? "Just now"
@@ -1745,45 +1907,54 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                               : `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`
                             : null
                           return (
-                            <li key={notification.id} className="px-4 py-3 text-sm">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="font-semibold text-gray-900">{notification.reporterName}</span>
-                                <span className="text-xs text-gray-500">{timeLabel}</span>
+                            <li key={notification.id} className="px-4 py-4 hover:bg-orange-50/30 transition-colors">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-2 mb-1">
+                                    <span className="font-semibold text-gray-900 truncate">{notification.reporterName}</span>
+                                    <span className="text-xs text-gray-500 flex-shrink-0">{timeLabel}</span>
+                                  </div>
+                                  {notification.incidentType ? (
+                                    <div className="mb-2">
+                                      <span className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-orange-600 bg-orange-100 px-2 py-1 rounded-full">
+                                        {notification.incidentType}
+                                      </span>
+                                    </div>
+                                  ) : null}
+                                  <div className="text-xs text-gray-600 mb-2">
+                                    <span className="font-medium">ID:</span> <span className="font-mono text-gray-500">{incidentIdLabel}</span>
+                                    {notification.erTeamReportId && (
+                                      <>
+                                        {" • "}
+                                        <span className="font-medium">PCR:</span> <span className="font-mono text-gray-500">{notification.erTeamReportId.slice(0, 8)}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                  {notification.locationAddress ? (
+                                    <div className="text-xs text-gray-500 mb-2">{notification.locationAddress}</div>
+                                  ) : null}
+                                  {notification.eventType === "status_change" && notification.newStatus ? (
+                                    <div className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium uppercase tracking-wide text-sky-700">
+                                      {formatStatusDisplay(notification.newStatus)}
+                                    </div>
+                                  ) : notification.eventType === "assignment" && notification.erTeamReportId ? (
+                                    <div className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-medium uppercase tracking-wide text-orange-700">
+                                      PCR Draft Started
+                                    </div>
+                                  ) : null}
+                                </div>
                               </div>
-                              {notification.incidentType ? (
-                                <div className="mt-1 text-xs font-medium uppercase tracking-wide text-orange-600">
-                                  {notification.incidentType}
-                                </div>
-                              ) : null}
-                              <div className="mt-1 text-xs text-gray-600">
-                                Incident ID: <span className="font-mono">{incidentIdLabel}</span>
-                                {notification.erTeamReportId && (
-                                  <>
-                                    {" • "}
-                                    PCR ID: <span className="font-mono">{notification.erTeamReportId.slice(0, 8)}</span>
-                                  </>
-                                )}
-                              </div>
-                              {notification.locationAddress ? (
-                                <div className="mt-1 text-xs text-gray-500">{notification.locationAddress}</div>
-                              ) : null}
-                              {notification.eventType === "status_change" && notification.newStatus ? (
-                                <div className="mt-2 inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-sky-700">
-                                  {formatStatusDisplay(notification.newStatus)}
-                                </div>
-                              ) : notification.eventType === "assignment" && notification.erTeamReportId ? (
-                                <div className="mt-2 inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-orange-700">
-                                  PCR Draft Started
-                                </div>
-                              ) : null}
                               {gmapsUrl ? (
-                                <div className="mt-2">
+                                <div className="mt-3">
                                   <a
                                     href={gmapsUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-xs font-medium text-orange-600 hover:underline"
+                                    className="inline-flex items-center gap-2 text-xs font-medium text-orange-600 hover:text-orange-700 transition-colors bg-orange-50 hover:bg-orange-100 px-3 py-2 rounded-full"
                                   >
+                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                                    </svg>
                                     Open route in Google Maps
                                   </a>
                                 </div>
@@ -1796,7 +1967,10 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                   </div>
                 </PopoverContent>
               </Popover>
-              <Button variant="ghost" onClick={onLogout} className="text-sm text-white hover:bg-orange-400/20">
+              <Button variant="ghost" onClick={onLogout} className="text-white/90 hover:bg-white/20 hover:text-white rounded-full px-4 py-2 transition-all duration-200 backdrop-blur-sm font-medium">
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
                 Sign out
               </Button>
             </div>
@@ -1805,94 +1979,199 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
 
         <main className="flex-1 space-y-6 px-4 py-6 sm:px-6">
           {referenceError ? (
-            <div className="rounded-lg border border-red-200 bg-orange-50 px-4 py-3 text-xs text-red-700 shadow-sm">
+            <div
+              className="rounded-lg border border-red-200 bg-orange-50 px-4 py-3 text-xs text-red-700 shadow-sm animate-in fade-in-0 slide-in-from-left-4"
+              style={{ animationDuration: "500ms" }}
+            >
               {referenceError}
             </div>
           ) : null}
 
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {summaryCards.slice(0, 2).map((card) => (
-              <div key={card.label} className="rounded-lg border border-orange-100 bg-white/80 p-4 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-wide text-orange-600">{card.label}</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">{card.value}</p>
-                <p className="mt-1 text-xs text-gray-600">{card.detail}</p>
-              </div>
-            ))}
+          <div
+            className="grid grid-cols-2 gap-4 lg:grid-cols-4 animate-in fade-in-0 slide-in-from-bottom-4 delay-100"
+            style={{ animationDuration: "500ms" }}
+          >
+            {summaryCards.slice(0, 2).map((card, index) => {
+              const icons = [
+                { icon: "📋", bg: "from-blue-500 to-blue-600" },
+                { icon: "⏳", bg: "from-amber-500 to-amber-600" },
+                { icon: "📊", bg: "from-emerald-500 to-emerald-600" },
+                { icon: "✅", bg: "from-green-500 to-green-600" },
+              ];
+              return (
+                <div
+                  key={card.label}
+                  className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-white via-white to-gray-50/80 p-5 shadow-lg hover:shadow-xl transition-all border border-white/50 hover:-translate-y-1 animate-in fade-in-0 slide-in-from-bottom-4"
+                  style={{ animationDelay: `${index * 100}ms`, animationDuration: "500ms" }}
+                >
+                  <div className={`absolute top-0 right-0 w-16 h-16 bg-gradient-to-br ${icons[index]?.bg} rounded-bl-3xl opacity-10 group-hover:opacity-20 transition-opacity`}></div>
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${icons[index]?.bg} flex items-center justify-center text-white text-lg shadow-md`}>
+                        {icons[index]?.icon}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-gray-900">{card.value}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-orange-600 mb-1">{card.label}</p>
+                      <p className="text-xs text-gray-600 leading-relaxed">{card.detail}</p>
+                    </div>
+                  </div>
+                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-orange-400 to-red-500 transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left"></div>
+                </div>
+              );
+            })}
           </div>
 
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-2">
-            {summaryCards.slice(2).map((card) => (
-              <div key={card.label} className="rounded-lg border border-orange-100 bg-white/80 p-4 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-wide text-orange-600">{card.label}</p>
-                <p className="mt-2 text-2xl font-semibold text-gray-900">{card.value}</p>
-                <p className="mt-1 text-xs text-gray-600">{card.detail}</p>
-              </div>
-            ))}
+          <div
+            className="grid grid-cols-2 gap-4 lg:grid-cols-2 animate-in fade-in-0 slide-in-from-bottom-4 delay-300"
+            style={{ animationDuration: "500ms" }}
+          >
+            {summaryCards.slice(2).map((card, index) => {
+              const icons = [
+                { icon: "👥", bg: "from-purple-500 to-purple-600" },
+                { icon: "📋", bg: "from-teal-500 to-teal-600" },
+              ];
+              const actualIndex = index + 2;
+              return (
+                <div
+                  key={card.label}
+                  className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-white via-white to-gray-50/80 p-5 shadow-lg hover:shadow-xl transition-all border border-white/50 hover:-translate-y-1 animate-in fade-in-0 slide-in-from-bottom-4"
+                  style={{ animationDelay: `${(index + 2) * 100}ms`, animationDuration: "500ms" }}
+                >
+                  <div className={`absolute top-0 right-0 w-16 h-16 bg-gradient-to-br ${icons[index]?.bg} rounded-bl-3xl opacity-10 group-hover:opacity-20 transition-opacity`}></div>
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${icons[index]?.bg} flex items-center justify-center text-white text-lg shadow-md`}>
+                        {icons[index]?.icon}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-gray-900">{card.value}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-orange-600 mb-1">{card.label}</p>
+                      <p className="text-xs text-gray-600 leading-relaxed">{card.detail}</p>
+                    </div>
+                  </div>
+                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-orange-400 to-red-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></div>
+                </div>
+              );
+            })}
           </div>
 
           {selectedIncident ? (
-            <Card className="border-orange-200/60 bg-white/95 shadow-lg">
-              <CardHeader className="space-y-2">
-                <CardTitle className="text-base font-semibold text-orange-900">Incident Action Assigned</CardTitle>
-                <CardDescription className="text-xs text-orange-700">
-                  {latestIncidentLabels.assigned ? `Team assigned ${latestIncidentLabels.assigned}` : "Awaiting team assignment"}
-                </CardDescription>
+            <Card
+              className="group relative overflow-hidden border-0 bg-gradient-to-br from-white via-white to-orange-50/30 shadow-xl hover:shadow-2xl transition-all duration-300 rounded-2xl animate-in fade-in-0 slide-in-from-bottom-4 delay-500"
+              style={{ animationDuration: "500ms" }}
+            >
+              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-orange-200/20 to-red-200/20 rounded-bl-full"></div>
+              <CardHeader className="space-y-3 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center text-white shadow-lg">
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg font-bold text-gray-900 group-hover:text-orange-900 transition-colors">Incident Action Assigned</CardTitle>
+                    <CardDescription className="text-sm text-gray-600 mt-1">
+                      {latestIncidentLabels.assigned ? `Team assigned ${latestIncidentLabels.assigned}` : "Awaiting team assignment"}
+                    </CardDescription>
+                  </div>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="text-sm font-semibold text-gray-900">
+              <CardContent className="space-y-5">
+                <div className="bg-gradient-to-r from-gray-50 to-white p-4 rounded-xl border border-gray-100/50 shadow-sm">
+                  <div className="text-sm font-semibold text-gray-900 mb-2">
                     {`${selectedIncident.firstName ?? ""} ${selectedIncident.lastName ?? ""}`.trim() ||
                       `Incident ${selectedIncident.id.slice(0, 8)}`}
                   </div>
                   {selectedIncident.emergency_type ? (
-                    <div className="text-xs text-gray-600 capitalize">Type: {selectedIncident.emergency_type}</div>
+                    <div className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 bg-orange-100 px-2 py-1 rounded-full mb-2">
+                      <span className="w-1.5 h-1.5 bg-orange-500 rounded-full"></span>
+                      {selectedIncident.emergency_type}
+                    </div>
                   ) : null}
-                  {latestIncidentLabels.reported ? (
-                    <div className="text-xs text-gray-600">Reported {latestIncidentLabels.reported}</div>
-                  ) : null}
-                </div>
-                <div className="flex flex-wrap gap-2 text-xs text-gray-600">
-                  {latestIncidentLabels.assigned ? <span>Team assigned {latestIncidentLabels.assigned}</span> : null}
-                  {latestIncidentLabels.responded ? <span>Responded {latestIncidentLabels.responded}</span> : null}
-                  {latestIncidentLabels.resolved ? <span>Resolved {latestIncidentLabels.resolved}</span> : null}
+                  <div className="flex flex-wrap gap-2 text-xs text-gray-600">
+                    {latestIncidentLabels.reported ? (
+                      <span className="flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-1 rounded-md">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                        </svg>
+                        Reported {latestIncidentLabels.reported}
+                      </span>
+                    ) : null}
+                    {latestIncidentLabels.responded ? (
+                      <span className="flex items-center gap-1 bg-green-50 text-green-700 px-2 py-1 rounded-md">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                        </svg>
+                        Responded {latestIncidentLabels.responded}
+                      </span>
+                    ) : null}
+                    {latestIncidentLabels.resolved ? (
+                      <span className="flex items-center gap-1 bg-purple-50 text-purple-700 px-2 py-1 rounded-md">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                        </svg>
+                        Resolved {latestIncidentLabels.resolved}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
 
                 {selectedIncidentCoords ? (
-                  <div className="rounded-lg border border-orange-100 bg-white/80 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-orange-600 mb-2">Incident location</p>
+                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-100/50 shadow-sm">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                        </svg>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-900">Incident Location</p>
+                    </div>
                     <LocationMap
                       latitude={selectedIncidentCoords.lat}
                       longitude={selectedIncidentCoords.lng}
                       zoom={16}
-                      className="w-full h-60"
+                      className="w-full h-48 rounded-lg shadow-sm"
                     />
-                    <div className="mt-2 text-xs text-gray-600">
-                      <span className="font-medium text-gray-700">Lat:</span> {selectedIncidentCoords.lat.toFixed(5)}
-                      <span className="mx-2">•</span>
-                      <span className="font-medium text-gray-700">Lng:</span> {selectedIncidentCoords.lng.toFixed(5)}
+                    <div className="mt-3 flex items-center justify-between text-xs text-gray-600 bg-white/70 p-2 rounded-md">
+                      <span><strong className="text-gray-700">Lat:</strong> {selectedIncidentCoords.lat.toFixed(5)}</span>
+                      <span><strong className="text-gray-700">Lng:</strong> {selectedIncidentCoords.lng.toFixed(5)}</span>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="mt-4 flex flex-wrap gap-2">
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => openGoogleMapsDirections(selectedIncidentCoords)}
                         disabled={!userLocation}
-                        className="border-orange-300 text-orange-600 hover:bg-orange-50 text-xs"
+                        className="flex-1 bg-white hover:bg-blue-50 border-blue-200 text-blue-700 hover:text-blue-800 transition-all duration-200 shadow-sm hover:shadow-md"
                       >
-                        Start Route on Google Maps
+                        <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                        </svg>
+                        Get Directions
                       </Button>
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-dashed border-orange-200 bg-orange-50/70 p-3 text-xs text-orange-700">
-                    Incident location coordinates are not available for this report.
+                  <div className="bg-gradient-to-r from-gray-100 to-gray-50 p-4 rounded-xl border border-gray-200/50 text-center">
+                    <svg className="w-8 h-8 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <p className="text-sm text-gray-600">Incident location coordinates are not available for this report.</p>
                   </div>
                 )}
 
-                <div className="flex gap-2">
+                <div className="flex gap-3 pt-2">
                   <Button
                     variant="outline"
-                    className="border-orange-300 text-orange-600 hover:bg-orange-50"
+                    className="flex-1 border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700 transition-all duration-200 shadow-sm hover:shadow-md"
                     onClick={() => {
                       const draft = drafts.find((item) => item.emergencyReportId === selectedIncident.id)
                       if (draft) {
@@ -1901,15 +2180,32 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                     }}
                     disabled={!drafts.some((draft) => draft.emergencyReportId === selectedIncident.id)}
                   >
-                    Open draft
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Open Draft
                   </Button>
                   {canMarkSelectedIncidentResolved ? (
                     <Button
-                      className="bg-green-600 hover:bg-green-700 text-white"
+                      className="flex-1 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white shadow-lg hover:shadow-xl transition-all duration-200 transform hover:-translate-y-0.5"
                       disabled={resolvingIncidentId === selectedIncident.id || !isOnline}
                       onClick={() => handleMarkResolved(selectedIncident.id)}
                     >
-                      {resolvingIncidentId === selectedIncident.id ? "Marking..." : "Rescue Done"}
+                      {resolvingIncidentId === selectedIncident.id ? (
+                        <>
+                          <svg className="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Mark Resolved
+                        </>
+                      )}
                     </Button>
                   ) : null}
                 </div>
@@ -1918,73 +2214,157 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
           ) : null}
 
           {/* Location Services Section */}
-          <Card className="border-orange-200/60 bg-white/95 shadow-lg">
-            <CardHeader>
-              <CardTitle className="text-base font-semibold text-orange-900">Location Services</CardTitle>
-              <CardDescription className="text-xs text-orange-700">
-                Your location is automatically tracked for routing and navigation
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <div
+            className="animate-in fade-in-0 slide-in-from-bottom-4 delay-700"
+            style={{ animationDuration: "500ms" }}
+          >
+            <Card className="group relative overflow-hidden border-0 bg-gradient-to-br from-white via-white to-green-50/30 shadow-xl hover:shadow-2xl transition-all duration-300 rounded-2xl">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-green-200/20 to-blue-200/20 rounded-bl-full"></div>
+              <CardHeader className="space-y-3 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-blue-500 flex items-center justify-center text-white shadow-lg">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg font-bold text-gray-900 group-hover:text-green-900 transition-colors">Location Services</CardTitle>
+                    <CardDescription className="text-sm text-gray-600 mt-1">
+                      Your location is automatically tracked for routing and navigation
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-5">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-700">Permission Status:</span>
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${
-                      locationPermission === 'granted' ? 'bg-green-100 text-green-700' :
-                      locationPermission === 'denied' ? 'bg-red-100 text-red-700' :
-                      locationPermission === 'prompt' ? 'bg-yellow-100 text-yellow-700' :
-                      'bg-gray-100 text-gray-700'
+                <div className="bg-gradient-to-br from-white to-gray-50 p-4 rounded-xl border border-gray-100/50 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm text-gray-700 font-medium">Permission Status:</span>
+                    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${
+                      locationPermission === 'granted' ? 'bg-green-100 text-green-700 border border-green-200' :
+                      locationPermission === 'denied' ? 'bg-red-100 text-red-700 border border-red-200' :
+                      locationPermission === 'prompt' ? 'bg-yellow-100 text-yellow-700 border border-yellow-200' :
+                      'bg-gray-100 text-gray-700 border border-gray-200'
                     }`}>
+                      <span className={`w-2 h-2 rounded-full ${
+                        locationPermission === 'granted' ? 'bg-green-500' :
+                        locationPermission === 'denied' ? 'bg-red-500' :
+                        locationPermission === 'prompt' ? 'bg-yellow-500' :
+                        'bg-gray-500'
+                      }`}></span>
                       {locationPermission === 'granted' ? 'Granted' :
                        locationPermission === 'denied' ? 'Denied' :
                        locationPermission === 'prompt' ? 'Prompt' : 'Unknown'}
                     </span>
                   </div>
-                  <div className="text-xs text-gray-600 bg-orange-50 p-2 rounded">
-                    Location automatically updates every 5 minutes when online
+                  <div className="text-xs text-gray-600 bg-gradient-to-r from-blue-50 to-indigo-50 p-3 rounded-lg border border-blue-100/50">
+                    <div className="flex items-center gap-2 mb-1">
+                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="font-medium text-blue-900">Auto-update: Every 1 minute</span>
+                    </div>
+                    <p className="text-blue-700">Location automatically updates when online and location permissions are granted.</p>
                   </div>
                   {locationError && (
-                    <p className="text-xs text-red-600">{locationError}</p>
+                    <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                        <p className="text-xs text-red-700 font-medium">{locationError}</p>
+                      </div>
+                    </div>
                   )}
                 </div>
-                <div className="space-y-2">
+                <div className="bg-gradient-to-br from-white to-gray-50 p-4 rounded-xl border border-gray-100/50 shadow-sm">
                   {userLocation ? (
                     <div>
-                      <p className="text-sm font-medium text-gray-700 mb-2">Current Location:</p>
-                      <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded">
-                        <div>Lat: {userLocation.lat.toFixed(6)}</div>
-                        <div>Lng: {userLocation.lng.toFixed(6)}</div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                          </svg>
+                        </div>
+                        <p className="text-sm font-semibold text-gray-900">Current Location</p>
                       </div>
-                      <p className="text-xs text-green-600 mt-2">
-                        ✓ Ready for Google Maps routing
-                      </p>
+                      <div className="text-xs text-gray-600 bg-white p-3 rounded-md border border-gray-100 shadow-sm">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-medium text-gray-700">Latitude:</span>
+                          <span className="font-mono text-gray-900">{userLocation.lat.toFixed(6)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-gray-700">Longitude:</span>
+                          <span className="font-mono text-gray-900">{userLocation.lng.toFixed(6)}</span>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex items-center gap-2 text-xs text-green-700 bg-green-50 px-3 py-2 rounded-lg border border-green-200">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Ready for Google Maps routing
+                      </div>
                     </div>
                   ) : (
-                    <div className="text-sm text-gray-500 italic">
-                      Location not available. Please enable location permissions in your browser.
+                    <div className="text-center py-6">
+                      <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
+                        <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      </div>
+                      <p className="text-sm text-gray-500 italic">
+                        Location not available. Please enable location permissions in your browser.
+                      </p>
                     </div>
                   )}
                 </div>
               </div>
             </CardContent>
           </Card>
+        </div>
 
-          <Card className="border-orange-200/60 bg-white/95 shadow-md">
-            <CardHeader className="space-y-3 lg:flex lg:flex-row lg:items-center lg:justify-between lg:space-y-0">
-              <div>
-                <CardTitle className="text-base font-semibold text-orange-900">Assigned incidents</CardTitle>
-                <p className="mt-1 text-sm text-orange-700/75">Focus on the drafts currently assigned to your team.</p>
-                <p className="mt-1 text-xs text-orange-600/75">Team ID: {teamId} | Online: {isOnline ? 'Yes' : 'No'}</p>
+        <Card
+          className="animate-in fade-in-0 slide-in-from-bottom-4 delay-900 group relative overflow-hidden border-0 bg-gradient-to-br from-white via-white to-purple-50/30 shadow-xl hover:shadow-2xl transition-all duration-300 rounded-2xl"
+          style={{ animationDuration: "500ms" }}
+        >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-purple-200/20 to-pink-200/20 rounded-bl-full"></div>
+            <CardHeader className="space-y-4 pb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white shadow-lg">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg font-bold text-gray-900 group-hover:text-purple-900 transition-colors">Assigned Incidents</CardTitle>
+                    <CardDescription className="text-sm text-gray-600 mt-1">
+                      Focus on the drafts currently assigned to your team
+                    </CardDescription>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg border border-gray-100">
+                  <span className="font-medium">Team ID:</span>
+                  <span className="font-mono text-gray-700">{teamId}</span>
+                  <span className="mx-1">•</span>
+                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                    isOnline ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                    {isOnline ? 'Online' : 'Offline'}
+                  </span>
+                </div>
               </div>
               <div className="flex flex-wrap gap-3">
                 <Button
                   variant="outline"
                   onClick={() => void refreshAssignedIncidents()}
                   disabled={!isOnline || assignedLoading}
-                  className="border-orange-300 text-orange-600 hover:bg-orange-50"
+                  className="bg-white hover:bg-blue-50 border-blue-200 text-blue-700 hover:text-blue-800 transition-all duration-200 shadow-sm hover:shadow-md"
                 >
-                  <RefreshCw className="mr-2 h-4 w-4" />
+                  <RefreshCw className={`mr-2 h-4 w-4 ${assignedLoading ? 'animate-spin' : ''}`} />
                   {assignedLoading ? 'Loading...' : 'Refresh'}
                 </Button>
               </div>
@@ -2005,7 +2385,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                 <div className="space-y-4">
                   {pagedDrafts.map((draft) => {
                     const incident = assignedIncidentLookup.get(draft.emergencyReportId)
-                    const patientInfo = draft.patientPayload?.patientInformation as Record<string, string> | undefined
+                    const patientInfo = draft.patientsPayload?.[0]
                     const patientName = patientInfo
                       ? `${patientInfo.firstName ?? ""} ${patientInfo.lastName ?? ""}`.trim() || "Unnamed patient"
                       : "Unnamed patient"
@@ -2128,20 +2508,38 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
             </CardContent>
           </Card>
 
-          <Card className="border-orange-200/60 bg-white/95 shadow-md">
+          <div
+            className="animate-in fade-in-0 slide-in-from-bottom-4 delay-1100"
+            style={{ animationDuration: "500ms" }}
+          >
+            <Card className="group relative overflow-hidden border-0 bg-gradient-to-br from-white via-white to-slate-50/30 shadow-xl hover:shadow-2xl transition-all duration-300 rounded-2xl">
             <CardHeader className="space-y-3 lg:flex lg:flex-row lg:items-center lg:justify-between lg:space-y-0">
               <div>
                 <CardTitle className="text-base font-semibold text-gray-900">Submitted reports</CardTitle>
                 <p className="mt-1 text-sm text-gray-500">Latest synced submissions from your team.</p>
               </div>
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-3 items-center">
+                <div className="flex items-center gap-2 text-xs text-gray-600">
+                  <span>Status:</span>
+                  <select
+                    className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+                    value={reportsStatusFilter}
+                    onChange={(event) => setReportsStatusFilter(event.target.value as ReportsStatusFilter)}
+                  >
+                    {REPORT_STATUS_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option === "all" ? "All statuses" : formatStatusLabel(option)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <Button
                   variant="outline"
                   onClick={() => void refreshReports()}
                   disabled={!isOnline || loadingReports}
                   className="border-gray-200 text-gray-700 hover:bg-gray-50"
                 >
-                  <RefreshCw className="mr-2 h-4 w-4" /> Refresh reports
+                  <RefreshCw className="mr-2 h-4 w-4" /> Refresh
                 </Button>
               </div>
             </CardHeader>
@@ -2152,11 +2550,11 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                 </div>
               ) : loadingError ? (
                 <div className="text-sm text-red-600">{loadingError}</div>
-              ) : sortedReports.length === 0 ? (
+              ) : filteredReports.length === 0 ? (
                 <p className="text-sm text-gray-500">No submitted reports yet.</p>
               ) : (
                 <div className="space-y-4">
-                  {sortedReports.map((report) => {
+                  {pagedReports.map((report) => {
                     const statusClass = STATUS_BADGE_STYLES[report.status] ?? STATUS_BADGE_STYLES.draft
                     const createdLabel = formatDateTime(report.created_at)
                     const updatedLabel = formatDateTime(report.updated_at)
@@ -2168,10 +2566,27 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                     const patientName = patientInfo
                       ? `${patientInfo.firstName ?? ""} ${patientInfo.lastName ?? ""}`.trim() || null
                       : null
+                    const isDraftReport = report.status === "draft"
+                    const matchingDraft = isDraftReport
+                      ? drafts.find((draft) => draft.clientDraftId === report.id)
+                      : undefined
+                    const canOpenDraftFromReport = Boolean(matchingDraft)
                     return (
-                      <div
+                      <button
                         key={report.id}
-                        className="rounded-xl border border-gray-200 bg-white/95 p-4 shadow-sm transition hover:-translate-y-[1px] hover:border-gray-300 hover:shadow-md"
+                        type="button"
+                        disabled={!canOpenDraftFromReport}
+                        onClick={() => {
+                          if (matchingDraft) {
+                            handleOpenDraft(matchingDraft.clientDraftId)
+                          }
+                        }}
+                        className={cn(
+                          "w-full rounded-xl border border-gray-200 bg-white/95 p-4 text-left shadow-sm transition",
+                          canOpenDraftFromReport
+                            ? "hover:-translate-y-[1px] hover:border-orange-200 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-300"
+                            : "cursor-not-allowed opacity-70"
+                        )}
                       >
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div className="space-y-2">
@@ -2192,15 +2607,49 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                           </div>
                           <div className="flex flex-col items-end gap-1 text-xs text-gray-500">
                             <span>Report ID: {report.id}</span>
+                            {isDraftReport ? (
+                              <span className="text-[11px] font-medium text-orange-600">
+                                {canOpenDraftFromReport ? "Click to resume draft" : "Draft not available locally"}
+                              </span>
+                            ) : null}
                           </div>
                         </div>
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
               )}
+              {filteredReports.length > REPORTS_PAGE_SIZE ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4 text-xs text-gray-600">
+                  <span>
+                    Page {reportsPage} of {totalReportsPages || 1}
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                      onClick={() => setReportsPage((prev) => Math.max(1, prev - 1))}
+                      disabled={reportsPage <= 1}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                      onClick={() => setReportsPage((prev) => Math.min(totalReportsPages || 1, prev + 1))}
+                      disabled={reportsPage >= (totalReportsPages || 1)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
+        </div>
+
         </main>
 
         <Sheet

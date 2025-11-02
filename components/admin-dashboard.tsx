@@ -404,6 +404,70 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     return data as BaseEntry[] || [];
   }, []);
 
+  const fetchSingleReport = useCallback(async (reportId: string) => {
+    const { data, error } = await supabase
+      .from('emergency_reports')
+      .select('*')
+      .eq('id', reportId)
+      .single();
+
+    if (error) {
+      console.error("Error fetching single report:", error);
+      return null;
+    }
+    return data;
+  }, []);
+
+  const fetchSingleNotification = useCallback(async (notificationId: string) => {
+    const { data, error } = await supabase
+      .from('admin_notifications')
+      .select(`
+        *,
+        emergency_report:emergency_report_id (
+          id,
+          firstName,
+          lastName,
+          mobileNumber,
+          latitude,
+          longitude,
+          location_address,
+          emergency_type,
+          status,
+          reportedAt,
+          created_at,
+          responded_at,
+          resolved_at,
+          user_id
+        )
+      `)
+      .eq('id', notificationId)
+      .single();
+
+    if (error) {
+      console.error("Error fetching single notification:", error);
+      return null;
+    }
+
+    const fetchedNotification: Notification = {
+      id: data.id,
+      emergency_report_id: data.emergency_report_id,
+      message: data.emergency_report ?
+        `🚨 NEW EMERGENCY: ${data.emergency_report.firstName} ${data.emergency_report.lastName} at ${data.emergency_report.location_address || 'Unknown Location'}` :
+        data.message,
+      is_read: data.is_read,
+      created_at: data.created_at,
+      type: data.type,
+      reporterFirstName: data.emergency_report?.firstName,
+      reporterLastName: data.emergency_report?.lastName,
+      reporterMobileNumber: data.emergency_report?.mobileNumber,
+      reportLatitude: data.emergency_report?.latitude,
+      reportLongitude: data.emergency_report?.longitude,
+      reportLocationAddress: data.emergency_report?.location_address,
+    };
+
+    return fetchedNotification;
+  }, []);
+
   const dedupeNearbyReports = useCallback(async (base: Report) => {
     try {
       const baseLat = (base as any).latitude as number | undefined;
@@ -653,41 +717,134 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     loadActiveAlert();
     void fetchErTeamReports(true);
 
+    // Auth state change listener to handle token refresh
+    const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state changed:', event, session ? 'session exists' : 'no session');
+      
+      if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
+        console.log('Auth refreshed, re-establishing real-time channels');
+        // Re-establish channels after auth refresh
+        setTimeout(() => {
+          fetchAllDashboardData();
+        }, 100);
+      } else if (event === 'SIGNED_OUT') {
+        console.log('User signed out, cleaning up channels');
+        setConnectionStatus('offline');
+      }
+    });
+
     const reportsChannel = supabase
       .channel('emergency-reports-channel')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'emergency_reports' },
-        (payload) => {
-          console.log('Change received on emergency_reports, refetching all dashboard data:', payload);
-          fetchAllDashboardData();
+        async (payload) => {
+          console.log('Change received on emergency_reports:', payload);
+          
+          if (payload.eventType === 'INSERT' && payload.new) {
+            // Add new report to the list
+            const newReport = payload.new as Report;
+            setAllReports(prev => {
+              const exists = prev.some(r => r.id === newReport.id);
+              if (!exists) {
+                return [newReport, ...prev];
+              }
+              return prev;
+            });
+          } else if (payload.eventType === 'UPDATE' && payload.new) {
+            // Update existing report
+            const updatedReport = payload.new as Report;
+            setAllReports(prev => prev.map(r => r.id === updatedReport.id ? updatedReport : r));
+          } else if (payload.eventType === 'DELETE' && payload.old) {
+            // Remove deleted report
+            const deletedId = payload.old.id;
+            setAllReports(prev => prev.filter(r => r.id !== deletedId));
+          }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Emergency reports channel status:', status);
+        if (status === 'SUBSCRIBED') {
+          setConnectionStatus('ok');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('Emergency reports channel error, attempting to reconnect');
+          setConnectionStatus('degraded');
+          // Attempt to reconnect after a delay
+          setTimeout(() => {
+            fetchAllReports().then(reports => setAllReports(reports));
+          }, 5000);
+        }
+      });
 
     const adminNotificationsChannel = supabase
       .channel('admin-notifications-channel')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'admin_notifications' },
-        (payload) => {
-          console.log('Change received on admin_notifications, refetching all dashboard data:', payload);
-          fetchAllDashboardData();
-          try {
-            // @ts-ignore
-            if ((payload?.eventType === 'INSERT') && (payload?.new?.type === 'new_report')) {
-              playAlertSound();
-              if (overlayRef.current && payload?.new) {
-                console.log('Triggering overlay for new report:', payload.new);
-                overlayRef.current.showNotificationOverlay(payload.new as AdminNotificationRow);
+        async (payload) => {
+          console.log('Change received on admin_notifications:', payload);
+          
+          if (payload.eventType === 'INSERT' && payload.new) {
+            const newNotification = payload.new;
+            // Fetch the full notification with emergency report data
+            const fullNotification = await fetchSingleNotification(newNotification.id);
+            if (fullNotification) {
+              setNotifications(prev => [fullNotification, ...prev]);
+              setUnreadCount(prev => prev + (fullNotification.is_read ? 0 : 1));
+              
+              try {
+                if (newNotification.type === 'new_report') {
+                  playAlertSound();
+                  if (overlayRef.current) {
+                    console.log('Triggering overlay for new report:', newNotification);
+                    overlayRef.current.showNotificationOverlay(newNotification as AdminNotificationRow);
+                  }
+                }
+              } catch (e) {
+                console.warn('Failed to process notification payload for sound:', e);
               }
             }
-          } catch (e) {
-            console.warn('Failed to process notification payload for sound:', e);
+          } else if (payload.eventType === 'UPDATE' && payload.new) {
+            const updatedNotification = payload.new;
+            setNotifications(prev => prev.map(n => 
+              n.id === updatedNotification.id 
+                ? { ...n, is_read: updatedNotification.is_read }
+                : n
+            ));
+            // Recalculate unread count
+            setNotifications(current => {
+              setUnreadCount(current.filter(n => !n.is_read).length);
+              return current;
+            });
+          } else if (payload.eventType === 'DELETE' && payload.old) {
+            const deletedId = payload.old.id;
+            setNotifications(prev => {
+              const wasUnread = prev.find(n => n.id === deletedId)?.is_read === false;
+              const filtered = prev.filter(n => n.id !== deletedId);
+              if (wasUnread) {
+                setUnreadCount(count => Math.max(0, count - 1));
+              }
+              return filtered;
+            });
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Admin notifications channel status:', status);
+        if (status === 'SUBSCRIBED') {
+          setConnectionStatus('ok');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('Admin notifications channel error, attempting to reconnect');
+          setConnectionStatus('degraded');
+          // Attempt to reconnect after a delay
+          setTimeout(() => {
+            fetchAdminNotifications().then(notifications => {
+              setNotifications(notifications);
+              setUnreadCount(notifications.filter(n => !n.is_read).length);
+            });
+          }, 5000);
+        }
+      });
 
     const alertSettingsChannel = supabase
       .channel('dashboard-alert-settings-channel')
@@ -699,7 +856,9 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
           loadActiveAlert();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Alert settings channel status:', status);
+      });
 
     const internalReportsChannel = supabase
       .channel('dashboard-internal-reports-channel')
@@ -713,7 +872,9 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
           fetchInternalReports().then(setInternalReports);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Internal reports channel status:', status);
+      });
 
     const erTeamsChannel = supabase
       .channel('dashboard-er-teams-channel')
@@ -725,7 +886,9 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
           fetchErTeams().then(setErTeams);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('ER teams channel status:', status);
+      });
 
     const erTeamReportsChannel = supabase
       .channel('dashboard-er-team-reports-channel')
@@ -737,7 +900,9 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
           void fetchErTeamReports();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('ER team reports channel status:', status);
+      });
 
 
     return () => {
@@ -747,8 +912,9 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       supabase.removeChannel(erTeamsChannel);
       supabase.removeChannel(alertSettingsChannel);
       supabase.removeChannel(erTeamReportsChannel);
+      authSubscription.unsubscribe();
     };
-  }, [fetchAllReports, fetchAdminNotifications, fetchInternalReports, fetchErTeams, selectedReport, internalReports, loadActiveAlert, playAlertSound, fetchErTeamReports]);
+  }, [fetchAllReports, fetchAdminNotifications, fetchInternalReports, fetchErTeams, selectedReport, internalReports, loadActiveAlert, playAlertSound, fetchErTeamReports, fetchSingleReport, fetchSingleNotification]);
 
   useEffect(() => {
     if (selectedReport?.latitude && selectedReport?.longitude) {
