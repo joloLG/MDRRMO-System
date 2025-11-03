@@ -553,9 +553,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   const lastDispatchOverlayIdRef = React.useRef<string | null>(null)
 
   const latestAssignedIncident = assignedIncidents[0] ?? null
-  const selectedIncident = selectedIncidentId
-    ? assignedIncidents.find((incident) => incident.id === selectedIncidentId) ?? latestAssignedIncident
-    : latestAssignedIncident
+  const selectedIncident = latestAssignedIncident
 
   const canMarkSelectedIncidentResolved = React.useMemo(() => {
     if (!selectedIncident) return false
@@ -1818,21 +1816,14 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
           </div>
         ) : null}
 
-        <header className="sticky top-0 z-20 flex flex-col gap-1 bg-gradient-to-r from-orange-500 via-orange-600 to-red-500/95 px-4 py-1 text-white shadow-xl backdrop-blur-sm border-b border-orange-400/30 sm:px-6">
+        <header className="sticky top-0 z-20 flex flex-col gap-1 bg-gradient-to-r from-orange-500 via-orange-600 to-red-500/95 px-4 py-1 text-white shadow-xl backdrop-blur-sm border-b border-orange-400/30 sm:px-6 min-h-[56px] h-14 w-full">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
-                <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                </svg>
-              </div>
               <div>
-                <h1 className="text-sm font-bold sm:text-base bg-gradient-to-r from-white to-orange-100 bg-clip-text text-transparent">ER Team PCR Reports</h1>
+                <h1 className="text-sm font-bold sm:text-base bg-gradient-to-r from-white to-orange-100 bg-clip-text text-transparent">ER TEAM DASHBOARD</h1>
                 {profileError ? (
                   <p className="mt-2 text-xs sm:text-sm text-red-200 bg-red-500/20 px-3 py-1 rounded-md border border-red-400/30">{profileError}</p>
                 ) : null}
               </div>
-            </div>
 
             <div className="flex items-center gap-2 sm:gap-3">
               <Button
@@ -2012,7 +2003,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
               return (
                 <div
                   key={card.label}
-                  className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-white via-white to-gray-50/80 p-5 shadow-lg hover:shadow-xl transition-all border border-white/50 hover:-translate-y-1 animate-in fade-in-0 slide-in-from-bottom-4"
+                  className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-white via-white to-gray-50/80 p-2 sm:p-4 lg:p-5 shadow-lg hover:shadow-xl transition-all border border-white/50 hover:-translate-y-1 animate-in fade-in-0 slide-in-from-bottom-4"
                   style={{ animationDelay: `${index * 100}ms`, animationDuration: "500ms" }}
                 >
                   <div className={`absolute top-0 right-0 w-16 h-16 bg-gradient-to-br ${icons[index]?.bg} rounded-bl-3xl opacity-10 group-hover:opacity-20 transition-opacity`}></div>
@@ -2049,7 +2040,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
               return (
                 <div
                   key={card.label}
-                  className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-white via-white to-gray-50/80 p-5 shadow-lg hover:shadow-xl transition-all border border-white/50 hover:-translate-y-1 animate-in fade-in-0 slide-in-from-bottom-4"
+                  className="group relative overflow-hidden rounded-xl bg-gradient-to-br from-white via-white to-gray-50/80 p-2 sm:p-4 lg:p-5 shadow-lg hover:shadow-xl transition-all border border-white/50 hover:-translate-y-1 animate-in fade-in-0 slide-in-from-bottom-4"
                   style={{ animationDelay: `${(index + 2) * 100}ms`, animationDuration: "500ms" }}
                 >
                   <div className={`absolute top-0 right-0 w-16 h-16 bg-gradient-to-br ${icons[index]?.bg} rounded-bl-3xl opacity-10 group-hover:opacity-20 transition-opacity`}></div>
