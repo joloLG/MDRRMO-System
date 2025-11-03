@@ -712,6 +712,11 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
     setIsNotificationDropdownOpen(false)
   }, [])
 
+  const handleMarkAllAsRead = React.useCallback(() => {
+    setHasUnreadDispatchAlert(false)
+    setIsNotificationDropdownOpen(false)
+  }, [])
+
   const applyDraftMerge = React.useCallback((incidents: AssignedIncident[]) => {
     setDrafts((prevDrafts) => {
       const nextDrafts = mergeDraftsWithAssigned(prevDrafts, incidents)
@@ -1865,10 +1870,10 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        onClick={handleClearDispatchNotifications}
+                        onClick={handleMarkAllAsRead}
                         className="h-auto px-3 py-1 text-xs font-medium text-orange-600 hover:bg-orange-50 rounded-full transition-colors"
                       >
-                        Clear
+                        Mark as Read
                       </Button>
                     ) : null}
                   </div>
