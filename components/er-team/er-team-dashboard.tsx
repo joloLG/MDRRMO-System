@@ -16,6 +16,8 @@ import {
   loadReference,
   saveReference,
   removeDraft,
+  saveAsset,
+  loadAsset,
 } from "@/lib/er-team-storage"
 import { Bell, Loader2, RefreshCw, WifiOff, Wifi } from "lucide-react"
 import {
@@ -192,6 +194,33 @@ async function migrateLegacyReferences() {
     window.localStorage.removeItem("mdrrmo_er_team_references")
   } catch (error) {
     console.warn("Failed to migrate legacy ER references", error)
+  }
+}
+
+async function preloadSvgAssets() {
+  if (typeof window === "undefined" || !navigator.onLine) return
+
+  const assets = [
+    "/body_part_front-01.svg",
+    "/body_part_back-01.svg"
+  ]
+
+  for (const assetPath of assets) {
+    try {
+      // Check if already cached
+      const cached = await loadAsset(assetPath)
+      if (cached) continue
+
+      // Fetch and cache
+      const response = await fetch(assetPath)
+      if (response.ok) {
+        const content = await response.text()
+        await saveAsset(assetPath, content, "image/svg+xml")
+        console.log(`Preloaded SVG asset: ${assetPath}`)
+      }
+    } catch (error) {
+      console.warn(`Failed to preload SVG asset ${assetPath}:`, error)
+    }
   }
 }
 
@@ -1172,6 +1201,9 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
           saveReference("barangays", data.barangays),
           saveReference("incidentTypes", data.incidentTypes),
         ])
+
+        // Preload SVG assets for offline use
+        void preloadSvgAssets()
       } catch (error: any) {
         if (!cancelled) {
           console.error("Failed to load ER team references", error)

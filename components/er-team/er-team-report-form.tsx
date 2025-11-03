@@ -20,6 +20,7 @@ import { Loader2, Pill, User, Activity, AlertCircle, Droplet, CalendarDays, XCir
 import { FRONT_BODY_REGION_IDS, BACK_BODY_REGION_IDS } from "@/components/admin/make-report-form"
 import { PRIORITY_COLORS, PRIORITY_LABELS } from "@/lib/priority"
 import { cn } from "@/lib/utils"
+import { saveAsset, loadAsset } from "@/lib/er-team-storage"
 
 const FRONT_SVG_PATH = "/body_part_front-01.svg"
 const BACK_SVG_PATH = "/body_part_back-01.svg"
@@ -496,16 +497,37 @@ const BodyDiagram: React.FC<BodyDiagramProps> = ({ view, svgPath, regionIds, reg
   React.useEffect(() => {
     let isMounted = true
     const loadSvg = async () => {
+      // First check IndexedDB cache
+      try {
+        const cachedAsset = await loadAsset(svgPath)
+        if (cachedAsset && isMounted) {
+          setSvgContent(cachedAsset.content)
+          return
+        }
+      } catch (cacheError) {
+        console.warn("Failed to load SVG from cache", cacheError)
+      }
+
+      // Check in-memory cache
       if (svgContentCache.has(svgPath)) {
         if (isMounted) setSvgContent(svgContentCache.get(svgPath) ?? "")
         return
       }
+
+      // Fetch from network and cache
       try {
         const response = await fetch(svgPath)
         if (!response.ok) throw new Error(`Failed to load SVG (${response.status})`)
         const text = await response.text()
         svgContentCache.set(svgPath, text)
         if (isMounted) setSvgContent(text)
+
+        // Cache in IndexedDB for offline use
+        try {
+          await saveAsset(svgPath, text, "image/svg+xml")
+        } catch (cacheError) {
+          console.warn("Failed to cache SVG in IndexedDB", cacheError)
+        }
       } catch (error) {
         console.error("Error loading ER team body diagram", error)
         if (isMounted) setSvgContent("<svg></svg>")

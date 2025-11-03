@@ -13,6 +13,13 @@ interface ReferenceCacheRecord {
   cachedAt: string
 }
 
+interface AssetCacheRecord {
+  key: string
+  content: string
+  contentType: string
+  cachedAt: string
+}
+
 interface ErTeamDB extends DBSchema {
   drafts: {
     key: string
@@ -22,10 +29,14 @@ interface ErTeamDB extends DBSchema {
     key: string
     value: ReferenceCacheRecord
   }
+  assets: {
+    key: string
+    value: AssetCacheRecord
+  }
 }
 
 const DB_NAME = "mdrrmo_er_team"
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 let dbPromise: Promise<IDBPDatabase<ErTeamDB>> | null = null
 
@@ -38,6 +49,9 @@ function getDb() {
         }
         if (!database.objectStoreNames.contains("references")) {
           database.createObjectStore("references")
+        }
+        if (!database.objectStoreNames.contains("assets")) {
+          database.createObjectStore("assets")
         }
       },
     })
@@ -95,4 +109,22 @@ export async function clearReferences(): Promise<void> {
   const tx = db.transaction("references", "readwrite")
   await tx.store.clear()
   await tx.done
+}
+
+export async function saveAsset(key: string, content: string, contentType: string): Promise<void> {
+  const db = await getDb()
+  const record: AssetCacheRecord = {
+    key,
+    content,
+    contentType,
+    cachedAt: new Date().toISOString(),
+  }
+  const tx = db.transaction("assets", "readwrite")
+  await tx.store.put(record, key)
+  await tx.done
+}
+
+export async function loadAsset(key: string): Promise<AssetCacheRecord | undefined> {
+  const db = await getDb()
+  return db.get("assets", key)
 }
