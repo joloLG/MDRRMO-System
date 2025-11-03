@@ -1306,6 +1306,12 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
           if (payloadWithEvent.eventType === 'INSERT') {
             notificationMessage = `New PCR draft started for ${emergencyReport.emergency_type ?? 'incident'}`
           } else if (payloadWithEvent.eventType === 'UPDATE' && newRow.status !== oldRow?.status) {
+            // Skip notifications for resolved/completed status changes
+            const resolvedStatuses = ['resolved', 'completed']
+            if (resolvedStatuses.includes(newRow.status?.toLowerCase())) {
+              console.log('Skipping notification for resolved/completed status change')
+              return
+            }
             eventType = 'status_change'
             notificationMessage = `PCR report status changed to ${formatStatusDisplay(newRow.status)}`
           }
@@ -1377,11 +1383,23 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
       // Check if responded_at was just filled (notification trigger)
       const respondedAtFilled = newRow.responded_at && (!payload.old?.responded_at)
 
+      // Check if resolved_at was just filled (skip notification trigger)
+      const resolvedAtFilled = newRow.resolved_at && (!payload.old?.resolved_at)
+
       console.log('⏰ Response check:', {
         newRespondedAt: newRow.responded_at,
         oldRespondedAt: payload.old?.responded_at,
-        respondedAtFilled
+        respondedAtFilled,
+        newResolvedAt: newRow.resolved_at,
+        oldResolvedAt: payload.old?.resolved_at,
+        resolvedAtFilled
       })
+
+      // Skip notifications for resolved status changes
+      if (resolvedAtFilled) {
+        console.log('Skipping notification for resolved_at being set')
+        return
+      }
 
       if (respondedAtFilled && isAssignedToTeam) {
         console.log('📢 Creating notification for new assignment')
