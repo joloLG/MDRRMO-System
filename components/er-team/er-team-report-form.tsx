@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -1026,20 +1027,20 @@ export function ErTeamReportForm({
   const statusMeta = STATUS_BADGE[draft.status]
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-lg ring-1 ring-orange-100 sm:rounded-3xl">
-      <header className="border-b border-orange-100 bg-gradient-to-r from-orange-500 via-orange-400 to-orange-500 px-4 py-4 text-white sm:px-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex h-full flex-col overflow-hidden rounded-t-lg bg-white shadow-lg ring-1 ring-orange-100 sm:rounded-3xl">
+      <header className="border-b border-orange-100 bg-gradient-to-r from-orange-500 via-orange-400 to-orange-500 px-3 py-3 text-white sm:px-6 sm:py-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <div>
-            <p className="text-xs uppercase tracking-wide text-orange-100">Patient Care Report</p>
-            <h2 className="text-lg font-semibold">Draft #{draft.clientDraftId.slice(0, 8)}</h2>
-            <p className="mt-1 text-xs text-orange-100">
+            <p className="text-[10px] uppercase tracking-wide text-orange-100 sm:text-xs">Patient Care Report</p>
+            <h2 className="text-base font-semibold sm:text-lg">Draft #{draft.clientDraftId.slice(0, 8)}</h2>
+            <p className="mt-1 text-[10px] text-orange-100 sm:text-xs">
               Last updated {new Date(draft.updatedAt).toLocaleString()} {draft.synced ? "• Synced" : "• Draft mode"}
             </p>
           </div>
-          <div className="flex flex-col items-start gap-2 sm:items-end">
+          <div className="flex flex-col items-start gap-1 sm:items-end sm:gap-2">
             <Badge className={statusMeta.className}>{statusMeta.label}</Badge>
             {draft.lastSyncError ? (
-              <span className="flex items-center gap-1 text-xs text-red-200">
+              <span className="flex items-center gap-1 text-[10px] text-red-200 sm:text-xs">
                 <AlertCircle className="h-3 w-3" /> {draft.lastSyncError}
               </span>
             ) : null}
@@ -1049,8 +1050,8 @@ export function ErTeamReportForm({
 
       <form onSubmit={handleFormSubmit} className="flex-1 overflow-y-auto">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
-          <div className="border-b border-gray-100 px-4 pt-3 sm:px-6">
-            <TabsList className="grid grid-cols-2 rounded-xl bg-gray-100 p-1 text-xs sm:text-sm">
+          <div className="border-b border-gray-100 px-3 pt-2 sm:px-6 sm:pt-3">
+            <TabsList className="grid grid-cols-2 rounded-xl bg-gray-100 p-1 text-[10px] sm:text-xs">
               <TabsTrigger value="patient" className="flex items-center justify-center gap-1">
                 <User className="h-3 w-3" /> Patient
               </TabsTrigger>
@@ -1060,8 +1061,8 @@ export function ErTeamReportForm({
             </TabsList>
           </div>
 
-          <TabsContent value="patient" className="flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-            <section className="space-y-4">
+          <TabsContent value="patient" className="flex-1 overflow-y-auto px-3 py-3 sm:px-6 sm:py-5">
+            <section className="space-y-3 sm:space-y-4">
               {/* Patient Tabs */}
               <div className="flex items-center justify-between">
                 <Tabs value={`patient-${activePatientIndex}`} className="flex-1">
@@ -1106,15 +1107,15 @@ export function ErTeamReportForm({
               )}
 
               <Card className="border-none shadow-sm">
-                <CardContent className="space-y-6 pt-4">
-                  <div className="flex flex-wrap gap-4 text-xs text-gray-500">
+                <CardContent className="space-y-4 pt-3 sm:space-y-6 sm:pt-4">
+                  <div className="flex flex-wrap gap-3 text-[10px] text-gray-500 sm:gap-4 sm:text-xs">
                     <span className="inline-flex items-center gap-1"><User className="h-3 w-3" /> Patient details</span>
                     <span className="inline-flex items-center gap-1"><Pill className="h-3 w-3" /> Medical info</span>
                     <span className="inline-flex items-center gap-1"><Droplet className="h-3 w-3" /> Vitals</span>
                   </div>
-                  <div className="grid gap-6 md:grid-cols-2">
+                  <div className="grid gap-3 sm:gap-6 md:grid-cols-2">
                     <div>
-                      <Label htmlFor="patient-name" className="block text-sm font-medium text-gray-700 mb-1">
+                      <Label htmlFor="patient-name" className="block text-xs font-medium text-gray-700 mb-1 sm:text-sm">
                         Full name
                       </Label>
                       <Input
@@ -1123,10 +1124,11 @@ export function ErTeamReportForm({
                         onChange={(event) => updatePatient(activePatientIndex, { patientName: event.target.value })}
                         placeholder="Juan Dela Cruz"
                         required
+                        className="text-xs sm:text-sm"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="patient-number" className="block text-sm font-medium text-gray-700 mb-1">
+                      <Label htmlFor="patient-number" className="block text-xs font-medium text-gray-700 mb-1 sm:text-sm">
                         Contact number
                       </Label>
                       <Input
@@ -1136,11 +1138,12 @@ export function ErTeamReportForm({
                         inputMode="tel"
                         placeholder="09XX XXX XXXX"
                         required
+                        className="text-xs sm:text-sm"
                       />
                     </div>
                   </div>
 
-                  <div className="grid gap-6 md:grid-cols-3">
+                  <div className="grid gap-3 sm:gap-6 md:grid-cols-3">
                     <DatePickerField
                       id="patient-birthday"
                       label="Birthday"
@@ -1153,7 +1156,7 @@ export function ErTeamReportForm({
                       toYear={new Date().getFullYear()}
                     />
                     <div>
-                      <Label htmlFor="patient-age" className="block text-sm font-medium text-gray-700 mb-1">
+                      <Label htmlFor="patient-age" className="block text-xs font-medium text-gray-700 mb-1 sm:text-sm">
                         Age
                       </Label>
                       <Input
@@ -1163,13 +1166,14 @@ export function ErTeamReportForm({
                         value={activePatient.patientAge}
                         readOnly
                         required
+                        className="text-xs sm:text-sm"
                       />
                     </div>
                     <div>
-                      <Label className="block text-sm font-medium text-gray-700 mb-1">Sex</Label>
-                      <div className="flex items-center gap-3">
+                      <Label className="block text-xs font-medium text-gray-700 mb-1 sm:text-sm">Sex</Label>
+                      <div className="flex items-center gap-2 sm:gap-3">
                         {(["male", "female"] as const).map((sexOption) => (
-                          <label key={sexOption} className="inline-flex items-center gap-2 text-sm text-gray-700">
+                          <label key={sexOption} className="inline-flex items-center gap-1 text-[10px] text-gray-700 sm:gap-2 sm:text-sm">
                             <Checkbox
                               checked={activePatient.patientSex === sexOption}
                               onCheckedChange={(checked) => updatePatient(activePatientIndex, { patientSex: checked ? sexOption : "" })}
@@ -1181,9 +1185,9 @@ export function ErTeamReportForm({
                     </div>
                   </div>
 
-                  <div className="grid gap-6 md:grid-cols-2">
+                  <div className="grid gap-3 sm:gap-6 md:grid-cols-2">
                     <div>
-                      <Label htmlFor="patient-address" className="block text-sm font-medium text-gray-700 mb-1">
+                      <Label htmlFor="patient-address" className="block text-xs font-medium text-gray-700 mb-1 sm:text-sm">
                         Address / Landmark
                       </Label>
                       <Textarea
@@ -1192,10 +1196,11 @@ export function ErTeamReportForm({
                         onChange={(event) => updatePatient(activePatientIndex, { patientAddress: event.target.value })}
                         rows={2}
                         required
+                        className="text-xs sm:text-sm"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="incident-location" className="block text-sm font-medium text-gray-700 mb-1">
+                      <Label htmlFor="incident-location" className="block text-xs font-medium text-gray-700 mb-1 sm:text-sm">
                         Incident location
                       </Label>
                       <Textarea
@@ -1203,6 +1208,7 @@ export function ErTeamReportForm({
                         value={activePatient.incidentLocation}
                         onChange={(event) => updatePatient(activePatientIndex, { incidentLocation: event.target.value })}
                         rows={2}
+                        className="text-xs sm:text-sm"
                       />
                     </div>
                   </div>
@@ -1210,22 +1216,47 @@ export function ErTeamReportForm({
               </Card>
 
               <Card className="border-none shadow-sm">
-                <CardContent className="space-y-3 pt-4">
-                  <p className="text-sm font-medium text-gray-800">Vitals</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <CardContent className="space-y-2 pt-3 sm:space-y-3 sm:pt-4">
+                  <p className="text-xs font-medium text-gray-800 sm:text-sm">Vitals</p>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
                     <div>
-                      <Label htmlFor="pulse-rate" className="block text-xs font-semibold text-gray-600 mb-1">
-                        Pulse rate (BPM)
+                      <Label htmlFor="loc-avpu" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
+                        LOC / AVPU
+                      </Label>
+                      <Input
+                        id="loc-avpu"
+                        value={activePatient.locAvpu}
+                        onChange={(event) => updatePatient(activePatientIndex, { locAvpu: event.target.value })}
+                        placeholder="e.g., Alert"
+                        className="text-xs sm:text-sm h-8"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="pulse-rate" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
+                        Pulse Rate
                       </Label>
                       <Input
                         id="pulse-rate"
                         value={activePatient.pulseRate}
                         onChange={(event) => updatePatient(activePatientIndex, { pulseRate: event.target.value })}
-                        placeholder="e.g., 80"
+                        placeholder="bpm"
+                        className="text-xs sm:text-sm h-8"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="blood-pressure" className="block text-xs font-semibold text-gray-600 mb-1">
+                      <Label htmlFor="bpm" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
+                        BPM
+                      </Label>
+                      <Input
+                        id="bpm"
+                        value={activePatient.bpm}
+                        onChange={(event) => updatePatient(activePatientIndex, { bpm: event.target.value })}
+                        placeholder="Beats per minute"
+                        className="text-xs sm:text-sm h-8"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="blood-pressure" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
                         Blood pressure
                       </Label>
                       <Input
@@ -1233,10 +1264,11 @@ export function ErTeamReportForm({
                         value={activePatient.bloodPressure}
                         onChange={(event) => updatePatient(activePatientIndex, { bloodPressure: event.target.value })}
                         placeholder="e.g., 120/80"
+                        className="text-xs sm:text-sm h-8"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="respiratory-rate" className="block text-xs font-semibold text-gray-600 mb-1">
+                      <Label htmlFor="respiratory-rate" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
                         Respiratory rate
                       </Label>
                       <Input
@@ -1244,10 +1276,11 @@ export function ErTeamReportForm({
                         value={activePatient.respiratoryRate}
                         onChange={(event) => updatePatient(activePatientIndex, { respiratoryRate: event.target.value })}
                         placeholder="e.g., 16"
+                        className="text-xs sm:text-sm h-8"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="oxygen-saturation" className="block text-xs font-semibold text-gray-600 mb-1">
+                      <Label htmlFor="oxygen-saturation" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
                         Oxygen saturation (%)
                       </Label>
                       <Input
@@ -1255,10 +1288,11 @@ export function ErTeamReportForm({
                         value={activePatient.oxygenSaturation}
                         onChange={(event) => updatePatient(activePatientIndex, { oxygenSaturation: event.target.value })}
                         placeholder="e.g., 98"
+                        className="text-xs sm:text-sm h-8"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="temperature" className="block text-xs font-semibold text-gray-600 mb-1">
+                      <Label htmlFor="temperature" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
                         Temperature (°C)
                       </Label>
                       <Input
@@ -1266,10 +1300,11 @@ export function ErTeamReportForm({
                         value={activePatient.temperature}
                         onChange={(event) => updatePatient(activePatientIndex, { temperature: event.target.value })}
                         placeholder="e.g., 36.5"
+                        className="text-xs sm:text-sm h-8"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="pain-scale" className="block text-xs font-semibold text-gray-600 mb-1">
+                      <Label htmlFor="pain-scale" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
                         Pain scale (0-10)
                       </Label>
                       <Input
@@ -1279,24 +1314,25 @@ export function ErTeamReportForm({
                         max="10"
                         value={activePatient.painScale}
                         onChange={(event) => updatePatient(activePatientIndex, { painScale: event.target.value.replace(/[^0-9]/g, "").slice(0, 2) })}
+                        className="text-xs sm:text-sm h-8"
                       />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="rounded-lg border shadow-sm p-4 space-y-3">
-                      <p className="text-sm font-semibold text-gray-700">Glasgow Coma Scale (GCS)</p>
-                      <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6">
+                    <div className="rounded-lg border shadow-sm p-2 space-y-2 sm:p-4 sm:space-y-3">
+                      <p className="text-xs font-semibold text-gray-700 sm:text-sm">Glasgow Coma Scale (GCS)</p>
+                      <div className="space-y-2 sm:space-y-3">
                         <div>
-                          <Label className="text-xs font-semibold text-gray-600 mb-2 block">Eye (4-1)</Label>
-                          <div className="grid grid-cols-4 gap-2">
+                          <Label className="text-[10px] font-semibold text-gray-600 mb-1 block sm:text-xs sm:mb-2">Eye (4-1)</Label>
+                          <div className="grid grid-cols-4 gap-1 sm:gap-2">
                             {["4", "3", "2", "1"].map((value) => (
                               <Button
                                 key={value}
                                 type="button"
                                 variant={activePatient.gcsEye === value ? "default" : "outline"}
                                 className={cn(
-                                  "py-2",
+                                  "py-1 text-xs sm:py-2 sm:text-sm",
                                   activePatient.gcsEye === value ? "bg-orange-500 text-white" : "bg-white text-gray-700 hover:bg-gray-50",
                                 )}
                                 onClick={() => updatePatient(activePatientIndex, { gcsEye: value })}
@@ -1307,15 +1343,15 @@ export function ErTeamReportForm({
                           </div>
                         </div>
                         <div>
-                          <Label className="text-xs font-semibold text-gray-600 mb-2 block">Verbal (5-1)</Label>
-                          <div className="grid grid-cols-5 gap-2">
+                          <Label className="text-[10px] font-semibold text-gray-600 mb-1 block sm:text-xs sm:mb-2">Verbal (5-1)</Label>
+                          <div className="grid grid-cols-5 gap-1 sm:gap-2">
                             {["5", "4", "3", "2", "1"].map((value) => (
                               <Button
                                 key={value}
                                 type="button"
                                 variant={activePatient.gcsVerbal === value ? "default" : "outline"}
                                 className={cn(
-                                  "py-2",
+                                  "py-1 text-xs sm:py-2 sm:text-sm",
                                   activePatient.gcsVerbal === value ? "bg-orange-500 text-white" : "bg-white text-gray-700 hover:bg-gray-50",
                                 )}
                                 onClick={() => updatePatient(activePatientIndex, { gcsVerbal: value })}
@@ -1326,15 +1362,15 @@ export function ErTeamReportForm({
                           </div>
                         </div>
                         <div>
-                          <Label className="text-xs font-semibold text-gray-600 mb-2 block">Motor (6-1)</Label>
-                          <div className="grid grid-cols-6 gap-2">
+                          <Label className="text-[10px] font-semibold text-gray-600 mb-1 block sm:text-xs sm:mb-2">Motor (6-1)</Label>
+                          <div className="grid grid-cols-6 gap-1 sm:gap-2">
                             {["6", "5", "4", "3", "2", "1"].map((value) => (
                               <Button
                                 key={value}
                                 type="button"
                                 variant={activePatient.gcsMotor === value ? "default" : "outline"}
                                 className={cn(
-                                  "py-2",
+                                  "py-1 text-xs sm:py-2 sm:text-sm",
                                   activePatient.gcsMotor === value ? "bg-orange-500 text-white" : "bg-white text-gray-700 hover:bg-gray-50",
                                 )}
                                 onClick={() => updatePatient(activePatientIndex, { gcsMotor: value })}
@@ -1345,14 +1381,14 @@ export function ErTeamReportForm({
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2">
-                        <span className="text-sm font-semibold text-gray-700">Total GCS</span>
-                        <span className="text-lg font-bold text-gray-900">
+                      <div className="flex items-center justify-between rounded-md bg-gray-50 px-2 py-1 sm:px-3 sm:py-2">
+                        <span className="text-xs font-semibold text-gray-700 sm:text-sm">Total GCS</span>
+                        <span className="text-sm font-bold text-gray-900 sm:text-lg">
                           {Number(activePatient.gcsEye || 0) + Number(activePatient.gcsVerbal || 0) + Number(activePatient.gcsMotor || 0)}
                         </span>
                       </div>
                       <div>
-                        <Label htmlFor="gcs-other" className="block text-xs font-semibold text-gray-600 mb-1">
+                        <Label htmlFor="gcs-other" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
                           Other remarks
                         </Label>
                         <Textarea
@@ -1360,23 +1396,24 @@ export function ErTeamReportForm({
                           value={activePatient.gcsOther}
                           onChange={(event) => updatePatient(activePatientIndex, { gcsOther: event.target.value })}
                           rows={2}
+                          className="text-xs sm:text-sm"
                         />
                       </div>
                     </div>
 
-                    <div className="rounded-lg border shadow-sm p-4 space-y-4">
-                      <p className="text-sm font-semibold text-gray-700">Primary survey</p>
-                      <div className="grid grid-cols-1 gap-3">
-                        <div className="rounded-lg border shadow-sm p-3">
-                          <p className="text-xs font-semibold text-gray-600 mb-2">Airway (A)</p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="rounded-lg border shadow-sm p-2 space-y-3 sm:p-4 sm:space-y-4">
+                      <p className="text-xs font-semibold text-gray-700 sm:text-sm">Primary survey</p>
+                      <div className="grid grid-cols-1 gap-2 sm:gap-3">
+                        <div className="rounded-lg border shadow-sm p-2 sm:p-3">
+                          <p className="text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs sm:mb-2">Airway (A)</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-2">
                             {AIRWAY_OPTIONS.map((option) => (
                               <Button
                                 key={option}
                                 type="button"
                                 variant={activePatient.airwaySelections.includes(option) ? "default" : "outline"}
                                 className={cn(
-                                  "justify-start",
+                                  "justify-start text-[10px] py-1 sm:text-xs sm:py-2",
                                   activePatient.airwaySelections.includes(option)
                                     ? "bg-orange-100 text-orange-700 border-orange-400"
                                     : "bg-white text-gray-700 hover:bg-gray-50",
@@ -1395,16 +1432,16 @@ export function ErTeamReportForm({
                           </div>
                         </div>
 
-                        <div className="rounded-lg border shadow-sm p-3">
-                          <p className="text-xs font-semibold text-gray-600 mb-2">Breathing (B)</p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="rounded-lg border shadow-sm p-2 sm:p-3">
+                          <p className="text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs sm:mb-2">Breathing (B)</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-2">
                             {BREATHING_OPTIONS.map((option) => (
                               <Button
                                 key={option}
                                 type="button"
                                 variant={activePatient.breathingSelections.includes(option) ? "default" : "outline"}
                                 className={cn(
-                                  "justify-start",
+                                  "justify-start text-[10px] py-1 sm:text-xs sm:py-2",
                                   activePatient.breathingSelections.includes(option)
                                     ? "bg-orange-100 text-orange-700 border-orange-400"
                                     : "bg-white text-gray-700 hover:bg-gray-50",
@@ -1423,16 +1460,16 @@ export function ErTeamReportForm({
                           </div>
                         </div>
 
-                        <div className="rounded-lg border shadow-sm p-3">
-                          <p className="text-xs font-semibold text-gray-600 mb-2">Circulation (C)</p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="rounded-lg border shadow-sm p-2 sm:p-3">
+                          <p className="text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs sm:mb-2">Circulation (C)</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-2">
                             {CIRCULATION_OPTIONS.map((option) => (
                               <Button
                                 key={option}
                                 type="button"
                                 variant={activePatient.circulationSelections.includes(option) ? "default" : "outline"}
                                 className={cn(
-                                  "justify-start",
+                                  "justify-start text-[10px] py-1 sm:text-xs sm:py-2",
                                   activePatient.circulationSelections.includes(option)
                                     ? "bg-orange-100 text-orange-700 border-orange-400"
                                     : "bg-white text-gray-700 hover:bg-gray-50",
@@ -1452,9 +1489,9 @@ export function ErTeamReportForm({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
                         <div>
-                          <Label htmlFor="incident-location" className="block text-xs font-semibold text-gray-600 mb-1">
+                          <Label htmlFor="incident-location" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
                             Incident location
                           </Label>
                           <Input
@@ -1462,18 +1499,19 @@ export function ErTeamReportForm({
                             value={activePatient.incidentLocation}
                             onChange={(event) => updatePatient(activePatientIndex, { incidentLocation: event.target.value })}
                             required
+                            className="text-xs sm:text-sm"
                           />
                         </div>
                         <div className="md:col-span-2">
-                          <Label className="block text-xs font-semibold text-gray-600 mb-1">Evacuation priority</Label>
-                          <div className="grid grid-cols-2 gap-2">
+                          <Label className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">Evacuation priority</Label>
+                          <div className="grid grid-cols-2 gap-1 sm:gap-2">
                             {PRIORITY_LABELS.map((priority) => (
                               <Button
                                 key={priority.value}
                                 type="button"
                                 variant={activePatient.evacPriority === priority.value ? "default" : "outline"}
                                 className={cn(
-                                  "justify-start",
+                                  "justify-start text-[10px] py-1 sm:text-xs sm:py-2",
                                   activePatient.evacPriority === priority.value
                                     ? priority.value === "4"
                                       ? "bg-black text-white border-transparent"  // Pure black background for Priority 4
@@ -1488,7 +1526,7 @@ export function ErTeamReportForm({
                               >
                                 <span
                                   className={cn(
-                                    "inline-flex h-2.5 w-2.5 rounded-full mr-2",
+                                    "inline-flex h-2 w-2 rounded-full mr-1 sm:mr-2",
                                     activePatient.evacPriority === priority.value
                                       ? priority.value === "4"
                                         ? "bg-black"  // Keep black for Priority 4 when selected
@@ -1501,8 +1539,8 @@ export function ErTeamReportForm({
                                   )}
                                 />
                                 <span className="text-left">
-                                  <span className="block text-sm font-semibold">{priority.label}</span>
-                                  <span className={cn("text-[11px]", activePatient.evacPriority === priority.value ? "text-white/80" : "text-gray-500")}>
+                                  <span className="block text-[10px] font-semibold sm:text-sm">{priority.label}</span>
+                                  <span className={cn("text-[9px] sm:text-[11px]", activePatient.evacPriority === priority.value ? "text-white/80" : "text-gray-500")}>
                                     {priority.description}
                                   </span>
                                 </span>
@@ -1511,27 +1549,7 @@ export function ErTeamReportForm({
                           </div>
                         </div>
                         <div>
-                          <Label htmlFor="receiving-hospital" className="block text-xs font-semibold text-gray-600 mb-1">
-                            Receiving hospital
-                          </Label>
-                          <Select
-                            value={activePatient.receivingHospitalId ?? ""}
-                            onValueChange={(value: string) => updatePatient(activePatientIndex, { receivingHospitalId: value })}
-                          >
-                            <SelectTrigger id="receiving-hospital">
-                              <SelectValue placeholder="Select hospital" />
-                            </SelectTrigger>
-                            <SelectContent className="max-h-56 overflow-y-auto">
-                              {hospitals.map((hospital) => (
-                                <SelectItem key={hospital.id} value={hospital.id}>
-                                  {hospital.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label htmlFor="moi-poi-toi" className="block text-xs font-semibold text-gray-600 mb-1">
+                          <Label htmlFor="moi-poi-toi" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
                             MOI / POI / TOI
                           </Label>
                           <Textarea
@@ -1540,10 +1558,11 @@ export function ErTeamReportForm({
                             onChange={(event) => updatePatient(activePatientIndex, { moiPoiToi: event.target.value })}
                             rows={2}
                             required
+                            className="text-xs sm:text-sm"
                           />
                         </div>
                         <div>
-                          <Label htmlFor="noi" className="block text-xs font-semibold text-gray-600 mb-1">
+                          <Label htmlFor="noi" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
                             NOI (Nature of injury)
                           </Label>
                           <Textarea
@@ -1551,10 +1570,11 @@ export function ErTeamReportForm({
                             value={activePatient.noi}
                             onChange={(event) => updatePatient(activePatientIndex, { noi: event.target.value })}
                             rows={2}
+                            className="text-xs sm:text-sm"
                           />
                         </div>
                         <div>
-                          <Label htmlFor="signs-symptoms" className="block text-xs font-semibold text-gray-600 mb-1">
+                          <Label htmlFor="signs-symptoms" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
                             Signs & symptoms
                           </Label>
                           <Textarea
@@ -1563,20 +1583,21 @@ export function ErTeamReportForm({
                             onChange={(event) => updatePatient(activePatientIndex, { signsSymptoms: event.target.value })}
                             rows={2}
                             required
+                            className="text-xs sm:text-sm"
                           />
                         </div>
                       </div>
 
                       <div>
-                        <p className="text-xs font-semibold text-gray-600 mb-2">Emergency category</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        <p className="text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs sm:mb-2">Emergency category</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1 sm:gap-2">
                           {EMERGENCY_CATEGORY_OPTIONS.map((option) => (
                             <Button
                               key={option}
                               type="button"
                               variant={activePatient.typeOfEmergencySelections.includes(option) ? "default" : "outline"}
                               className={cn(
-                                "justify-start",
+                                "justify-start text-[10px] py-1 sm:text-xs sm:py-2",
                                 activePatient.typeOfEmergencySelections.includes(option)
                                   ? "bg-orange-500 text-white"
                                   : "bg-white text-gray-700 hover:bg-gray-50",
@@ -1597,18 +1618,18 @@ export function ErTeamReportForm({
                     </div>
                   </div>
 
-                  <div className="rounded-lg border shadow-sm p-4 space-y-4">
-                    <p className="text-sm font-semibold text-gray-700">Transport & turnover</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="rounded-lg border shadow-sm p-2 space-y-3 sm:p-4 sm:space-y-4">
+                    <p className="text-xs font-semibold text-gray-700 sm:text-sm">Transport & turnover</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
                       <div>
-                        <Label htmlFor="receiving-hospital" className="block text-xs font-semibold text-gray-600 mb-1">
+                        <Label htmlFor="receiving-hospital" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
                           Receiving hospital
                         </Label>
                         <Select
                           value={activePatient.receivingHospitalId ?? ""}
                           onValueChange={(value: string) => updatePatient(activePatientIndex, { receivingHospitalId: value })}
                         >
-                          <SelectTrigger id="receiving-hospital">
+                          <SelectTrigger id="receiving-hospital" className="text-xs sm:text-sm">
                             <SelectValue placeholder="Select hospital" />
                           </SelectTrigger>
                           <SelectContent className="max-h-56 overflow-y-auto">
@@ -1639,7 +1660,7 @@ export function ErTeamReportForm({
                         />
                       </div>
                       <div>
-                        <Label htmlFor="turnover-in-charge" className="block text-xs font-semibold text-gray-600 mb-1">
+                        <Label htmlFor="turnover-in-charge" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
                           Turnover in-charge
                         </Label>
                         <Input
@@ -1647,20 +1668,21 @@ export function ErTeamReportForm({
                           value={activePatient.turnoverInCharge}
                           onChange={(event) => updatePatient(activePatientIndex, { turnoverInCharge: event.target.value })}
                           required
+                          className="text-xs sm:text-sm"
                         />
                       </div>
                       <div>
-                        <Label htmlFor="blood-loss" className="block text-xs font-semibold text-gray-600 mb-2">
+                        <Label htmlFor="blood-loss" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs sm:mb-2">
                           Blood loss level
                         </Label>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-1 sm:gap-2">
                           {BLOOD_LOSS_OPTIONS.map((option) => (
                             <Button
                               key={option}
                               type="button"
                               variant={activePatient.bloodLossLevel === option ? "default" : "outline"}
                               className={cn(
-                                "px-4",
+                                "px-2 py-1 text-[10px] sm:px-4 sm:py-2 sm:text-xs",
                                 activePatient.bloodLossLevel === option
                                   ? "bg-orange-500 text-white"
                                   : "bg-white text-gray-700 hover:bg-gray-50",
@@ -1673,7 +1695,7 @@ export function ErTeamReportForm({
                         </div>
                       </div>
                       <div>
-                        <Label htmlFor="estimated-blood-loss" className="block text-xs font-semibold text-gray-600 mb-1">
+                        <Label htmlFor="estimated-blood-loss" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
                           Estimated blood loss (L)
                         </Label>
                         <Input
@@ -1681,6 +1703,7 @@ export function ErTeamReportForm({
                           value={activePatient.estimatedBloodLoss}
                           onChange={(event) => updatePatient(activePatientIndex, { estimatedBloodLoss: event.target.value })}
                           placeholder="e.g., 0.5"
+                          className="text-xs sm:text-sm"
                         />
                       </div>
                     </div>
@@ -1690,9 +1713,9 @@ export function ErTeamReportForm({
             </section>
           </TabsContent>
 
-          <TabsContent value="injuries" className="flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-            <section className="space-y-4">
-              {/* Patient Tabs for Injuries */}
+          <TabsContent value="injuries" className="flex-1 overflow-y-auto px-3 py-3 sm:px-6 sm:py-5">
+            <section className="space-y-3 sm:space-y-4">
+              {/* Patient Tabs */}
               <div className="flex items-center justify-between">
                 <Tabs value={`patient-${activePatientIndex}`} className="flex-1">
                   <TabsList className="grid grid-cols-4 gap-1">
@@ -1701,7 +1724,7 @@ export function ErTeamReportForm({
                         key={index}
                         value={`patient-${index}`}
                         onClick={() => setActivePatientIndex(index)}
-                        className="text-xs"
+                        className="text-[10px] sm:text-xs"
                       >
                         Patient {index + 1}
                       </TabsTrigger>
@@ -1713,10 +1736,11 @@ export function ErTeamReportForm({
                   variant="outline"
                   size="sm"
                   onClick={addPatient}
-                  className="ml-2"
+                  className="ml-2 text-xs sm:text-sm"
                 >
-                  <User className="mr-1 h-4 w-4" />
-                  Add Patient
+                  <User className="mr-1 h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden sm:inline">Add Patient</span>
+                  <span className="sm:hidden">Add</span>
                 </Button>
               </div>
 
@@ -1728,27 +1752,28 @@ export function ErTeamReportForm({
                     variant="destructive"
                     size="sm"
                     onClick={() => removePatient(activePatientIndex)}
+                    className="text-xs sm:text-sm"
                   >
-                    <XCircle className="mr-1 h-4 w-4" />
+                    <XCircle className="mr-1 h-3 w-3 sm:h-4 sm:w-4" />
                     Remove Patient {activePatientIndex + 1}
                   </Button>
                 </div>
               )}
 
               <Card className="border-none shadow-sm">
-                <CardContent className="space-y-5 pt-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+                <CardContent className="space-y-3 pt-3 sm:space-y-5 sm:pt-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
                     <div className="space-y-1">
-                      <p className="text-sm font-semibold text-gray-800">Tap body regions to log injuries</p>
-                      <p className="text-xs text-gray-500">Colors indicate the most severe injury logged on each region.</p>
+                      <p className="text-xs font-semibold text-gray-800 sm:text-sm">Tap body regions to log injuries</p>
+                      <p className="text-[10px] text-gray-500 sm:text-xs">Colors indicate the most severe injury logged on each region.</p>
                     </div>
                   </div>
                   <Tabs value={diagramView} onValueChange={handleChangeDiagramView} className="w-full">
-                    <TabsList className="grid w-full grid-cols-2 rounded-xl bg-gray-100 p-1 text-sm">
+                    <TabsList className="grid w-full grid-cols-2 rounded-xl bg-gray-100 p-1 text-[10px] sm:text-sm">
                       <TabsTrigger value="front">Front</TabsTrigger>
                       <TabsTrigger value="back">Back</TabsTrigger>
                     </TabsList>
-                    <TabsContent value="front" className="mt-4">
+                    <TabsContent value="front" className="mt-3 sm:mt-4">
                       <BodyDiagram
                         view="front"
                         svgPath={FRONT_SVG_PATH}
@@ -1761,7 +1786,7 @@ export function ErTeamReportForm({
                         }}
                       />
                     </TabsContent>
-                    <TabsContent value="back" className="mt-4">
+                    <TabsContent value="back" className="mt-3 sm:mt-4">
                       <BodyDiagram
                         view="back"
                         svgPath={BACK_SVG_PATH}
@@ -1775,16 +1800,16 @@ export function ErTeamReportForm({
                       />
                     </TabsContent>
                   </Tabs>
-                  <div className="space-y-2 text-xs text-gray-600">
+                  <div className="space-y-1 text-[10px] text-gray-600 sm:space-y-2 sm:text-xs">
                     <p className="font-semibold text-gray-700">Legend</p>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-1 sm:gap-2">
                       {INJURY_TYPE_OPTIONS.map((option) => (
-                        <span key={option.code} className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1">
+                        <span key={option.code} className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2 py-1 sm:px-3 sm:py-1">
                           <span
-                            className="inline-flex h-2.5 w-2.5 rounded-full"
+                            className="inline-flex h-2 w-2 rounded-full"
                             style={{ backgroundColor: INJURY_TYPE_COLOR_MAP[option.code] }}
                           />
-                          {option.label}
+                          <span className="text-[9px] sm:text-xs">{option.label}</span>
                         </span>
                       ))}
                     </div>
@@ -1792,21 +1817,18 @@ export function ErTeamReportForm({
                 </CardContent>
               </Card>
 
-              {activeRegionSelection ? (
-                <Card className="border-none shadow-sm">
-                  <CardContent className="space-y-4 pt-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-gray-800">Selected region</p>
-                        <p className="text-xs text-gray-500">
-                          {REGION_LABELS[activeRegionSelection.region] ?? activeRegionSelection.region} ({activeRegionSelection.view})
-                        </p>
-                      </div>
-                      <Button size="sm" variant="outline" onClick={handleClearRegionInjuries}>
-                        Clear region
-                      </Button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <Dialog open={Boolean(activeRegionSelection)} onOpenChange={(open) => !open && setActiveRegionSelection(null)}>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>
+                      Select injuries for {activeRegionSelection ? normalizeRegionLabel(activeRegionSelection.region) : ""}
+                    </DialogTitle>
+                    <DialogDescription>
+                      Choose all applicable injury types for this body region.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
                       {INJURY_TYPE_OPTIONS.map((option) => {
                         const isActive = activeRegionInjuries.includes(option.code)
                         return (
@@ -1814,18 +1836,28 @@ export function ErTeamReportForm({
                             key={option.code}
                             type="button"
                             variant={isActive ? "default" : "outline"}
-                            className={isActive ? "bg-orange-500 hover:bg-orange-600" : "border-gray-200"}
+                            className={cn(
+                              "justify-start",
+                              isActive
+                                ? "bg-orange-500 text-white hover:bg-orange-600"
+                                : "bg-white text-gray-700 hover:bg-gray-50",
+                            )}
                             onClick={() => handleToggleInjury(option.code)}
                           >
+                            <span
+                              className="mr-2 inline-flex h-4 w-4 items-center justify-center rounded-full"
+                              style={{ backgroundColor: INJURY_TYPE_COLOR_MAP[option.code], color: "#fff" }}
+                            >
+                              {option.code}
+                            </span>
                             {option.label}
                           </Button>
                         )
                       })}
                     </div>
-                    {activeRegionInjuries.length === 0 ? (
-                      <p className="text-xs text-gray-500">Select one or more injury types to log for this body region.</p>
-                    ) : (
+                    {activeRegionInjuries.length > 0 && (
                       <div className="flex flex-wrap gap-2">
+                        <p className="text-sm font-medium text-gray-700 w-full">Selected injuries:</p>
                         {activeRegionInjuries.map((code) => (
                           <Badge key={code} className="bg-orange-100 text-orange-700">
                             {INJURY_TYPE_OPTIONS.find((option) => option.code === code)?.label ?? code}
@@ -1833,15 +1865,18 @@ export function ErTeamReportForm({
                         ))}
                       </div>
                     )}
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card className="border-none shadow-sm">
-                  <CardContent className="pt-4 text-sm text-gray-500">
-                    Tap a body region to begin logging injuries.
-                  </CardContent>
-                </Card>
-              )}
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <Button type="button" variant="outline" onClick={handleClearRegionInjuries}>
+                      Clear region
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => setActiveRegionSelection(null)}>
+                      Done
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+
 
               <Card className="border-none shadow-sm">
                 <CardContent className="space-y-4 pt-4">

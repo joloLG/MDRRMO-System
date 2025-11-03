@@ -29,7 +29,7 @@ type ErTeamInjuryPayload = {
 export interface AdminErTeamReportDetails {
   id: string
   status: string
-  patient_payload?: ErTeamPatientPayload | null
+  patient_payload?: ErTeamPatientPayload[] | null // Now an array of patients
   incident_payload?: Record<string, unknown> | null
   injury_payload?: ErTeamInjuryPayload
   notes?: string | null
@@ -274,6 +274,7 @@ interface ErTeamPatientPayload {
   locAvpu?: string | null
   evacPriority?: string | null
   bodyPartInjuries?: Record<string, string[]> | null
+  injuryPayload?: ErTeamInjuryPayload
 }
 
 interface PatientFormState {
@@ -365,8 +366,8 @@ const createEmptyPatient = (): PatientFormState => ({
   estimatedBloodLoss: "",
   turnoverInCharge: "",
   receivingHospitalId: undefined,
-  receivingDate: "",
-  emtErtDate: "",
+  receivingDate: format(new Date(), "yyyy-MM-dd"), // Auto-fill current date
+  emtErtDate: format(new Date(), "yyyy-MM-dd"), // Auto-fill current date
   bodyPartInjuries: {},
 })
 
@@ -392,10 +393,10 @@ const mergeInjuryPayload = (injuryPayload: ErTeamInjuryPayload): Record<string, 
 
 const normalizePayloadArray = (value: string[] | null | undefined): string[] => (Array.isArray(value) ? [...value] : [])
 
-const createPatientFromErPayload = (payload: ErTeamPatientPayload, injuryPayload: ErTeamInjuryPayload): PatientFormState => {
-  const bodyPartInjuries = Object.keys(payload.bodyPartInjuries ?? {}).length
-    ? cloneBodyInjuries(payload.bodyPartInjuries)
-    : mergeInjuryPayload(injuryPayload)
+const createPatientFromErPayload = (payload: ErTeamPatientPayload, globalInjuryPayload?: ErTeamInjuryPayload): PatientFormState => {
+  // Use the patient's own injury data if available, otherwise fall back to global injury data
+  const patientInjuryData = payload.injuryPayload || globalInjuryPayload
+  const bodyPartInjuries = patientInjuryData ? mergeInjuryPayload(patientInjuryData) : {}
   return {
     id: generatePatientId(),
     patientName: payload.patientName ?? "",
@@ -404,7 +405,7 @@ const createPatientFromErPayload = (payload: ErTeamPatientPayload, injuryPayload
     lastName: payload.lastName ?? "",
     suffix: payload.suffix ?? "",
     patientNumber: payload.patientNumber ?? "",
-    contactNumber: payload.contactNumber ?? "",
+    contactNumber: payload.contactNumber ?? payload.patientNumber ?? "",
     patientBirthday: payload.patientBirthday ?? "",
     patientAge: payload.patientAge ?? "",
     patientAddress: payload.patientAddress ?? "",
@@ -980,29 +981,37 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
   const [erTeamId, setErTeamId] = React.useState<string | undefined>()
   const [timeRespondedDate, setTimeRespondedDate] = React.useState("")
   const [timeRespondedTime, setTimeRespondedTime] = React.useState("")
-  const [personsInvolved, setPersonsInvolved] = React.useState<string>("")
-  const [numberOfResponders, setNumberOfResponders] = React.useState<string>("")
+  const [personsInvolved, setPersonsInvolved] = React.useState<string>("1") // Default to 1 casualty
+  const [numberOfResponders, setNumberOfResponders] = React.useState<string>("3") // Default to 3 responders
   const [preparedBy, setPreparedBy] = React.useState("")
   const [searchTerm, setSearchTerm] = React.useState("")
   const [otherIncidentDescription, setOtherIncidentDescription] = React.useState("")
   const [isBarangayDropdownOpen, setIsBarangayDropdownOpen] = React.useState(false)
   const barangayDropdownRef = React.useRef<HTMLDivElement | null>(null)
 
-  const initialPatientRef = React.useRef<PatientFormState | null>(null)
+  const initialPatientRef = React.useRef<PatientFormState[] | null>(null)
   const selectedPatientPayload = selectedReport?.er_team_report?.patient_payload ?? null
   const selectedInjuryPayload = selectedReport?.er_team_report?.injury_payload ?? null
 
   if (!initialPatientRef.current) {
-    if (selectedPatientPayload) {
+    if (Array.isArray(selectedPatientPayload) && selectedPatientPayload.length > 0) {
+      // Multiple patients from ER team report
+      const seededPatients = selectedPatientPayload.map((patientPayload, index) => 
+        createPatientFromErPayload(patientPayload, selectedInjuryPayload)
+      )
+      initialPatientRef.current = seededPatients
+    } else if (selectedPatientPayload && !Array.isArray(selectedPatientPayload)) {
+      // Single patient (legacy format)
       const seededPatient = createPatientFromErPayload(selectedPatientPayload, selectedInjuryPayload)
-      initialPatientRef.current = seededPatient
+      initialPatientRef.current = [seededPatient]
     } else {
-      initialPatientRef.current = createEmptyPatient()
+      // No ER team data
+      initialPatientRef.current = [createEmptyPatient()]
     }
   }
 
-  const [patients, setPatients] = React.useState<PatientFormState[]>(() => [initialPatientRef.current!])
-  const [activePatientId, setActivePatientId] = React.useState<string>(() => initialPatientRef.current!.id)
+  const [patients, setPatients] = React.useState<PatientFormState[]>(() => initialPatientRef.current!)
+  const [activePatientId, setActivePatientId] = React.useState<string>(() => initialPatientRef.current![0].id)
   const [patientValidationErrors, setPatientValidationErrors] = React.useState<Record<string, PatientFieldKey[]>>({})
   const [missingInjuryPatientIds, setMissingInjuryPatientIds] = React.useState<string[]>([])
 
@@ -1027,7 +1036,15 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
     const incidentId = selectedReport.id
     if (incidentPrefillStateRef.current.incidentId !== incidentId) {
       incidentPrefillStateRef.current = { incidentId, baseApplied: false }
-      if (selectedPatientPayload) {
+      if (Array.isArray(selectedPatientPayload) && selectedPatientPayload.length > 0) {
+        // Multiple patients from ER team report
+        const seededPatients = selectedPatientPayload.map((patientPayload, index) => 
+          createPatientFromErPayload(patientPayload, selectedInjuryPayload)
+        )
+        setPatients(seededPatients)
+        setActivePatientId(seededPatients[0].id)
+      } else if (selectedPatientPayload && !Array.isArray(selectedPatientPayload)) {
+        // Single patient (legacy format)
         const seededPatient = createPatientFromErPayload(selectedPatientPayload, selectedInjuryPayload)
         setPatients([seededPatient])
         setActivePatientId(seededPatient.id)
@@ -1050,23 +1067,33 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
         setTimeRespondedTime("")
       }
 
-      if (typeof selectedReport.casualties === "number" && !Number.isNaN(selectedReport.casualties)) {
-        const value = String(selectedReport.casualties)
-        setPersonsInvolved(value)
-        setNumberOfResponders(value)
+      // Auto-fill number of responders to 3 (standard team size)
+      if (!numberOfResponders) {
+        setNumberOfResponders("3")
       }
 
-      if (selectedPatientPayload && patients.length === 1) {
+      // Auto-fill casualties to match the number of patients
+      const patientCount = Array.isArray(selectedPatientPayload) ? selectedPatientPayload.length : (selectedPatientPayload ? 1 : 1)
+      if (!personsInvolved) {
+        setPersonsInvolved(String(patientCount))
+      }
+
+      if (Array.isArray(selectedPatientPayload) && selectedPatientPayload.length > 0) {
+        // For multiple patients, we don't prefill individual fields as they might differ
+        // The patients are already initialized above
+      } else if (selectedPatientPayload && !Array.isArray(selectedPatientPayload)) {
+        // Legacy single patient handling - selectedPatientPayload is a single patient object
+        const legacyPatient = selectedPatientPayload as ErTeamPatientPayload
         setPatients((prev) =>
           prev.map((patient, index) =>
             index === 0
               ? {
                   ...patient,
-                  incidentLocation: selectedPatientPayload.incidentLocation ?? patient.incidentLocation,
-                  receivingHospitalId: selectedPatientPayload.receivingHospitalId ?? patient.receivingHospitalId,
-                  receivingDate: selectedPatientPayload.receivingDate ?? patient.receivingDate,
-                  turnoverInCharge: selectedPatientPayload.turnoverInCharge ?? patient.turnoverInCharge,
-                  emtErtDate: selectedPatientPayload.emtErtDate ?? patient.emtErtDate,
+                  incidentLocation: legacyPatient.incidentLocation ?? patient.incidentLocation,
+                  receivingHospitalId: legacyPatient.receivingHospitalId ?? patient.receivingHospitalId,
+                  receivingDate: legacyPatient.receivingDate ?? patient.receivingDate,
+                  turnoverInCharge: legacyPatient.turnoverInCharge ?? patient.turnoverInCharge,
+                  emtErtDate: legacyPatient.emtErtDate ?? patient.emtErtDate,
                 }
               : patient,
           ),
@@ -1098,6 +1125,14 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
     if (incidentPrefillStateRef.current.incidentId !== selectedReport.id) return
     setErTeamId(String(selectedReport.er_team_id))
   }, [selectedReport, erTeamId, erTeams])
+
+  // Auto-update casualties count when patients change
+  React.useEffect(() => {
+    if (!selectedReport?.er_team_report) {
+      // Only auto-update for new admin reports, not when reviewing ER team reports
+      setPersonsInvolved(String(patients.length))
+    }
+  }, [patients.length, selectedReport?.er_team_report])
 
   const handlePatientChange = <K extends keyof PatientFormState>(patientId: string, key: K, value: PatientFormState[K]) => {
     if (key === "patientBirthday") {
@@ -1346,8 +1381,8 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
     setErTeamId(undefined)
     setTimeRespondedDate("")
     setTimeRespondedTime("")
-    setPersonsInvolved("")
-    setNumberOfResponders("")
+    setPersonsInvolved("1") // Default to 1 casualty
+    setNumberOfResponders("3") // Default to 3 responders
     setPreparedBy("")
     setSearchTerm("")
     setIsBarangayDropdownOpen(false)

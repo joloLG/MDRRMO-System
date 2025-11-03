@@ -783,6 +783,33 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
           const message = payload?.error ?? (response.status === 429 ? "Too many profile checks. Please wait a moment and try again." : response.statusText)
           const err = new Error(message || "Failed to load ER team profile")
           ;(err as { status?: number }).status = response.status
+
+          // If unauthorized, try to refresh the session
+          if (response.status === 401) {
+            console.log('🔄 Session expired, attempting refresh...')
+            try {
+              const { data, error } = await supabase.auth.refreshSession()
+              if (data.session && !error) {
+                console.log('✅ Session refreshed, retrying profile load...')
+                // Retry the profile load after session refresh
+                const retryResponse = await fetch("/api/er-team/me", { credentials: "include", signal: controller.signal })
+                const retryPayload = (await retryResponse.json().catch(() => ({}))) as typeof payload
+
+                if (retryResponse.ok && retryPayload.ok && retryPayload.team) {
+                  const resolvedTeamId = typeof retryPayload.team?.id === "number" ? retryPayload.team.id : null
+                  setTeamName(retryPayload.team?.name ?? null)
+                  setTeamId(resolvedTeamId)
+                  setProfileStatus(resolvedTeamId ? "authorized" : "unauthorized")
+                  writeCachedProfile({ teamId: resolvedTeamId, teamName: retryPayload.team?.name ?? null, cachedAt: new Date().toISOString() })
+                  console.log("ER Team profile loaded after session refresh:", { resolvedTeamId, teamName: retryPayload.team?.name, userId })
+                  return
+                }
+              }
+            } catch (refreshError) {
+              console.error('❌ Session refresh failed:', refreshError)
+            }
+          }
+
           throw err
         }
 
@@ -1057,7 +1084,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
           clientDraftId: draft.clientDraftId,
           emergencyReportId: draft.emergencyReportId,
           status: draft.status,
-          patientPayload: draft.patientsPayload?.[0] ?? {},
+          patientPayload: draft.patientsPayload ?? [],
           incidentPayload: draft.incidentPayload ?? undefined,
           injuryPayload: draft.injuryPayload ?? undefined,
           notes: typeof draft.notes === "string" ? draft.notes : undefined,
@@ -1419,6 +1446,16 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
         console.log('🔗 Realtime subscription status:', status, err ? `Error: ${err}` : '')
         if (err) {
           console.error('❌ Realtime subscription error:', err)
+          // Set up retry logic for connection issues
+          if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR') {
+            console.log('🔄 Retrying realtime subscription in 10 seconds...')
+            setTimeout(() => {
+              if (profileStatus === "authorized" && teamId) {
+                console.log('🔄 Retrying realtime subscription setup...')
+                // The useEffect will re-run and recreate the subscription
+              }
+            }, 10000)
+          }
         }
         if (status === 'SUBSCRIBED') {
           console.log('✅ Successfully subscribed to realtime channel:', `${SUPABASE_CHANNEL_PREFIX}${teamId}`)

@@ -6,7 +6,7 @@ import { z } from "zod"
 const DraftPayloadSchema = z.object({
   clientDraftId: z.string().uuid(),
   emergencyReportId: z.string().uuid(),
-  patientPayload: z.any(),
+  patientPayload: z.array(z.any()),
   incidentPayload: z.any().optional(),
   injuryPayload: z.any().optional(),
   notes: z.string().optional(),
@@ -38,13 +38,23 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     if (mappingError) {
-      console.error("[er-team draft] mapping error", mappingError)
-      return NextResponse.json({ error: "Unable to verify ER team assignment" }, { status: 500 })
+      console.error("[er-team draft] mapping error:", {
+        error: mappingError,
+        userId,
+        message: mappingError.message,
+        details: mappingError.details,
+        hint: mappingError.hint,
+        code: mappingError.code
+      })
+      return NextResponse.json({ error: "Unable to verify ER team assignment", details: mappingError.message }, { status: 500 })
     }
 
     if (!mapping) {
-      return NextResponse.json({ error: "No ER team assignment" }, { status: 403 })
+      console.warn("[er-team draft] No ER team assignment found for user:", userId)
+      return NextResponse.json({ error: "No ER team assignment found. Please contact an administrator." }, { status: 403 })
     }
+
+    console.log("[er-team draft] ER team assignment verified:", { userId, erTeamId: mapping.er_team_id })
 
     const { clientDraftId, status, submittedAt, patientPayload, incidentPayload, injuryPayload, notes, emergencyReportId, internalReportId } = parsed.data
 

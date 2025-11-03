@@ -85,7 +85,7 @@ interface ErTeamReportSummary {
   status: "draft" | "pending_review" | "in_review" | "approved" | "rejected"
   er_team_id: number
   submitted_by: string
-  patient_payload: Record<string, any>
+  patient_payload: Record<string, any>[] // Now an array of patients
   incident_payload: Record<string, any> | null
   injury_payload: {
     front?: Record<string, string[]>
@@ -1622,16 +1622,22 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
 
                           <div className="space-y-3 text-sm text-gray-700">
                             {(() => {
-                              const patientInfo = selectedErTeamReport.patient_payload?.patientInformation
+                              const patients = Array.isArray(selectedErTeamReport.patient_payload) ? selectedErTeamReport.patient_payload : [selectedErTeamReport.patient_payload].filter(Boolean)
+                              const firstPatient = patients[0]
+                              if (!firstPatient) return null
+                              
+                              const patientInfo = firstPatient.patientInformation
                               if (!patientInfo) return null
+                              
                               const name = `${patientInfo.firstName ?? ""} ${patientInfo.lastName ?? ""}`.trim()
                               const hasName = name.length > 0
                               const hasAge = Boolean(patientInfo.age)
                               const hasSex = typeof patientInfo.sex === "string" && patientInfo.sex.length > 0
                               if (!hasName && !hasAge && !hasSex) return null
+                              
                               return (
                                 <div>
-                                  <p className="text-xs uppercase text-orange-800/80">Lead patient</p>
+                                  <p className="text-xs uppercase text-orange-800/80">Lead patient {patients.length > 1 ? `(1 of ${patients.length})` : ""}</p>
                                   {hasName ? <p className="font-medium">{name}</p> : null}
                                   {hasAge || hasSex ? (
                                     <p className="text-xs text-gray-500">
