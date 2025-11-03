@@ -30,6 +30,10 @@ import {
   type ErTeamPatientPayload,
 } from "./er-team-report-form"
 
+// Capacitor imports
+import { CapacitorGeolocation, type LocationCoords, type LocationError } from "@/lib/capacitor-geolocation"
+import { CapacitorNotifications } from "@/lib/capacitor-notifications"
+
 const LocationMap = dynamic(() => import("@/components/LocationMap"), { ssr: false })
 const DASHBOARD_BACKGROUND_STYLE: React.CSSProperties = {
   backgroundImage: 'url("/images/mdrrmo_dashboard_bg.jpg")',
@@ -502,8 +506,8 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   const [userId, setUserId] = React.useState<string | null>(null)
   const [selectedIncidentId, setSelectedIncidentId] = React.useState<string | null>(null)
   const [resolvingIncidentId, setResolvingIncidentId] = React.useState<string | null>(null)
-  const [userLocation, setUserLocation] = React.useState<{ lat: number; lng: number } | null>(null)
-  const [locationPermission, setLocationPermission] = React.useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown')
+  const [userLocation, setUserLocation] = React.useState<LocationCoords | null>(null)
+  const [locationPermission, setLocationPermission] = React.useState<'granted' | 'denied' | 'prompt' | 'unknown' | string>('unknown')
   const [locationError, setLocationError] = React.useState<string | null>(null)
   const [isGettingLocation, setIsGettingLocation] = React.useState(false)
   const [reportsStatusFilter, setReportsStatusFilter] = React.useState<ReportsStatusFilter>("all")
@@ -545,7 +549,6 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   }, [])
 
   const assignedIncidentIdsRef = React.useRef<Set<string>>(new Set())
-  const dispatchAlertAudioRef = React.useRef<HTMLAudioElement | null>(null)
   const [dispatchNotifications, setDispatchNotifications] = React.useState<TeamDispatchNotification[]>([])
   const [hasUnreadDispatchAlert, setHasUnreadDispatchAlert] = React.useState(false)
   const [isNotificationDropdownOpen, setIsNotificationDropdownOpen] = React.useState(false)
@@ -591,18 +594,9 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   )
 
   const checkLocationPermission = React.useCallback(async () => {
-    if (!navigator.permissions) {
-      setLocationPermission('unknown')
-      return
-    }
-
     try {
-      const result = await navigator.permissions.query({ name: 'geolocation' })
-      setLocationPermission(result.state as 'granted' | 'denied' | 'prompt')
-
-      result.addEventListener('change', () => {
-        setLocationPermission(result.state as 'granted' | 'denied' | 'prompt')
-      })
+      const result = await CapacitorGeolocation.checkPermissions()
+      setLocationPermission(result.location)
     } catch (error) {
       console.warn('Permission API not supported:', error)
       setLocationPermission('unknown')
@@ -610,27 +604,15 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   }, [])
 
   const requestLocation = React.useCallback(async () => {
-    if (!navigator.geolocation) {
-      setLocationError('Geolocation is not supported by this browser')
-      return
-    }
-
     setIsGettingLocation(true)
     setLocationError(null)
 
     try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 300000 // 5 minutes
-        })
+      const coords = await CapacitorGeolocation.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 300000 // 5 minutes
       })
-
-      const coords = {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude
-      }
 
       setUserLocation(coords)
       setLocationPermission('granted')
@@ -639,12 +621,12 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
       console.error('Failed to get location:', error)
       let errorMessage = 'Failed to get your location'
 
-      if (error.code === error.PERMISSION_DENIED) {
+      if (error.code === 1) {
         errorMessage = 'Location permission denied. Please enable location access.'
         setLocationPermission('denied')
-      } else if (error.code === error.POSITION_UNAVAILABLE) {
+      } else if (error.code === 2) {
         errorMessage = 'Location information is unavailable'
-      } else if (error.code === error.TIMEOUT) {
+      } else if (error.code === 3) {
         errorMessage = 'Location request timed out'
       }
 
@@ -1430,15 +1412,26 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
 
         setDispatchNotifications(prev => [notification, ...prev.slice(0, MAX_DISPATCH_NOTIFICATIONS - 1)])
         setHasUnreadDispatchAlert(true)
+
+        // Show notification overlay and play alert sound
         if (lastDispatchOverlayIdRef.current !== notificationId) {
           showDispatchOverlay(notification)
           lastDispatchOverlayIdRef.current = notificationId
         }
 
-        // Play notification sound if available
-        if (dispatchAlertAudioRef.current) {
-          dispatchAlertAudioRef.current.play().catch(() => {})
-        }
+        // Use Capacitor notifications for alert sound and notification
+        CapacitorNotifications.showDispatchAlert({
+          title: 'ER Team Dispatch Alert',
+          body: `${notification.incidentType ?? "Incident"}: ${notification.locationAddress ?? "Location pending"}`,
+          id: notificationId.toString(),
+          sound: true,
+          extra: {
+            emergencyReportId: notification.emergencyReportId,
+            eventType: notification.eventType,
+          }
+        }).catch((error) => {
+          console.warn('Failed to show Capacitor notification:', error)
+        })
 
         console.log('✅ ER Team notified of new assignment:', notification)
       }
@@ -1800,7 +1793,6 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20" style={{ ...DASHBOARD_BACKGROUND_STYLE, backgroundBlendMode: "overlay" }}>
       <div className="flex min-h-screen flex-col">
-        <audio ref={dispatchAlertAudioRef} src="/sounds/alert.mp3" preload="auto" className="hidden" />
         {dispatchOverlay ? (
           <div className="pointer-events-none fixed inset-0 z-40 flex items-start justify-center bg-black/40 px-4 py-8">
             <div className="pointer-events-auto w-full max-w-3xl overflow-hidden rounded-3xl border border-white/30 bg-white/95 shadow-[0_28px_80px_-24px_rgba(16,24,40,0.45)] backdrop-blur-lg">
