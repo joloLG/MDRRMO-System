@@ -523,12 +523,17 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   }, [])
 
   const handleDismissDispatchOverlay = React.useCallback(() => {
+    // Always select the latest assigned incident when dismissing overlay
+    const latestIncident = assignedIncidents[0]
+    if (latestIncident) {
+      setSelectedIncidentId(latestIncident.id)
+    }
     if (dispatchOverlayTimeoutRef.current) {
       clearTimeout(dispatchOverlayTimeoutRef.current)
       dispatchOverlayTimeoutRef.current = null
     }
     setDispatchOverlay(null)
-  }, [])
+  }, [assignedIncidents])
 
   React.useEffect(() => {
     return () => {
@@ -1300,15 +1305,6 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
 
             setDispatchNotifications(prev => [notification, ...prev.slice(0, MAX_DISPATCH_NOTIFICATIONS - 1)])
             setHasUnreadDispatchAlert(true)
-            if (lastDispatchOverlayIdRef.current !== notificationId) {
-              showDispatchOverlay(notification)
-              lastDispatchOverlayIdRef.current = notificationId
-            }
-
-            // Play notification sound if available
-            if (dispatchAlertAudioRef.current) {
-              dispatchAlertAudioRef.current.play().catch(() => {})
-            }
           }
         }
       }
@@ -1822,7 +1818,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
           </div>
         ) : null}
 
-        <header className="sticky top-0 z-20 flex flex-col gap-2 bg-gradient-to-r from-orange-500 via-orange-600 to-red-500/95 px-4 py-4 text-white shadow-xl backdrop-blur-sm border-b border-orange-400/30 sm:px-6">
+        <header className="sticky top-0 z-20 flex flex-col gap-1 bg-gradient-to-r from-orange-500 via-orange-600 to-red-500/95 px-4 py-1 text-white shadow-xl backdrop-blur-sm border-b border-orange-400/30 sm:px-6">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
@@ -1831,25 +1827,27 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                 </svg>
               </div>
               <div>
-                <h1 className="text-xl font-bold sm:text-2xl bg-gradient-to-r from-white to-orange-100 bg-clip-text text-transparent">ER Team PCR Reports</h1>
-                <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-orange-100/90">
-                  {teamName ? <span className="flex items-center gap-1"><span className="w-2 h-2 bg-green-400 rounded-full"></span>Logged in as {teamName}</span> : null}
-                  <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium ${
-                    isOnline
-                      ? 'bg-green-500/20 text-green-100 border border-green-400/30'
-                      : 'bg-gray-500/20 text-gray-300 border border-gray-400/30'
-                  }`}>
-                    {isOnline ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
-                    {isOnline ? "Online" : "Offline - Draft mode"}
-                  </span>
-                </div>
+                <h1 className="text-sm font-bold sm:text-base bg-gradient-to-r from-white to-orange-100 bg-clip-text text-transparent">ER Team PCR Reports</h1>
                 {profileError ? (
-                  <p className="mt-2 text-sm text-red-200 bg-red-500/20 px-3 py-1 rounded-md border border-red-400/30">{profileError}</p>
+                  <p className="mt-2 text-xs sm:text-sm text-red-200 bg-red-500/20 px-3 py-1 rounded-md border border-red-400/30">{profileError}</p>
                 ) : null}
               </div>
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Refresh data"
+                onClick={async () => {
+                  await Promise.all([refreshAssignedIncidents(), refreshReports()])
+                }}
+                disabled={!isOnline}
+                className="text-white/90 hover:bg-white/20 hover:text-white rounded-full p-2 transition-all duration-200 backdrop-blur-sm"
+              >
+                <RefreshCw className="h-5 w-5" />
+              </Button>
               <Popover open={isNotificationDropdownOpen} onOpenChange={handleNotificationPopoverChange}>
                 <PopoverTrigger asChild>
                   <Button
@@ -1978,6 +1976,19 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
         </header>
 
         <main className="flex-1 space-y-6 px-4 py-6 sm:px-6">
+          <div className="flex justify-end">
+            <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
+              {teamName ? <span className="flex items-center gap-1"><span className="w-2 h-2 bg-green-400 rounded-full"></span>Logged in as {teamName}</span> : null}
+              <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium ${
+                isOnline
+                  ? 'bg-green-100 text-green-700 border border-green-200'
+                  : 'bg-gray-100 text-gray-700 border border-gray-200'
+              }`}>
+                {isOnline ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+                {isOnline ? "Online" : "Offline - Draft mode"}
+              </span>
+            </div>
+          </div>
           {referenceError ? (
             <div
               className="rounded-lg border border-red-200 bg-orange-50 px-4 py-3 text-xs text-red-700 shadow-sm animate-in fade-in-0 slide-in-from-left-4"
