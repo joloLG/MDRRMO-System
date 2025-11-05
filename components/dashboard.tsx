@@ -86,6 +86,39 @@ interface QueuedReport {
   queueTimestamp: number;
 }
 
+const PROFILE_CACHE_KEY = "mdrrmo_user_profile_cache"
+
+interface ProfileCacheRecord {
+  user: any
+  cachedAt: string
+}
+
+const readCachedProfile = (): ProfileCacheRecord | null => {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.localStorage.getItem(PROFILE_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as ProfileCacheRecord
+    if (!parsed || typeof parsed !== "object" || !parsed.user) return null
+    return parsed
+  } catch (error) {
+    console.warn("Failed to read cached user profile", error)
+    return null
+  }
+}
+
+const writeCachedProfile = (user: any) => {
+  if (typeof window === "undefined") return
+  try {
+    window.localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({
+      user,
+      cachedAt: new Date().toISOString()
+    }))
+  } catch (error) {
+    console.warn("Failed to cache user profile", error)
+  }
+}
+
 interface DashboardProps {
   onLogout: () => void
   userData?: any
@@ -922,15 +955,35 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
         return;
       }
       const userId = sessionData.session.user.id;
-      const { data: userProfile } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single();
+
+      // Try to fetch profile
+      let userProfile = null;
+      const cache = readCachedProfile();
+
+      try {
+        const { data } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', userId)
+          .single();
+        userProfile = data;
+        writeCachedProfile(data);
+      } catch (error: any) {
+        console.warn("Failed to fetch user profile in forceReinit:", error);
+        if (cache && cache.user.id === userId) {
+          console.log("Using cached user profile in forceReinit");
+          userProfile = cache.user;
+        } else {
+          onLogout();
+          return;
+        }
+      }
+
       if (!userProfile) {
         onLogout();
         return;
       }
+
       setCurrentUser(userProfile);
       setEditingMobileNumber(formatMobileNumberForInput(userProfile.mobileNumber));
       setEditingUsername(userProfile.username || '');
@@ -1028,13 +1081,34 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       }
       const user = sessionData.session.user;
 
-      const { data: userProfile, error: profileError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single();
+      // Try to fetch profile from API
+      let userProfile = null;
+      const cache = readCachedProfile();
+      let usedCache = false;
 
-      if (profileError || !userProfile) {
+      try {
+        const { data } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+        userProfile = data;
+        writeCachedProfile(data); // Cache the fresh data
+      } catch (error: any) {
+        console.warn("Failed to fetch user profile:", error);
+        // Use cached profile as fallback
+        if (cache && cache.user.id === user.id) {
+          console.log("Using cached user profile as fallback");
+          userProfile = cache.user;
+          usedCache = true;
+        } else {
+          console.warn("No cached profile available, logging out");
+          onLogout();
+          return;
+        }
+      }
+
+      if (!userProfile) {
         onLogout();
         return;
       }
@@ -1546,6 +1620,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       setCurrentUser(data);
       setEditingMobileNumber(formatMobileNumberForInput(data.mobileNumber));
       setProfileEditSuccess("Profile updated successfully!");
+      writeCachedProfile(data);
     } catch (error: any) {
       console.error("Error updating profile:", error);
       setProfileEditError(`Failed to update profile: ${error.message || 'Unknown error'}. Please check your Supabase RLS policies for 'users' UPDATE operation.`);
@@ -1693,49 +1768,6 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
       <div className="relative min-h-screen">
         <div className="sticky top-0 z-30 bg-orange-500/95 backdrop-blur-sm text-white p-4 shadow-lg">
-          {(queuedReports.length > 0 || showQueuedNotice) && (
-            <Alert
-              variant="default"
-              className={`mb-3 ${queuedReports.length > 0 ? 'bg-orange-100 text-orange-900' : 'bg-green-100 text-green-900'}`}
-            >
-              <AlertTitle className="flex items-center justify-between">
-                <span>
-                  {queuedReports.length > 0
-                    ? `${queuedReports.length} pending emergency ${queuedReports.length === 1 ? 'report' : 'reports'} ready to send`
-                    : 'Offline emergency reports synced successfully'}
-                </span>
-                {queuedReports.length > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="bg-white text-orange-600 border-orange-400"
-                    onClick={handleFlushQueued}
-                    disabled={!isOnline}
-                  >
-                    {isOnline ? 'Sync now' : 'Waiting for connection'}
-                  </Button>
-                )}
-              </AlertTitle>
-              {queuedReports.length > 0 && (
-                <AlertDescription className="mt-2 space-y-1">
-                  {queuedReports.slice(0, 3).map(item => (
-                    <div key={item.id} className="flex items-center justify-between text-sm">
-                      <div className="truncate pr-2">
-                        <span className="font-semibold">{item.emergencyType}</span>
-                        <span className="ml-2 text-xs opacity-80">{item.location}</span>
-                      </div>
-                      <span className="text-xs opacity-80">
-                        {formatDistanceToNowStrict(new Date(item.createdAt), { addSuffix: true })}
-                      </span>
-                    </div>
-                  ))}
-                  {queuedReports.length > 3 && (
-                    <div className="text-xs opacity-80">+{queuedReports.length - 3} more</div>
-                  )}
-                </AlertDescription>
-              )}
-            </Alert>
-          )}
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <button 

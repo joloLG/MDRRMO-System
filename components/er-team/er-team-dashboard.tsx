@@ -917,7 +917,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
     setLoadingReports(true)
     setLoadingError(null)
     try {
-      const response = await fetch("/api/er-team/reports", { credentials: "include" })
+      const response = await fetch("/api/er-team/reports", { credentials: "include", cache: "no-cache" })
       if (!response.ok) {
         const message = await extractErrorMessage(response)
         throw new Error(message)
@@ -955,7 +955,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
 
     try {
       console.log('🌐 Fetching from /api/er-team/assigned')
-      const response = await fetch("/api/er-team/assigned", { credentials: "include" })
+      const response = await fetch("/api/er-team/assigned", { credentials: "include", cache: "no-cache" })
 
       console.log('📥 Response status:', response.status)
       console.log('📥 Response ok:', response.ok)
@@ -1232,6 +1232,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   React.useEffect(() => {
     if (isOnline) {
       void refreshReports()
+      void refreshAssignedIncidents()
       void (async () => {
         const cache = readCachedProfile()
         if (!cache) {
@@ -1241,7 +1242,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
         setTeamName(cache.teamName)
       })()
     }
-  }, [isOnline, refreshReports])
+  }, [isOnline, refreshReports, refreshAssignedIncidents])
 
   React.useEffect(() => {
     let cancelled = false
