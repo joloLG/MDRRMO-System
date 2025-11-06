@@ -10,7 +10,7 @@ const CONTENT_SECURITY_POLICY = [
   scriptSrc,
   "style-src 'self' 'unsafe-inline' https://unpkg.com",
   "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com https://*.supabase.co",
-  "font-src 'self' https://unpkg.com",
+  "font-src 'self' https://unpkg.com data:",
   "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.tile.openstreetmap.org",
   "frame-src 'self' https://www.openstreetmap.org",
   "media-src 'self' data: blob: https://*.supabase.co",

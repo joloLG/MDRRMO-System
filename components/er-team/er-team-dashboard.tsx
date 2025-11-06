@@ -1646,10 +1646,21 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
       }
     }, 30000) // Refresh every 30 seconds as fallback
 
+    // Add visibility change listener for when user returns to tab
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !assignedLoading) {
+        console.log('Tab became visible: refreshing assigned incidents')
+        void refreshAssignedIncidents()
+        void refreshReports()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
     return () => {
       clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [profileStatus, teamId, assignedLoading, refreshAssignedIncidents])
+  }, [profileStatus, teamId, assignedLoading, refreshAssignedIncidents, refreshReports])
 
   const assignedIncidentLookup = React.useMemo(() => {
     const map = new Map<string, AssignedIncident>()
