@@ -80,6 +80,8 @@ interface BaseEntry {
   name: string;
 }
 
+type NotificationPermissionState = NotificationPermission | "unsupported";
+
 interface ErTeamReportSummary {
   id: string
   status: "draft" | "pending_review" | "in_review" | "approved" | "rejected"
@@ -167,6 +169,9 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [activeAlertPath, setActiveAlertPath] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const hasAutoSelectedRef = useRef<boolean>(false);
+  const [isPageVisible, setIsPageVisible] = useState<boolean>(true);
+  const isPageVisibleRef = useRef<boolean>(true);
+  const [browserNotificationPermission, setBrowserNotificationPermission] = useState<NotificationPermissionState>('default');
 
   const loadActiveAlert = useCallback(async () => {
     try {
@@ -219,23 +224,128 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     }
   }, [soundEnabled, activeAlertPath]);
 
-  const toggleSound = useCallback(async () => {
-    setSoundEnabled(prev => {
+  const toggleSound = useCallback(() => {
+    setSoundEnabled((prev) => {
       const next = !prev;
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('mdrrmo_admin_sound_enabled', String(next));
+      if (typeof window !== "undefined") {
+        localStorage.setItem("mdrrmo_admin_sound_enabled", String(next));
       }
       return next;
     });
+
+    setTimeout(() => {
+      if (!audioRef.current) {
+        audioRef.current = new Audio();
+      }
+      if (soundEnabled === false && activeAlertPath) {
+        void playAlertSound();
+      }
+    }, 100);
+  }, [soundEnabled, activeAlertPath, playAlertSound]);
+
+  const requestBrowserNotificationPermission = useCallback(async (): Promise<NotificationPermissionState> => {
+    if (typeof window === 'undefined') {
+      return 'default';
+    }
+    if (!('Notification' in window)) {
+      setBrowserNotificationPermission('unsupported');
+      return 'unsupported';
+    }
+    let permission = window.Notification.permission as NotificationPermissionState;
+    setBrowserNotificationPermission(permission);
+    if (permission === 'default') {
       try {
-      setTimeout(() => {
-        if (!audioRef.current) audioRef.current = new Audio();
-        if (soundEnabled === false && activeAlertPath) {
-          void playAlertSound();
+        permission = await window.Notification.requestPermission();
+        setBrowserNotificationPermission(permission);
+      } catch (error) {
+        console.warn('[AdminDashboard] Notification permission request failed', error);
+      }
+    }
+    return permission;
+  }, []);
+
+  type SystemNotificationPayload = Pick<Notification, 'id' | 'message' | 'emergency_report_id' | 'type'>;
+
+  const showSystemNotification = useCallback(async (record: SystemNotificationPayload): Promise<void> => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      return;
+    }
+    let permission = window.Notification.permission as NotificationPermissionState;
+    if (permission === 'default') {
+      permission = await requestBrowserNotificationPermission();
+    }
+    if (permission !== 'granted') {
+      return;
+    }
+    try {
+      const NotificationConstructor = window.Notification;
+      const notificationInstance = new NotificationConstructor('Emergency Alert', {
+        body: record.message || 'New emergency update received.',
+        tag: record.id,
+        requireInteraction: true,
+        icon: '/images/logo.png',
+        badge: '/images/logo.png',
+        data: {
+          reportId: record.emergency_report_id,
+          type: record.type,
+        },
+      });
+
+      notificationInstance.onclick = () => {
+        if (typeof window !== 'undefined') {
+          window.focus?.();
         }
-      }, 100);
-    } catch {}
-  }, [soundEnabled]);
+        notificationInstance.close?.();
+      };
+    } catch (error) {
+      console.warn('[AdminDashboard] Failed to show system notification', error);
+    }
+  }, [requestBrowserNotificationPermission]);
+
+  useEffect(() => {
+    void requestBrowserNotificationPermission();
+  }, [requestBrowserNotificationPermission]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const handleVisibilityChange = () => {
+      const visible = !document.hidden;
+      setIsPageVisible(visible);
+      isPageVisibleRef.current = visible;
+    };
+
+    handleVisibilityChange();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    let handleFocus: (() => void) | undefined;
+    let handleBlur: (() => void) | undefined;
+
+    if (typeof window !== 'undefined') {
+      handleFocus = () => {
+        setIsPageVisible(true);
+        isPageVisibleRef.current = true;
+      };
+      handleBlur = () => {
+        const visible = !document.hidden;
+        setIsPageVisible(visible);
+        isPageVisibleRef.current = visible;
+      };
+      window.addEventListener('focus', handleFocus);
+      window.addEventListener('blur', handleBlur);
+    }
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (typeof window !== 'undefined') {
+        if (handleFocus) window.removeEventListener('focus', handleFocus);
+        if (handleBlur) window.removeEventListener('blur', handleBlur);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    isPageVisibleRef.current = isPageVisible;
+  }, [isPageVisible]);
 
   useEffect(() => {
     if (hasAutoSelectedRef.current) return;
@@ -798,6 +908,14 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                   if (overlayRef.current) {
                     console.log('Triggering overlay for new report:', newNotification);
                     overlayRef.current.showNotificationOverlay(newNotification as AdminNotificationRow);
+                  }
+                  if (!isPageVisibleRef.current) {
+                    void showSystemNotification({
+                      id: fullNotification.id,
+                      emergency_report_id: fullNotification.emergency_report_id,
+                      message: fullNotification.message,
+                      type: fullNotification.type,
+                    });
                   }
                 }
               } catch (e) {

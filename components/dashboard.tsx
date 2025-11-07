@@ -16,6 +16,7 @@ import { AlertTriangle, Menu, User, LogOut, Bell, History, Info, Phone, Edit, Ma
 import { Badge } from "@/components/ui/badge"
   import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
   import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+  import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
   import { formatDistanceToNowStrict, parseISO, formatDistanceToNow } from 'date-fns';
   import { FeedbackHistory } from "@/components/feedback-history"
 import { ReportDetailModal } from "@/components/ReportDetailModal"
@@ -163,6 +164,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const { playAlertSound, showBroadcastAlert } = usePushNotifications();
   const [isEmergencyActive, setIsEmergencyActive] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
   const [isDesktop, setIsDesktop] = useState(false)
@@ -1449,9 +1451,14 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
   const handleLogout = async () => {
     console.log("LOGOUT FUNCTION CALLED!")
+    setShowLogoutConfirm(true)
+  }
+
+  const confirmLogout = async () => {
     try {
       localStorage.removeItem("mdrrmo_user");
       setShowUserMenu(false);
+      setShowLogoutConfirm(false);
       onLogout();
     } catch (err) {
       console.error("Error during logout:", err);
@@ -2484,13 +2491,31 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
               <p className="text-xs text-gray-500">{currentUser?.email || currentUser?.username}</p>
             </div>
             <div className="p-2">
-              <div
-                onClick={handleLogout}
-                className="flex items-center space-x-2 w-full p-3 hover:bg-red-50 hover:text-red-600 rounded text-left transition-colors cursor-pointer select-none"
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="font-medium">Logout</span>
-              </div>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <div className="flex items-center space-x-2 w-full p-3 hover:bg-red-50 hover:text-red-600 rounded text-left transition-colors cursor-pointer select-none">
+                    <LogOut className="w-4 h-4" />
+                    <span className="font-medium">Logout</span>
+                  </div>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="border-orange-200/50">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="text-orange-900">Logout confirmation</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to logout? You will need to log in again to access the dashboard.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="border-orange-200 text-orange-700 hover:bg-orange-50">Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={confirmLogout}
+                      className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white"
+                    >
+                      Confirm Logout
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </div>
         </div>

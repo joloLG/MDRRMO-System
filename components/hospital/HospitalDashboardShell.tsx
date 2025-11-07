@@ -8,7 +8,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Loader2, AlertTriangle, History, LayoutDashboard, Activity, Stethoscope, HeartPulse, Hospital as HospitalIcon, Clock, CheckCircle2, Ambulance, ArrowRight, LogOut } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Loader2, AlertTriangle, History, LayoutDashboard, Activity, Stethoscope, HeartPulse, Hospital as HospitalIcon, Clock, CheckCircle2, Ambulance, ArrowRight, LogOut, UserCircle } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { InternalReportDetail, type InternalReportRecord, type InternalReportPatientRecord } from "@/components/admin/internal-report-detail"
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
@@ -267,6 +278,15 @@ export default function HospitalDashboardShell({ onLogout }: HospitalDashboardSh
   const [isReportLoading, setIsReportLoading] = React.useState(false)
   const [reportError, setReportError] = React.useState<string | null>(null)
   const [selectedPatients, setSelectedPatients] = React.useState<InternalReportPatientRecord[]>([])
+  const [currentUser, setCurrentUser] = React.useState<{ name: string; email: string } | null>(null)
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = React.useState(false)
+  const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false)
+
+  const handleConfirmLogout = () => {
+    setShowLogoutConfirm(false)
+    setIsProfileMenuOpen(false)
+    onLogout?.()
+  }
 
   const hospitalsById = React.useMemo(() => {
     const map: Record<string, HospitalRecord> = {}
@@ -363,6 +383,28 @@ export default function HospitalDashboardShell({ onLogout }: HospitalDashboardSh
         setLoading(false)
         return
       }
+
+      const metadata = (user.user_metadata ?? {}) as Record<string, unknown>
+      const fullNameCandidates = [
+        typeof metadata["full_name"] === "string" ? metadata["full_name"].trim() : "",
+        typeof metadata["name"] === "string" ? metadata["name"].trim() : "",
+      ]
+      const firstName = typeof metadata["first_name"] === "string" ? metadata["first_name"].trim() : ""
+      const lastName = typeof metadata["last_name"] === "string" ? metadata["last_name"].trim() : ""
+      const combinedName = [firstName, lastName].filter(Boolean).join(" ").trim()
+      const displayNameCandidate = fullNameCandidates.find((value) => value.length > 0) || combinedName
+      const emailLocalPart = typeof user.email === "string" ? user.email.split("@")[0]?.trim() ?? "" : ""
+      const resolvedName =
+        displayNameCandidate && displayNameCandidate.length > 0
+          ? displayNameCandidate
+          : emailLocalPart.length > 0
+            ? emailLocalPart
+            : "Hospital User"
+
+      setCurrentUser({
+        name: resolvedName,
+        email: user.email ?? "No email available",
+      })
 
       const { data: mapping, error: mappingError } = await supabase
         .from("hospital_users")
@@ -1062,10 +1104,62 @@ export default function HospitalDashboardShell({ onLogout }: HospitalDashboardSh
             </div>
             <div className="flex items-center gap-3 text-sm text-orange-100">
               {onLogout ? (
-                <Button variant="outline" className="border-white bg-white text-gray-900 hover:bg-white/90" onClick={onLogout}>
-                  <LogOut className="mr-2 h-4 w-4 text-gray-900" />
-                  Logout
-                </Button>
+                <>
+                  <Popover open={isProfileMenuOpen} onOpenChange={setIsProfileMenuOpen}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-orange-600 shadow transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-200"
+                        aria-label="Open profile menu"
+                      >
+                        <UserCircle className="h-7 w-7" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-64 border-orange-200/70 bg-white p-0 text-gray-800 shadow-xl">
+                      <div className="rounded-t-md border-b border-orange-100 bg-orange-50/60 px-4 py-3">
+                        <p className="text-sm font-semibold text-gray-900">{currentUser?.name ?? "Hospital User"}</p>
+                        <p className="text-xs text-gray-500 break-all">{currentUser?.email ?? "Email unavailable"}</p>
+                      </div>
+                      <div className="p-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsProfileMenuOpen(false)
+                            setShowLogoutConfirm(true)
+                          }}
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium text-red-600 transition hover:bg-red-50"
+                        >
+                          <LogOut className="h-4 w-4" />
+                          Logout
+                        </button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                  <AlertDialog open={showLogoutConfirm} onOpenChange={setShowLogoutConfirm}>
+                    <AlertDialogContent className="border-orange-200/50">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle className="text-orange-900">Logout confirmation</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Are you sure you want to logout? You will need to log in again to access the dashboard.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel
+                          onClick={() => setIsProfileMenuOpen(false)}
+                          className="border-orange-200 text-orange-700 hover:bg-orange-50"
+                        >
+                          Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={handleConfirmLogout}
+                          className="bg-gradient-to-r from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700"
+                        >
+                          Confirm Logout
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </>
               ) : null}
               <Image
                 src="/images/bulan-logo.png"

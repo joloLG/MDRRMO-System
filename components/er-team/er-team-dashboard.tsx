@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 import {
@@ -18,8 +19,11 @@ import {
   removeDraft,
   saveAsset,
   loadAsset,
+  forceRefreshData,
+  setCacheTimestamp,
+  shouldForceRefresh,
 } from "@/lib/er-team-storage"
-import { Bell, Loader2, RefreshCw, WifiOff, Wifi } from "lucide-react"
+import { Bell, Loader2, RefreshCw, WifiOff, Wifi, User } from "lucide-react"
 import {
   ErTeamReportForm,
   DEFAULT_PATIENT_TEMPLATE,
@@ -533,6 +537,9 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   const [assignedError, setAssignedError] = React.useState<string | null>(null)
   const [assignedPage, setAssignedPage] = React.useState(1)
   const [userId, setUserId] = React.useState<string | null>(null)
+  const [userFirstName, setUserFirstName] = React.useState<string | null>(null)
+  const [userLastName, setUserLastName] = React.useState<string | null>(null)
+  const [userEmail, setUserEmail] = React.useState<string | null>(null)
   const [selectedIncidentId, setSelectedIncidentId] = React.useState<string | null>(null)
   const [resolvingIncidentId, setResolvingIncidentId] = React.useState<string | null>(null)
   const [userLocation, setUserLocation] = React.useState<LocationCoords | null>(null)
@@ -786,6 +793,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
         const response = await fetch("/api/er-team/me", { credentials: "include", signal: controller.signal })
         const payload = (await response.json().catch(() => ({}))) as {
           ok?: boolean
+          user?: { id: string; firstName: string | null; lastName: string | null; email: string | null }
           team?: { id: number; name: string | null }
           error?: string
         }
@@ -810,9 +818,13 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                   const resolvedTeamId = typeof retryPayload.team?.id === "number" ? retryPayload.team.id : null
                   setTeamName(retryPayload.team?.name ?? null)
                   setTeamId(resolvedTeamId)
+                  setUserId(retryPayload.user?.id ?? null)
+                  setUserFirstName(retryPayload.user?.firstName ?? null)
+                  setUserLastName(retryPayload.user?.lastName ?? null)
+                  setUserEmail(retryPayload.user?.email ?? null)
                   setProfileStatus(resolvedTeamId ? "authorized" : "unauthorized")
                   writeCachedProfile({ teamId: resolvedTeamId, teamName: retryPayload.team?.name ?? null, cachedAt: new Date().toISOString() })
-                  console.log("ER Team profile loaded after session refresh:", { resolvedTeamId, teamName: retryPayload.team?.name, userId })
+                  console.log("ER Team profile loaded after session refresh:", { resolvedTeamId, teamName: retryPayload.team?.name, userId: retryPayload.user?.id })
                   return
                 }
               }
@@ -826,14 +838,19 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
 
         if (!isActive) return
 
+        const user = payload?.user
         const team = payload?.team
         const resolvedTeamId = typeof team?.id === "number" ? team.id : null
         setTeamName(team?.name ?? null)
         setTeamId(resolvedTeamId)
+        setUserId(user?.id ?? null)
+        setUserFirstName(user?.firstName ?? null)
+        setUserLastName(user?.lastName ?? null)
+        setUserEmail(user?.email ?? null)
         setProfileStatus(resolvedTeamId ? "authorized" : "unauthorized")
         writeCachedProfile({ teamId: resolvedTeamId, teamName: team?.name ?? null, cachedAt: new Date().toISOString() })
 
-        console.log("ER Team profile loaded:", { resolvedTeamId, teamName: team?.name, userId })
+        console.log("ER Team profile loaded:", { resolvedTeamId, teamName: team?.name, userId: user?.id })
       } catch (error: any) {
         if (controller.signal.aborted || !isActive) {
           return
@@ -917,13 +934,23 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
     setLoadingReports(true)
     setLoadingError(null)
     try {
-      const response = await fetch("/api/er-team/reports", { credentials: "include", cache: "no-cache" })
+      const response = await fetch("/api/er-team/reports", {
+        credentials: "include",
+        cache: "no-cache",
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      })
       if (!response.ok) {
         const message = await extractErrorMessage(response)
         throw new Error(message)
       }
       const payload = (await response.json().catch(() => ({}))) as { reports: SyncedReport[] }
       setReports(payload.reports ?? [])
+
+      // Update cache timestamp for reports
+      await setCacheTimestamp()
     } catch (error: any) {
       console.error("Failed to load ER team reports", error)
       setLoadingError(error?.message ?? "Unable to load reports")
@@ -955,7 +982,14 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
 
     try {
       console.log('🌐 Fetching from /api/er-team/assigned')
-      const response = await fetch("/api/er-team/assigned", { credentials: "include", cache: "no-cache" })
+      const response = await fetch("/api/er-team/assigned", {
+        credentials: "include",
+        cache: "no-cache",
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      })
 
       console.log('📥 Response status:', response.status)
       console.log('📥 Response ok:', response.ok)
@@ -980,6 +1014,9 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
 
       setAssignedIncidents(ordered)
       applyDraftMerge(ordered)
+
+      // Update cache timestamp to indicate fresh data
+      await setCacheTimestamp()
 
       console.log('✅ Successfully set assigned incidents')
     } catch (error: any) {
@@ -1243,6 +1280,44 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
       })()
     }
   }, [isOnline, refreshReports, refreshAssignedIncidents])
+
+  // Force refresh data on mount for mobile apps to ensure they get latest data
+  React.useEffect(() => {
+    const forceRefreshForMobile = async () => {
+      if (profileStatus === "authorized" && teamId) {
+        try {
+          // Check if we need to force refresh based on cache timestamp
+          const shouldRefresh = await shouldForceRefresh(5) // Force refresh every 5 minutes for mobile
+          if (shouldRefresh) {
+            console.log('📱 Mobile app detected - forcing data refresh')
+            await forceRefreshData()
+            await setCacheTimestamp()
+            // Refresh data after clearing cache
+            await Promise.all([refreshAssignedIncidents(), refreshReports()])
+          }
+        } catch (error) {
+          console.error('❌ Error during mobile force refresh:', error)
+          // If there's a database error, still try to refresh data
+          try {
+            await Promise.all([refreshAssignedIncidents(), refreshReports()])
+          } catch (refreshError) {
+            console.error('❌ Error refreshing data after force refresh failed:', refreshError)
+          }
+        }
+      }
+    }
+
+    void forceRefreshForMobile()
+
+    // Set up periodic force refresh for mobile apps every 10 minutes (reduced frequency)
+    const mobileRefreshInterval = setInterval(() => {
+      if (profileStatus === "authorized" && teamId && navigator.onLine) {
+        void forceRefreshForMobile()
+      }
+    }, 10 * 60 * 1000) // 10 minutes instead of 5
+
+    return () => clearInterval(mobileRefreshInterval)
+  }, [profileStatus, teamId, refreshAssignedIncidents, refreshReports])
 
   React.useEffect(() => {
     let cancelled = false
@@ -1927,8 +2002,8 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                 variant="ghost"
                 size="icon"
                 aria-label="Refresh data"
-                onClick={async () => {
-                  await Promise.all([refreshAssignedIncidents(), refreshReports()])
+                onClick={() => {
+                  window.location.reload()
                 }}
                 disabled={!isOnline}
                 className="text-white/90 hover:bg-white/20 hover:text-white rounded-full p-2 transition-all duration-200 backdrop-blur-sm"
@@ -2052,12 +2127,88 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                   </div>
                 </PopoverContent>
               </Popover>
-              <Button variant="ghost" onClick={onLogout} className="text-white/90 hover:bg-white/20 hover:text-white rounded-full px-4 py-2 transition-all duration-200 backdrop-blur-sm font-medium">
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-                Sign out
-              </Button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="User profile"
+                    className="text-white/90 hover:bg-white/20 hover:text-white rounded-full p-2 transition-all duration-200 backdrop-blur-sm"
+                  >
+                    <User className="h-5 w-5" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-72 border-orange-200/50 bg-white/95 backdrop-blur-md p-0 shadow-2xl">
+                  <div className="p-4 border-b border-orange-100/50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center text-white">
+                        <User className="h-6 w-6" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-gray-900 truncate">
+                          {userFirstName && userLastName ? `${userFirstName} ${userLastName}` : "User"}
+                        </div>
+                        <div className="text-sm text-gray-500 truncate">{userEmail || "No email"}</div>
+                        {teamName && (
+                          <div className="text-xs text-orange-600 font-medium mt-1">
+                            {teamName} Team
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-2">
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors mb-1"
+                      onClick={async () => {
+                        try {
+                          await forceRefreshData()
+                          await Promise.all([refreshAssignedIncidents(), refreshReports()])
+                        } catch (error) {
+                          console.error('Error during manual refresh:', error)
+                        }
+                      }}
+                    >
+                      <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Force Refresh Data
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          className="w-full justify-start text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+                        >
+                          <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                          </svg>
+                          Sign out
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="border-orange-200/50">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle className="text-orange-900">Sign out confirmation</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to sign out? You will need to log in again to access the dashboard.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel className="border-orange-200 text-orange-700 hover:bg-orange-50">Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={onLogout}
+                            className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white"
+                          >
+                            Sign out
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         </header>
