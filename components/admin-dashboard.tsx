@@ -143,6 +143,8 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [broadcastValidationError, setBroadcastValidationError] = useState<string | null>(null);
 
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
   const [erTeamReports, setErTeamReports] = useState<ErTeamReportSummary[]>([])
   const [erTeamReportsLoading, setErTeamReportsLoading] = useState(false)
   const [erTeamReportsError, setErTeamReportsError] = useState<string | null>(null)
@@ -1527,7 +1529,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
               </div>
             )}
           </div>
-          <Button onClick={onLogout} variant="destructive"><LogOut className="mr-2 h-4 w-4" /> Logout</Button>
+          <Button onClick={() => setShowLogoutConfirm(true)} variant="destructive"><LogOut className="mr-2 h-4 w-4" /> Logout</Button>
         </div>
       </header>
 
@@ -1937,6 +1939,25 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
             ) : (
               <p className="text-center text-gray-500 py-4">No in-progress reports.</p>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showLogoutConfirm} onOpenChange={setShowLogoutConfirm}>
+        <DialogContent className="w-80">
+          <DialogHeader>
+            <DialogTitle>Confirm Logout</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to log out of the admin dashboard?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end space-x-2 mt-4">
+            <Button variant="outline" onClick={() => setShowLogoutConfirm(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleLogout}>
+              Confirm Logout
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

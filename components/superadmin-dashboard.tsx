@@ -105,6 +105,8 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
   const [approvalNotes, setApprovalNotes] = useState('')
   const [isSubmittingApproval, setIsSubmittingApproval] = useState(false)
 
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+
   // Fetch all users
   const fetchUsers = async () => {
     try {
@@ -819,7 +821,7 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
           <div className="flex items-center gap-4">
             <Button 
               variant="outline" 
-              onClick={handleLogout}
+              onClick={() => setShowLogoutConfirm(true)}
               className="flex items-center gap-2"
             >
               <LogOut className="h-4 w-4" />
@@ -1315,6 +1317,25 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
                   : (approvalAction === 'approve' ? 'Approve' : 'Reject')}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showLogoutConfirm} onOpenChange={setShowLogoutConfirm}>
+        <DialogContent className="w-80">
+          <DialogHeader>
+            <DialogTitle>Confirm Logout</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to log out of the superadmin dashboard?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end space-x-2 mt-4">
+            <Button variant="outline" onClick={() => setShowLogoutConfirm(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleLogout}>
+              Confirm Logout
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
