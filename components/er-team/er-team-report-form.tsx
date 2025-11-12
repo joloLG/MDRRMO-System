@@ -38,6 +38,7 @@ export interface ErTeamDraft {
   clientDraftId: string
   emergencyReportId: string
   status: ErTeamDraftStatus
+  _needsSync?: boolean
   updatedAt: string
   synced: boolean
   lastSyncError?: string | null

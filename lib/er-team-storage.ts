@@ -36,74 +36,60 @@ interface ErTeamDB extends DBSchema {
 }
 
 const DB_NAME = "mdrrmo_er_team"
-const DB_VERSION = 3
+const DB_VERSION = 1 // Simplified to always use version 1 since we're removing legacy code
 
 let dbPromise: Promise<IDBPDatabase<ErTeamDB>> | null = null
 
 async function deleteExistingDatabase(): Promise<void> {
   if (typeof window === "undefined" || !window.indexedDB) return
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const deleteRequest = window.indexedDB.deleteDatabase(DB_NAME)
     deleteRequest.onsuccess = () => {
-      console.log('🗑️ Deleted existing IndexedDB database due to version conflict')
+      console.log('🗑️ Deleted existing IndexedDB database')
       resolve()
     }
     deleteRequest.onerror = () => {
       console.warn('Failed to delete existing database:', deleteRequest.error)
-      reject(deleteRequest.error)
+      resolve() // Resolve anyway to prevent blocking the app
     }
     deleteRequest.onblocked = () => {
       console.warn('Database deletion blocked - please close other tabs')
-      // Try to resolve anyway
       resolve()
     }
   })
 }
 
-function getDb() {
+function getDb(): Promise<IDBPDatabase<ErTeamDB>> {
   if (!dbPromise) {
-    dbPromise = (async () => {
+dbPromise = (async (): Promise<IDBPDatabase<ErTeamDB>> => {
       try {
         return await openDB<ErTeamDB>(DB_NAME, DB_VERSION, {
-          upgrade(database, oldVersion, newVersion, transaction) {
-            console.log(`🔄 Upgrading IndexedDB from v${oldVersion} to v${newVersion}`)
-
-            // Handle upgrades from older versions
-            if (oldVersion < 3) {
-              // Clear all existing data and recreate stores
-              const storeNames = Array.from(database.objectStoreNames)
-              storeNames.forEach(storeName => {
-                database.deleteObjectStore(storeName)
-              })
-
-              // Recreate all stores
-              if (!database.objectStoreNames.contains("drafts")) {
-                database.createObjectStore("drafts")
-              }
-              if (!database.objectStoreNames.contains("references")) {
-                database.createObjectStore("references")
-              }
-              if (!database.objectStoreNames.contains("assets")) {
-                database.createObjectStore("assets")
-              }
+          upgrade(database) {
+            console.log('🔄 Initializing IndexedDB database')
+            
+            // Create all stores for the current version
+            if (!database.objectStoreNames.contains("drafts")) {
+              database.createObjectStore("drafts")
+            }
+            if (!database.objectStoreNames.contains("references")) {
+              database.createObjectStore("references")
+            }
+            if (!database.objectStoreNames.contains("assets")) {
+              database.createObjectStore("assets")
             }
           },
         })
       } catch (error: any) {
         console.error('❌ IndexedDB error:', error)
-
-        // If it's a version error, try to delete and recreate the database
-        if (error.name === 'VersionError' || error.message?.includes('version')) {
-          console.log('🔄 Version conflict detected, attempting database reset...')
-          await deleteExistingDatabase()
-
-          // Reset the promise so it will try again
-          dbPromise = null
-          return getDb()
-        }
-
-        throw error
+        
+        // On any error, try to delete and recreate the database
+        console.log('🔄 Database error detected, attempting reset...')
+        await deleteExistingDatabase()
+        
+        // Reset the promise so it will try again
+        dbPromise = null
+        return getDb()
       }
     })()
   }
@@ -188,26 +174,22 @@ export async function clearAllData(): Promise<void> {
 
 export async function forceRefreshData(): Promise<void> {
   console.log('🧹 Force refreshing all data...')
-
-  // Reset the database promise to force recreation
+  
+  // Reset the database
   dbPromise = null
-
-  // Delete the IndexedDB database completely
   await deleteExistingDatabase()
-
-  // Clear any cached profile data
+  
+  // Clear related localStorage entries
   if (typeof window !== "undefined") {
-    const keysToRemove = []
-    for (let i = 0; i < window.localStorage.length; i++) {
-      const key = window.localStorage.key(i)
-      if (key && key.startsWith("mdrrmo_er_team")) {
-        keysToRemove.push(key)
-      }
-    }
-    keysToRemove.forEach(key => window.localStorage.removeItem(key))
+    const prefix = "mdrrmo_er_team"
+    const keys = Array.from({ length: window.localStorage.length }, (_, i) => 
+      window.localStorage.key(i)
+    ).filter((key): key is string => key?.startsWith(prefix) ?? false)
+    
+    keys.forEach(key => window.localStorage.removeItem(key))
     console.log('🗑️ Cleared localStorage cache')
   }
-
+  
   console.log('✅ Force refresh complete')
 }
 
