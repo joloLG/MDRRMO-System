@@ -3,6 +3,7 @@
 import * as React from "react"
 import dynamic from "next/dynamic"
 import { Button } from "@/components/ui/button"
+import { fetchWithRetry } from "@/lib/api-utils"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
@@ -200,6 +201,40 @@ async function migrateLegacyReferences() {
     console.warn("Failed to migrate legacy ER references", error)
   }
 }
+
+const saveToCache = async <T,>(key: string, data: T): Promise<void> => {
+  try {
+    const cacheData = {
+      data,
+      timestamp: new Date().toISOString()
+    };
+    localStorage.setItem(`er-cache-${key}`, JSON.stringify(cacheData));
+  } catch (error) {
+    console.error(`Failed to save ${key} to cache:`, error);
+  }
+};
+
+const loadFromCache = async <T,>(key: string, maxAgeMinutes = 60): Promise<T | null> => {
+  try {
+    const cached = localStorage.getItem(`er-cache-${key}`);
+    if (!cached) return null;
+
+    const { data, timestamp } = JSON.parse(cached);
+    const cacheDate = new Date(timestamp);
+    const now = new Date();
+    const diffMinutes = (now.getTime() - cacheDate.getTime()) / (1000 * 60);
+
+    if (diffMinutes > maxAgeMinutes) {
+      console.log(`Cache for ${key} is stale (${diffMinutes.toFixed(1)} minutes old)`);
+      return null;
+    }
+
+    return data as T;
+  } catch (error) {
+    console.error(`Failed to load ${key} from cache:`, error);
+    return null;
+  }
+};
 
 async function preloadSvgAssets() {
   if (typeof window === "undefined" || !navigator.onLine) return
@@ -925,35 +960,69 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
       return
     }
 
+    setLoadingReports(true)
+    setLoadingError(null)
+
+    // Try to load from cache first for immediate response
     if (!navigator.onLine) {
-      setLoadingReports(false)
-      setLoadingError((prev) => prev ?? "Reports will refresh when you're back online.")
+      console.log('📴 refreshReports: Offline mode')
+      try {
+        const cachedReports = await loadFromCache<SyncedReport[]>('er-team-reports')
+        if (cachedReports) {
+          console.log('📦 Using cached reports:', cachedReports.length, 'items')
+          setReports(cachedReports)
+          setLoadingError("You're currently offline. Using cached reports.")
+        } else {
+          setLoadingError("You're offline and no cached reports are available.")
+        }
+      } catch (error) {
+        console.error('❌ Error loading cached reports:', error)
+        setLoadingError("Failed to load cached reports. Please check your connection.")
+      } finally {
+        setLoadingReports(false)
+      }
       return
     }
 
-    setLoadingReports(true)
-    setLoadingError(null)
     try {
-      const response = await fetch("/api/er-team/reports", {
+      console.log('🌐 Fetching reports from /api/er-team/reports')
+      const response = await fetchWithRetry("/api/er-team/reports", {
         credentials: "include",
-        cache: "no-cache",
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        }
+        maxRetries: 3,
+        retryDelay: 1000
       })
+
       if (!response.ok) {
         const message = await extractErrorMessage(response)
         throw new Error(message)
       }
-      const payload = (await response.json().catch(() => ({}))) as { reports: SyncedReport[] }
-      setReports(payload.reports ?? [])
 
-      // Update cache timestamp for reports
+      const payload = await response.json().catch(() => ({})) as { reports?: SyncedReport[] }
+      const reports = Array.isArray(payload?.reports) ? payload.reports : []
+      
+      console.log('📋 Fetched reports:', reports.length, 'items')
+      setReports(reports)
+      
+      // Update cache
+      await saveToCache('er-team-reports', reports)
       await setCacheTimestamp()
+      
     } catch (error: any) {
-      console.error("Failed to load ER team reports", error)
-      setLoadingError(error?.message ?? "Unable to load reports")
+      console.error("❌ Failed to load ER team reports", error)
+      
+      // Fall back to cached data if available
+      try {
+        const cachedReports = await loadFromCache<SyncedReport[]>('er-team-reports')
+        if (cachedReports) {
+          console.log('🔄 Falling back to cached reports')
+          setReports(cachedReports)
+          setLoadingError("Network error. Using cached reports: " + (error?.message || 'Unknown error'))
+        } else {
+          throw error // Re-throw if no cached data available
+        }
+      } catch (cacheError) {
+        setLoadingError(error?.message ?? "Unable to load reports")
+      }
     } finally {
       setLoadingReports(false)
     }
@@ -968,31 +1037,39 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
     }
 
     console.log('📡 refreshAssignedIncidents: Starting for team', teamId)
-
-    if (!navigator.onLine) {
-      console.log('📴 refreshAssignedIncidents: Offline, skipping')
-      setAssignedLoading(false)
-      setAssignedError((prev) => prev ?? "Assigned incidents will refresh when you're back online.")
-      return
-    }
-
-    console.log('🚀 refreshAssignedIncidents: Making API call')
     setAssignedLoading(true)
     setAssignedError(null)
 
+    // Use cached data immediately if offline
+    if (!navigator.onLine) {
+      console.log('📴 refreshAssignedIncidents: Offline mode')
+      try {
+        const cachedData = await loadFromCache<AssignedIncident[]>('er-team-assigned-incidents')
+        if (cachedData) {
+          console.log('📦 Using cached assigned incidents:', cachedData.length, 'items')
+          setAssignedIncidents(cachedData)
+          setAssignedError("You're currently offline. Using cached data.")
+        } else {
+          setAssignedError("You're offline and no cached data is available.")
+        }
+      } catch (error) {
+        console.error('❌ Error loading cached data:', error)
+        setAssignedError("Failed to load cached data. Please check your connection.")
+      } finally {
+        setAssignedLoading(false)
+      }
+      return
+    }
+
     try {
       console.log('🌐 Fetching from /api/er-team/assigned')
-      const response = await fetch("/api/er-team/assigned", {
+      const response = await fetchWithRetry("/api/er-team/assigned", {
         credentials: "include",
-        cache: "no-cache",
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        }
+        maxRetries: 3,
+        retryDelay: 1000
       })
 
       console.log('📥 Response status:', response.status)
-      console.log('📥 Response ok:', response.ok)
 
       if (!response.ok) {
         const message = await extractErrorMessage(response)
@@ -1000,28 +1077,42 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
         throw new Error(message)
       }
 
-      const body = (await response.json().catch(() => ({}))) as { incidents?: AssignedIncident[] }
-      console.log('📦 Raw API response:', body)
-
+      const body = await response.json().catch(() => ({})) as { incidents?: AssignedIncident[] }
       const incidents = Array.isArray(body?.incidents) ? body.incidents : []
-      console.log('📋 Parsed incidents:', incidents.length, 'items')
+      console.log('📋 Fetched incidents:', incidents.length, 'items')
 
+      // Filter out incidents with internal reports
       const filteredIncidents = incidents.filter((incident) => !incident.er_team_report?.internal_report_id)
       console.log('🔍 Filtered incidents:', filteredIncidents.length, 'items')
 
+      // Sort and update state
       const ordered = sortAssignedIncidents(filteredIncidents)
-      console.log('📊 Final ordered incidents:', ordered.length, 'items')
-
       setAssignedIncidents(ordered)
+      
+      // Update cache
+      await saveToCache('er-team-assigned-incidents', ordered)
+      await setCacheTimestamp()
+      
+      // Apply draft merges
       applyDraftMerge(ordered)
 
-      // Update cache timestamp to indicate fresh data
-      await setCacheTimestamp()
-
-      console.log('✅ Successfully set assigned incidents')
+      console.log('✅ Successfully updated assigned incidents')
     } catch (error: any) {
       console.error("❌ Failed to load assigned incidents", error)
-      setAssignedError(error?.message ?? "Unable to load assigned incidents")
+      
+      // Try to fall back to cached data on error
+      try {
+        const cachedData = await loadFromCache<AssignedIncident[]>('er-team-assigned-incidents')
+        if (cachedData) {
+          console.log('🔄 Falling back to cached data')
+          setAssignedIncidents(cachedData)
+          setAssignedError("Network error. Using cached data: " + (error?.message || 'Unknown error'))
+        } else {
+          throw error // Re-throw if no cached data available
+        }
+      } catch (cacheError) {
+        setAssignedError(error?.message ?? "Unable to load assigned incidents")
+      }
     } finally {
       setAssignedLoading(false)
       console.log('🏁 refreshAssignedIncidents completed')
