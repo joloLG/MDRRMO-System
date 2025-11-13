@@ -3,14 +3,22 @@ const RUNTIME_CACHE = 'mdrrmo-runtime-v1'
 const DB_NAME = 'mdrrmo-sw'
 const STORE_NAME = 'request-queue'
 const SYNC_TAG = 'mdrrmo-offline-sync'
-const assetsToCache = ['/', '/manifest.json']
+const NOTIFICATION_ICON = '/icons/icon-192x192.png'
+const assetsToCache = [
+  '/',
+  '/manifest.json',
+  '/sounds/alert.mp3',
+  NOTIFICATION_ICON
+]
 
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     try {
       const cache = await caches.open(STATIC_CACHE)
       await cache.addAll(assetsToCache)
-    } catch {}
+    } catch (error) {
+      console.error('Error during service worker installation:', error)
+    }
     await self.skipWaiting()
   })())
 })
@@ -193,6 +201,49 @@ async function handleApiRequest(request) {
     })
   }
 }
+
+// Handle push notifications
+self.addEventListener('push', event => {
+  if (!event.data) return
+
+  const data = event.data.json()
+  const { title, body, icon, data: payload } = data
+  
+  event.waitUntil(
+    self.registration.showNotification(title || 'New Notification', {
+      body: body || '',
+      icon: icon || NOTIFICATION_ICON,
+      data: payload,
+      vibrate: [200, 100, 200],
+      requireInteraction: true
+    })
+  )
+})
+
+// Handle notification click
+self.addEventListener('notificationclick', event => {
+  event.notification.close()
+  
+  event.waitUntil(
+    clients.matchAll({ type: 'window' }).then(clientList => {
+      for (const client of clientList) {
+        if (client.url === '/' && 'focus' in client) {
+          return client.focus()
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow('/')
+      }
+    })
+  )
+})
+
+// Handle background sync
+self.addEventListener('sync', event => {
+  if (event.tag === SYNC_TAG) {
+    event.waitUntil(flushQueue())
+  }
+})
 
 self.addEventListener('fetch', event => {
   const request = event.request
