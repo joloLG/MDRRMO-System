@@ -70,7 +70,7 @@ dbPromise = (async (): Promise<IDBPDatabase<ErTeamDB>> => {
             
             // Create all stores for the current version
             if (!database.objectStoreNames.contains("drafts")) {
-              database.createObjectStore("drafts")
+              database.createObjectStore("drafts", { keyPath: 'clientDraftId' })
             }
             if (!database.objectStoreNames.contains("references")) {
               database.createObjectStore("references")
@@ -104,7 +104,7 @@ export async function loadDrafts(): Promise<ErTeamDraftRecord[]> {
 export async function upsertDraft(draft: ErTeamDraftRecord): Promise<void> {
   const db = await getDb()
   const tx = db.transaction("drafts", "readwrite")
-  await tx.store.put(draft, draft.clientDraftId)
+  await tx.store.put(draft)
   await tx.done
 }
 
@@ -112,7 +112,7 @@ export async function upsertDrafts(drafts: ErTeamDraftRecord[]): Promise<void> {
   const db = await getDb()
   const tx = db.transaction("drafts", "readwrite")
   for (const draft of drafts) {
-    await tx.store.put(draft, draft.clientDraftId)
+    await tx.store.put(draft)
   }
   await tx.done
 }
