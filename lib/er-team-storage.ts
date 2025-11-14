@@ -9,8 +9,12 @@ interface ErTeamDraftRecord extends ErTeamDraft {
 
 interface ReferenceCacheRecord {
   key: string
-  items: ReferenceOption[]
-  cachedAt: string
+  items?: ReferenceOption[]
+  cachedAt?: string
+  data?: any
+  timestamp?: string
+  expiresAt?: string
+  version?: string
 }
 
 interface AssetCacheRecord {
@@ -36,7 +40,8 @@ interface ErTeamDB extends DBSchema {
 }
 
 const DB_NAME = "mdrrmo_er_team"
-const DB_VERSION = 1 // Simplified to always use version 1 since we're removing legacy code
+const DB_VERSION = 2 // Incremented version to force DB upgrade
+const CACHE_VERSION = 'v2' // Cache version for manual invalidation
 
 let dbPromise: Promise<IDBPDatabase<ErTeamDB>> | null = null
 
@@ -60,15 +65,35 @@ async function deleteExistingDatabase(): Promise<void> {
   })
 }
 
+// Clear old caches when updating versions
+async function clearOldCaches() {
+  try {
+    const keys = await caches.keys()
+    for (const key of keys) {
+      if (key.startsWith('er-team-') && !key.includes(CACHE_VERSION)) {
+        await caches.delete(key)
+      }
+    }
+    console.log('🧹 Cleared old caches')
+  } catch (error) {
+    console.error('Error clearing old caches:', error)
+  }
+}
+
 function getDb(): Promise<IDBPDatabase<ErTeamDB>> {
   if (!dbPromise) {
-dbPromise = (async (): Promise<IDBPDatabase<ErTeamDB>> => {
+    dbPromise = (async (): Promise<IDBPDatabase<ErTeamDB>> => {
       try {
+        // Clear old caches when initializing
+        if (typeof window !== 'undefined' && 'caches' in window) {
+          await clearOldCaches()
+        }
+
         return await openDB<ErTeamDB>(DB_NAME, DB_VERSION, {
-          upgrade(database) {
-            console.log('🔄 Initializing IndexedDB database')
+          upgrade(database, oldVersion) {
+            console.log(`🔄 Upgrading database from version ${oldVersion} to ${DB_VERSION}`)
             
-            // Create all stores for the current version
+            // Create or update stores
             if (!database.objectStoreNames.contains("drafts")) {
               database.createObjectStore("drafts", { keyPath: 'clientDraftId' })
             }
@@ -77,6 +102,17 @@ dbPromise = (async (): Promise<IDBPDatabase<ErTeamDB>> => {
             }
             if (!database.objectStoreNames.contains("assets")) {
               database.createObjectStore("assets")
+            }
+
+            // Add any new indexes or migrations here based on oldVersion
+            if (oldVersion < 2) {
+              // Migration code for version 2
+              console.log('Running migration to v2')
+              // Recreate drafts store with keyPath
+              if (database.objectStoreNames.contains('drafts')) {
+                database.deleteObjectStore('drafts')
+              }
+              database.createObjectStore('drafts', { keyPath: 'clientDraftId' })
             }
           },
         })
@@ -237,4 +273,95 @@ export async function loadReferenceWithCacheCheck(key: string): Promise<{ data: 
 export async function loadAsset(key: string): Promise<AssetCacheRecord | undefined> {
   const db = await getDb()
   return db.get("assets", key)
+}
+
+export async function saveToCache<T>(key: string, data: T, options: { maxAgeMinutes?: number } = {}): Promise<void> {
+  try {
+    const db = await getDb();
+    const tx = db.transaction("references", "readwrite");
+    const timestamp = new Date().toISOString();
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + (options.maxAgeMinutes || 5)); // Default 5 minutes TTL
+    
+    const record = {
+      key: `${CACHE_VERSION}_${key}`,
+      data,
+      timestamp,
+      expiresAt: expiresAt.toISOString(),
+      version: CACHE_VERSION
+    };
+    
+    await tx.store.put(record, key);
+    await tx.done;
+    
+    // Also store in session storage for faster access
+    if (typeof sessionStorage !== 'undefined') {
+      try {
+        sessionStorage.setItem(`cache_${CACHE_VERSION}_${key}`, JSON.stringify({
+          data,
+          timestamp,
+          expiresAt: expiresAt.toISOString()
+        }));
+      } catch (e) {
+        console.warn('Session storage quota exceeded, falling back to IndexedDB only');
+      }
+    }
+  } catch (error) {
+    console.error(`Failed to save ${key} to cache:`, error);
+    // If IndexedDB fails, try to clear the database
+    try {
+      await forceRefreshData();
+    } catch (e) {
+      console.error('Failed to refresh data after cache error:', e);
+    }
+  }
+}
+
+export async function loadFromCache<T>(key: string, maxAgeMinutes = 5): Promise<T | null> {
+  // First try sessionStorage for faster access
+  if (typeof sessionStorage !== 'undefined') {
+    try {
+      const cached = sessionStorage.getItem(`cache_${CACHE_VERSION}_${key}`);
+      if (cached) {
+        const { data, expiresAt } = JSON.parse(cached);
+        if (new Date(expiresAt) > new Date()) {
+          return data;
+        }
+        // If expired, remove from sessionStorage
+        sessionStorage.removeItem(`cache_${CACHE_VERSION}_${key}`);
+      }
+    } catch (e) {
+      console.warn('Error reading from sessionStorage:', e);
+    }
+  }
+
+  // Fall back to IndexedDB
+  try {
+    const db = await getDb();
+    const record = await db.get("references", `${CACHE_VERSION}_${key}`);
+    
+    if (!record) return null;
+    
+    // Check if record is expired
+    const now = new Date();
+    const recordTimestamp = record.timestamp || record.cachedAt || new Date(0).toISOString();
+    const recordExpiresAt = record.expiresAt ? new Date(record.expiresAt) : null;
+    
+    // Calculate record age in minutes
+    const recordAge = (now.getTime() - new Date(recordTimestamp).getTime()) / (1000 * 60);
+    
+    // Check if record is expired based on either expiresAt or maxAgeMinutes
+    const isExpired = (recordExpiresAt && recordExpiresAt < now) || 
+                     (!recordExpiresAt && recordAge > maxAgeMinutes);
+    
+    if (isExpired) {
+      console.log(`Cache entry ${key} is stale or expired (${recordAge.toFixed(1)} minutes old)`);
+      return null;
+    }
+    
+    return record.data;
+  } catch (error) {
+    console.error(`Failed to load ${key} from cache:`, error);
+    return null;
+  }
 }

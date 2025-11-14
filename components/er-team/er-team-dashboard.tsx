@@ -1029,93 +1029,110 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   }, [profileStatus, teamId])
 
   const refreshAssignedIncidents = React.useCallback(async () => {
-    console.log('🔄 refreshAssignedIncidents called')
+    console.log('🔄 refreshAssignedIncidents called');
 
     if (profileStatus !== "authorized" || !teamId) {
-      console.log('❌ refreshAssignedIncidents: Not authorized or no teamId', { profileStatus, teamId })
-      return
+      console.log('❌ refreshAssignedIncidents: Not authorized or no teamId', { profileStatus, teamId });
+      return;
     }
 
-    console.log('📡 refreshAssignedIncidents: Starting for team', teamId)
-    setAssignedLoading(true)
-    setAssignedError(null)
-
-    // Use cached data immediately if offline
-    if (!navigator.onLine) {
-      console.log('📴 refreshAssignedIncidents: Offline mode')
-      try {
-        const cachedData = await loadFromCache<AssignedIncident[]>('er-team-assigned-incidents')
-        if (cachedData) {
-          console.log('📦 Using cached assigned incidents:', cachedData.length, 'items')
-          setAssignedIncidents(cachedData)
-          setAssignedError("You're currently offline. Using cached data.")
-        } else {
-          setAssignedError("You're offline and no cached data is available.")
-        }
-      } catch (error) {
-        console.error('❌ Error loading cached data:', error)
-        setAssignedError("Failed to load cached data. Please check your connection.")
-      } finally {
-        setAssignedLoading(false)
-      }
-      return
-    }
+    console.log('📡 refreshAssignedIncidents: Starting for team', teamId);
+    setAssignedLoading(true);
+    setAssignedError(null);
 
     try {
-      console.log('🌐 Fetching from /api/er-team/assigned')
+      // First try to load from cache for immediate response
+      const cacheKey = `assigned-incidents-${teamId}`;
+      const cachedData = await loadFromCache<AssignedIncident[]>(cacheKey);
+      
+      if (cachedData) {
+        console.log('📦 Using cached assigned incidents:', cachedData.length, 'items');
+        setAssignedIncidents(cachedData);
+        applyDraftMerge(cachedData);
+      }
+
+      // Check if we need to force refresh
+      const forceRefresh = await shouldForceRefresh(5); // 5 minutes cache TTL
+      if (!navigator.onLine && !cachedData) {
+        console.log('📴 Offline and no cached data available');
+        setAssignedError("You're offline and no cached data is available.");
+        return;
+      }
+
+      if (!navigator.onLine) {
+        console.log('📴 Offline mode - using cached data');
+        setAssignedError("You're currently offline. Using cached data.");
+        return;
+      }
+
+      console.log('🌐 Fetching assigned incidents from server');
       const response = await fetchWithRetry("/api/er-team/assigned", {
         credentials: "include",
-        maxRetries: 3,
-        retryDelay: 1000
-      })
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'X-Cache-Bypass': '1',
+        },
+        cache: 'no-store'
+      });
 
-      console.log('📥 Response status:', response.status)
+      console.log('📥 Response status:', response.status);
 
       if (!response.ok) {
-        const message = await extractErrorMessage(response)
-        console.error('❌ API error:', message)
-        throw new Error(message)
+        const message = await extractErrorMessage(response);
+        console.error('❌ API error:', message);
+        throw new Error(message);
       }
 
-      const body = await response.json().catch(() => ({})) as { incidents?: AssignedIncident[] }
-      const incidents = Array.isArray(body?.incidents) ? body.incidents : []
-      console.log('📋 Fetched incidents:', incidents.length, 'items')
+      const body = await response.json();
+      const incidents = Array.isArray(body?.incidents) ? body.incidents : [];
+      console.log('📋 Fetched incidents:', incidents.length, 'items');
 
       // Filter out incidents with internal reports
-      const filteredIncidents = incidents.filter((incident) => !incident.er_team_report?.internal_report_id)
-      console.log('🔍 Filtered incidents:', filteredIncidents.length, 'items')
+      const filteredIncidents = incidents.filter((incident: AssignedIncident) => 
+        !incident.er_team_report?.internal_report_id
+      );
+      console.log('🔍 Filtered incidents:', filteredIncidents.length, 'items');
 
       // Sort and update state
-      const ordered = sortAssignedIncidents(filteredIncidents)
-      setAssignedIncidents(ordered)
+      const ordered = sortAssignedIncidents(filteredIncidents);
+      setAssignedIncidents(ordered);
       
-      // Update cache
-      await saveToCache('er-team-assigned-incidents', ordered)
-      await setCacheTimestamp()
+      // Save to cache with shorter TTL for mobile
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      await saveToCache(cacheKey, ordered); // TTL is now handled by the saveToCache function
       
-      // Apply draft merges
-      applyDraftMerge(ordered)
+      await setCacheTimestamp();
+      applyDraftMerge(ordered);
 
-      console.log('✅ Successfully updated assigned incidents')
+      console.log('✅ Successfully updated assigned incidents');
     } catch (error: any) {
-      console.error("❌ Failed to load assigned incidents", error)
+      console.error("❌ Failed to load assigned incidents", error);
       
-      // Try to fall back to cached data on error
-      try {
-        const cachedData = await loadFromCache<AssignedIncident[]>('er-team-assigned-incidents')
-        if (cachedData) {
-          console.log('🔄 Falling back to cached data')
-          setAssignedIncidents(cachedData)
-          setAssignedError("Network error. Using cached data: " + (error?.message || 'Unknown error'))
-        } else {
-          throw error // Re-throw if no cached data available
+      // If we have cached data, use it even if it's stale
+      if (assignedIncidents.length > 0) {
+        console.log('🔄 Falling back to existing state data');
+        setAssignedError("Network error. Using existing data: " + (error?.message || 'Unknown error'));
+      } else {
+        // Try to load from cache as last resort
+        try {
+          const cacheKey = `assigned-incidents-${teamId}`;
+          const cachedData = await loadFromCache<AssignedIncident[]>(cacheKey);
+          if (cachedData) {
+            console.log('🔄 Falling back to cached data');
+            setAssignedIncidents(cachedData);
+            setAssignedError("Network error. Using cached data: " + (error?.message || 'Unknown error'));
+            applyDraftMerge(cachedData);
+          } else {
+            throw error; // Re-throw if no cached data available
+          }
+        } catch (cacheError) {
+          setAssignedError(error?.message ?? "Unable to load assigned incidents");
         }
-      } catch (cacheError) {
-        setAssignedError(error?.message ?? "Unable to load assigned incidents")
       }
     } finally {
-      setAssignedLoading(false)
-      console.log('🏁 refreshAssignedIncidents completed')
+      setAssignedLoading(false);
+      console.log('🏁 refreshAssignedIncidents completed');
     }
   }, [profileStatus, teamId, applyDraftMerge])
 
