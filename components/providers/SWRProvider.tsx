@@ -1,13 +1,36 @@
 "use client"
 
-import React, { useCallback } from 'react'
-import { SWRConfig, Cache } from 'swr'
+import React, { useCallback, useEffect } from 'react'
+import { SWRConfig, Cache, useSWRConfig } from 'swr'
+import { App } from '@capacitor/app'
 
-// Cache provider that handles both memory and session storage for better offline support
+// 1. Define a global fetcher that prevents aggressive WebView caching
+// This mirrors the logic you added to the dashboard's fetchWithRetry
+const mobileCacheBusterFetcher = async (resource: string | Request, init?: RequestInit) => {
+  let url = resource.toString()
+  
+  // Only append timestamp for GET requests (or if method is undefined, which implies GET)
+  if (!init?.method || init.method.toUpperCase() === 'GET') {
+    const separator = url.includes('?') ? '&' : '?'
+    url = `${url}${separator}_t=${Date.now()}`
+  }
+
+  const res = await fetch(url, init)
+
+  if (!res.ok) {
+    const error: any = new Error('An error occurred while fetching the data.')
+    error.info = await res.json().catch(() => ({}))
+    error.status = res.status
+    throw error
+  }
+
+  return res.json()
+}
+
+// Cache provider that handles both memory and session storage
 const createCacheProvider = (): Cache<any> => {
   const map = new Map<string, any>()
   
-  // Try to load from sessionStorage on initial load
   if (typeof window !== 'undefined') {
     try {
       const cacheKey = 'mdrrmo-swr-cache-v2'
@@ -19,7 +42,6 @@ const createCacheProvider = (): Cache<any> => {
         }
       }
       
-      // Save to sessionStorage on unload
       const saveCache = () => {
         const cache: Record<string, any> = {}
         map.forEach((value, key) => {
@@ -37,12 +59,36 @@ const createCacheProvider = (): Cache<any> => {
   return map as unknown as Cache<any>
 }
 
+// Component to handle global Capacitor events
+function CapacitorSWRListener() {
+  const { mutate } = useSWRConfig()
+
+  useEffect(() => {
+    // 2. Listen for Native App Resume (Background -> Foreground)
+    const listenerPromise = App.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) {
+        console.log('📱 App resumed: Triggering SWR global revalidation')
+        
+        // Option A: Dispatch a window focus event (SWR listens to this automatically)
+        window.dispatchEvent(new Event('focus'))
+        
+        // Option B: Force revalidate all keys (more aggressive)
+        // mutate(() => true, undefined, { revalidate: true })
+      }
+    })
+
+    return () => {
+      listenerPromise.then(handle => handle.remove())
+    }
+  }, [mutate])
+
+  return null
+}
+
 export function SWRProvider({ children }: { children: React.ReactNode }) {
-  // Create a stable reference to the provider
   const provider = useCallback(() => {
     const cache = createCacheProvider()
     
-    // Add a method to clear the cache
     const clearCache = () => {
       if (typeof window !== 'undefined') {
         try {
@@ -54,27 +100,54 @@ export function SWRProvider({ children }: { children: React.ReactNode }) {
       return cache
     }
     
-    // Add clear method to the cache
     return Object.assign(cache, { clear: clearCache })
   }, [])
 
   return (
     <SWRConfig
       value={{
-        revalidateOnFocus: true, // Enable revalidation on focus
+        // Use the cache-busting fetcher by default
+        fetcher: mobileCacheBusterFetcher,
+        revalidateOnFocus: true,
         revalidateOnReconnect: true,
-        revalidateIfStale: true, // Revalidate if data is stale
-        revalidateOnMount: true, // Always revalidate when component mounts
-        refreshInterval: 30000, // Refresh every 30 seconds when focused
-        dedupingInterval: 10000, // Increase deduping interval to 10s
-        errorRetryCount: 3, // Retry failed requests up to 3 times
-        errorRetryInterval: 5000, // Wait 5 seconds between retries
+        revalidateIfStale: true,
+        revalidateOnMount: true,
+        refreshInterval: 30000, 
+        dedupingInterval: 5000, // Reduced from 10000 to 5000 for snappier mobile feel
+        errorRetryCount: 3,
+        errorRetryInterval: 5000,
         provider,
         onError: (error: any, key: string) => {
-          console.error('SWR Error:', { key, error })
+          // Suppress 404s or known expected errors from cluttering console
+          if (error.status !== 404) {
+            console.error('SWR Error:', { key, error })
+          }
         },
+        // Custom window focus event for Capacitor
+        initFocus(callback) {
+          let appStateListener: any = null
+          
+          if (typeof window !== 'undefined') {
+            window.addEventListener('focus', callback)
+            window.addEventListener('visibilitychange', callback)
+            
+            // Register Capacitor listener specifically for SWR focus handling
+            App.addListener('appStateChange', ({ isActive }) => {
+              if (isActive) callback()
+            }).then(h => { appStateListener = h })
+          }
+
+          return () => {
+            if (typeof window !== 'undefined') {
+              window.removeEventListener('focus', callback)
+              window.removeEventListener('visibilitychange', callback)
+              if (appStateListener) appStateListener.remove()
+            }
+          }
+        }
       }}
     >
+      <CapacitorSWRListener />
       {children}
     </SWRConfig>
   )
