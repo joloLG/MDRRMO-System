@@ -1037,7 +1037,6 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
     if (incidentPrefillStateRef.current.incidentId !== incidentId) {
       incidentPrefillStateRef.current = { incidentId, baseApplied: false }
       if (Array.isArray(selectedPatientPayload) && selectedPatientPayload.length > 0) {
-        // Multiple patients from ER team report
         const seededPatients = selectedPatientPayload.map((patientPayload, index) => 
           createPatientFromErPayload(patientPayload, selectedInjuryPayload)
         )
@@ -1067,22 +1066,16 @@ export function MakeReportForm({ selectedReport, erTeams, barangays, incidentTyp
         setTimeRespondedTime("")
       }
 
-      // Auto-fill number of responders to 3 (standard team size)
       if (!numberOfResponders) {
         setNumberOfResponders("3")
       }
-
-      // Auto-fill casualties to match the number of patients
       const patientCount = Array.isArray(selectedPatientPayload) ? selectedPatientPayload.length : (selectedPatientPayload ? 1 : 1)
       if (!personsInvolved) {
         setPersonsInvolved(String(patientCount))
       }
 
       if (Array.isArray(selectedPatientPayload) && selectedPatientPayload.length > 0) {
-        // For multiple patients, we don't prefill individual fields as they might differ
-        // The patients are already initialized above
       } else if (selectedPatientPayload && !Array.isArray(selectedPatientPayload)) {
-        // Legacy single patient handling - selectedPatientPayload is a single patient object
         const legacyPatient = selectedPatientPayload as ErTeamPatientPayload
         setPatients((prev) =>
           prev.map((patient, index) =>

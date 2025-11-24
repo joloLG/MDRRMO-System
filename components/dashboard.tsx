@@ -1798,7 +1798,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
 
             <div className="text-center flex-1">
               <h1 className="text-xl sm:text-2xl font-bold">MDRRMO</h1>
-              <p className="text-sm sm:text-base text-orange-100">Accident Reporting System</p>
+              <p className="text-sm sm:text-base text-orange-100">Bulan Emergency App</p>
             </div>
 
             <div className="flex items-center space-x-4">
@@ -1892,10 +1892,10 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                     className="w-20 h-20 object-contain mb-2 mx-auto"
                     style={{ maxWidth: '80px', maxHeight: '80px' }}
                   />
-                  <CardTitle className="text-lg sm:text-xl font-bold text-orange-700 text-center mt-2">WELCOME TO MDRRMO INCIDENT REPORTING SYSTEM APP</CardTitle>
+                  <CardTitle className="text-lg sm:text-xl font-bold text-orange-700 text-center mt-2">WELCOME TO MDRRMO BULAN EMERGENCY APP</CardTitle>
                 </CardHeader>
                 <CardContent className="text-center text-gray-700 text-sm sm:text-base">
-                  SCROLL DOWN AND CLICK ANY INCIDENT TYPE TO SEND AN EMERGENCY ALERT TO MDRRMO RESPONDERS.
+                  MAARI LAMANG I-ISKROL PAIBABA AT PUMILI NG TAMANG KLASENG INSIDENTE PARA MAKAPAG-REPORT
                 
                   <CardContent className="text-center text-red-700 text-sm sm:text-base"></CardContent>
                   Available max credit is 3, Every Credits will be refreshed in 10 minutes
