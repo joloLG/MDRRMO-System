@@ -40,6 +40,7 @@ import {
 // Capacitor imports
 import { CapacitorGeolocation, type LocationCoords, type LocationError } from "@/lib/capacitor-geolocation"
 import { CapacitorNotifications } from "@/lib/capacitor-notifications"
+import { App } from '@capacitor/app' // ADDED: Import App for state handling
 
 const LocationMap = dynamic(() => import("@/components/LocationMap"), { ssr: false })
 const DASHBOARD_BACKGROUND_STYLE: React.CSSProperties = {
@@ -986,7 +987,8 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
 
     try {
       console.log('🌐 Fetching reports from /api/er-team/reports')
-      const response = await fetchWithRetry("/api/er-team/reports", {
+      // Append timestamp to force cache busting on mobile
+      const response = await fetchWithRetry(`/api/er-team/reports?_t=${Date.now()}`, {
         credentials: "include",
         maxRetries: 3,
         retryDelay: 1000
@@ -1066,7 +1068,9 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
       }
 
       console.log('🌐 Fetching assigned incidents from server');
-      const response = await fetchWithRetry("/api/er-team/assigned", {
+      // Adding timestamp query param to force a fresh fetch on mobile devices
+      // This defeats aggressive WebView/Chrome caching
+      const response = await fetchWithRetry(`/api/er-team/assigned?_t=${Date.now()}`, {
         credentials: "include",
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -1829,7 +1833,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
       }
     }, 30000) // Refresh every 30 seconds as fallback
 
-    // Add visibility change listener for when user returns to tab
+    // Add visibility change listener for when user returns to tab (Desktop/Web)
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && !assignedLoading) {
         console.log('Tab became visible: refreshing assigned incidents')
@@ -1839,9 +1843,31 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
+    // Add App State listener for native Capacitor apps
+    // This is CRITICAL for mobile apps as they don't always trigger visibilitychange
+    const handleAppStateChange = async ({ isActive }: { isActive: boolean }) => {
+      if (isActive) {
+        console.log('📱 App became active (foreground): refreshing all data')
+        try {
+          // Force clear some cache if needed
+          await forceRefreshData()
+          await Promise.all([
+            refreshAssignedIncidents(), 
+            refreshReports()
+          ])
+        } catch (err) {
+          console.error('Error refreshing data on app resume:', err)
+        }
+      }
+    }
+    
+    // Add the listener
+    const listenerPromise = App.addListener('appStateChange', handleAppStateChange)
+
     return () => {
       clearInterval(intervalId)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
+      listenerPromise.then(handle => handle.remove())
     }
   }, [profileStatus, teamId, assignedLoading, refreshAssignedIncidents, refreshReports])
 
