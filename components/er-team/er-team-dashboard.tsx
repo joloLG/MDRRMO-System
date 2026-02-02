@@ -87,6 +87,7 @@ interface AssignedIncident {
   longitude: number | null
   firstName: string | null
   lastName: string | null
+  mobileNumber: string | null
   created_at: string
   responded_at: string | null
   resolved_at: string | null
@@ -628,7 +629,9 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   const lastDispatchOverlayIdRef = React.useRef<string | null>(null)
 
   const latestAssignedIncident = assignedIncidents[0] ?? null
-  const selectedIncident = latestAssignedIncident
+  const selectedIncident = selectedIncidentId 
+    ? assignedIncidents.find(incident => incident.id === selectedIncidentId) ?? latestAssignedIncident
+    : latestAssignedIncident
 
   const canMarkSelectedIncidentResolved = React.useMemo(() => {
     if (!selectedIncident) return false
@@ -2467,42 +2470,26 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
                 </div>
               </CardHeader>
               <CardContent className="space-y-5">
-                <div className="bg-gradient-to-r from-gray-50 to-white p-4 rounded-xl border border-gray-100/50 shadow-sm">
-                  <div className="text-sm font-semibold text-gray-900 mb-2">
-                    {`${selectedIncident.firstName ?? ""} ${selectedIncident.lastName ?? ""}`.trim() ||
-                      `Incident ${selectedIncident.id.slice(0, 8)}`}
-                  </div>
-                  {selectedIncident.emergency_type ? (
-                    <div className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 bg-orange-100 px-2 py-1 rounded-full mb-2">
-                      <span className="w-1.5 h-1.5 bg-orange-500 rounded-full"></span>
+                <div className="bg-gradient-to-r from-gray-50 to-white p-4 rounded-xl border border-gray-100/50 shadow-sm space-y-3">
+                  {selectedIncident.emergency_type && (
+                    <div className="text-lg font-bold text-orange-700">
                       {selectedIncident.emergency_type}
                     </div>
-                  ) : null}
-                  <div className="flex flex-wrap gap-2 text-xs text-gray-600">
-                    {latestIncidentLabels.reported ? (
-                      <span className="flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-1 rounded-md">
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                        </svg>
-                        Reported {latestIncidentLabels.reported}
-                      </span>
-                    ) : null}
-                    {latestIncidentLabels.responded ? (
-                      <span className="flex items-center gap-1 bg-green-50 text-green-700 px-2 py-1 rounded-md">
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                        </svg>
-                        Responded {latestIncidentLabels.responded}
-                      </span>
-                    ) : null}
-                    {latestIncidentLabels.resolved ? (
-                      <span className="flex items-center gap-1 bg-purple-50 text-purple-700 px-2 py-1 rounded-md">
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                        </svg>
-                        Resolved {latestIncidentLabels.resolved}
-                      </span>
-                    ) : null}
+                  )}
+                  
+                  <div className="space-y-2">
+                    <div className="text-sm">
+                      <span className="font-bold">Reporter: </span>
+                      <span>{`${selectedIncident.firstName || ''} ${selectedIncident.lastName || ''}`.trim() || 'N/A'}</span>
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-bold">Mobile: </span>
+                      <span>{selectedIncident.mobileNumber || 'N/A'}</span>
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-bold">Location: </span>
+                      <span>{selectedIncident.location_address || 'No location provided'}</span>
+                    </div>
                   </div>
                 </div>
 

@@ -14,6 +14,7 @@ async function ensureMailerLoaded() {
       mailerModule = null
     }
   }
+  
   return mailerModule
 }
 

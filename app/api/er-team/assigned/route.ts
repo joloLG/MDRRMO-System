@@ -11,6 +11,7 @@ interface EmergencyReportWithDraft {
   longitude: number | null
   firstName: string | null
   lastName: string | null
+  mobileNumber: string | null
   created_at: string
   responded_at: string | null
   resolved_at: string | null
@@ -22,6 +23,7 @@ interface EmergencyReportWithDraft {
     notes: string | null
     internal_report_id?: number | null
   } | null
+  
 }
 
 export async function GET(request: Request) {
@@ -55,13 +57,13 @@ export async function GET(request: Request) {
     }
 
     const { data, error } = await supabase
-      .from("emergency_reports")
-      .select(
-        `id, status, emergency_type, location_address, latitude, longitude, firstName, lastName, created_at, responded_at, resolved_at,
-         er_team_report:er_team_reports!er_team_reports_emergency_report_id_fkey (
-           id, status, updated_at, synced_at, notes, patient_payload, incident_payload, injury_payload, internal_report_id
-         )`
-      )
+  .from("emergency_reports")
+  .select(
+    `id, status, emergency_type, location_address, latitude, longitude, 
+     firstName, lastName, mobileNumber, created_at, responded_at, resolved_at,
+     er_team_report:er_team_reports!er_team_reports_emergency_report_id_fkey
+     (id, status, updated_at, synced_at, notes, patient_payload, incident_payload, injury_payload, internal_report_id)`
+  )
       .eq("er_team_id", mapping.er_team_id)
       .order("responded_at", { ascending: false })
       .order("created_at", { ascending: false })
@@ -110,6 +112,7 @@ export async function GET(request: Request) {
           longitude: typeof (row as any).longitude === "number" ? (row as any).longitude : null,
           firstName: row.firstName,
           lastName: row.lastName,
+          mobileNumber: row.mobileNumber,
           created_at: row.created_at,
           responded_at: row.responded_at,
           resolved_at: row.resolved_at,
