@@ -125,6 +125,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to save draft" }, { status: 500 })
     }
 
+    // Create admin notification if submitting for review
+    if (status === "pending_review") {
+      try {
+        // Get emergency report details for the notification
+        const { data: reportDetails } = await supabase
+          .from("emergency_reports")
+          .select("emergency_type, location_address")
+          .eq("id", emergencyReportId)
+          .single()
+        
+        await supabase.from("admin_notifications").insert({
+          type: "report_review",
+          message: `New PCR Report ready for review: ${reportDetails?.emergency_type || 'Incident'} at ${reportDetails?.location_address || 'Unknown location'}`,
+          emergency_report_id: emergencyReportId,
+          is_read: false,
+        })
+        console.log("[er-team draft] Admin notification created for pending_review")
+      } catch (notifError) {
+        // Don't fail the request if notification creation fails
+        console.error("[er-team draft] Failed to create admin notification:", notifError)
+      }
+    }
+
     return NextResponse.json({ ok: true, report: data })
   } catch (error: any) {
     console.error("[er-team draft] unexpected", error)

@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, Pill, User, Activity, AlertCircle, Droplet, CalendarDays, XCircle } from "lucide-react"
+import { Loader2, Pill, User, Activity, AlertCircle, Droplet, CalendarDays, XCircle, X, ArrowLeft } from "lucide-react"
 import { FRONT_BODY_REGION_IDS, BACK_BODY_REGION_IDS } from "@/components/admin/make-report-form"
 import { PRIORITY_COLORS, PRIORITY_LABELS } from "@/lib/priority"
 import { cn } from "@/lib/utils"
@@ -58,6 +58,12 @@ export interface ReferenceOption {
 export interface ErTeamReportFormProps {
   draft: ErTeamDraft
   hospitals: ReferenceOption[]
+  barangays: ReferenceOption[]
+  incidentInfo?: {
+    reporterName: string
+    incidentType: string
+    locationAddress: string
+  }
   onDraftChange: (next: ErTeamDraft) => void
   onSubmitForReview: (draft: ErTeamDraft) => Promise<void>
   onClose: () => void
@@ -188,16 +194,6 @@ const CIRCULATION_OPTIONS = [
 ] as const
 
 const BLOOD_LOSS_OPTIONS = ["Major", "Minor", "None"] as const
-
-export const HOSPITAL_OPTIONS: ReferenceOption[] = [
-  { id: "smmg_bulan", name: "SMMG - Bulan" },
-  { id: "irosin_general_hospital", name: "Irosin General Hospital / IMAC" },
-  { id: "bulan_medicare", name: "Bulan Medicare Hospital" },
-  { id: "pawa_hospital", name: "Pawa Hospital" },
-  { id: "smmg_hsc_sordoc", name: "SMMG-HSC (SorDoc)" },
-  { id: "sorsogon_provincial", name: "Sorsogon Provincial Hospital" },
-  { id: "irosin_district", name: "Irosin District Hospital" },
-]
 
 const flattenLegacyPatientPayload = (source: unknown): Partial<ErTeamPatientPayload> => {
   if (!source || typeof source !== "object") return {}
@@ -501,7 +497,8 @@ const BodyDiagram: React.FC<BodyDiagramProps> = ({ view, svgPath, regionIds, reg
       // First check IndexedDB cache
       try {
         const cachedAsset = await loadAsset(svgPath)
-        if (cachedAsset && isMounted) {
+        if (cachedAsset && cachedAsset.content && isMounted) {
+          console.log(`Loaded SVG from cache: ${svgPath}`)
           setSvgContent(cachedAsset.content)
           return
         }
@@ -511,27 +508,48 @@ const BodyDiagram: React.FC<BodyDiagramProps> = ({ view, svgPath, regionIds, reg
 
       // Check in-memory cache
       if (svgContentCache.has(svgPath)) {
-        if (isMounted) setSvgContent(svgContentCache.get(svgPath) ?? "")
-        return
+        const cached = svgContentCache.get(svgPath)
+        if (cached && isMounted) {
+          console.log(`Loaded SVG from memory: ${svgPath}`)
+          setSvgContent(cached)
+          return
+        }
       }
 
       // Fetch from network and cache
       try {
-        const response = await fetch(svgPath)
-        if (!response.ok) throw new Error(`Failed to load SVG (${response.status})`)
+        console.log(`Fetching SVG: ${svgPath}`)
+        // Ensure we use the full URL with origin
+        const fullUrl = svgPath.startsWith('http') ? svgPath : `${window.location.origin}${svgPath}`
+        const response = await fetch(fullUrl, { 
+          cache: 'force-cache',
+          credentials: 'same-origin'
+        })
+        if (!response.ok) {
+          throw new Error(`Failed to load SVG: ${response.status} ${response.statusText}`)
+        }
         const text = await response.text()
+        
+        if (!text || text.trim().length === 0) {
+          throw new Error('SVG content is empty')
+        }
+        
+        console.log(`Successfully loaded SVG: ${svgPath}, length: ${text.length}`)
         svgContentCache.set(svgPath, text)
         if (isMounted) setSvgContent(text)
 
         // Cache in IndexedDB for offline use
         try {
           await saveAsset(svgPath, text, "image/svg+xml")
+          console.log(`Cached SVG in IndexedDB: ${svgPath}`)
         } catch (cacheError) {
           console.warn("Failed to cache SVG in IndexedDB", cacheError)
         }
       } catch (error) {
-        console.error("Error loading ER team body diagram", error)
-        if (isMounted) setSvgContent("<svg></svg>")
+        console.error(`Error loading ER team body diagram from ${svgPath}:`, error)
+        // Set a minimal fallback SVG so it at least shows something
+        const fallbackSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 600"><text x="50%" y="50%" text-anchor="middle" fill="#999">Diagram unavailable</text></svg>'
+        if (isMounted) setSvgContent(fallbackSvg)
       }
     }
     void loadSvg()
@@ -805,6 +823,8 @@ const STATUS_BADGE: Record<ErTeamDraftStatus, { label: string; className: string
 export function ErTeamReportForm({
   draft,
   hospitals,
+  barangays,
+  incidentInfo,
   onDraftChange,
   onSubmitForReview,
   onClose,
@@ -814,19 +834,33 @@ export function ErTeamReportForm({
   const [activePatientIndex, setActivePatientIndex] = React.useState<number>(0)
 
   const ensurePayloads = React.useCallback(() => {
+    const currentDate = format(new Date(), "yyyy-MM-dd")
+    
     // Ensure we have at least one patient
     const patientsPayload = Array.isArray(draft.patientsPayload) && draft.patientsPayload.length > 0
-      ? draft.patientsPayload.map((patient) => ({
-          ...DEFAULT_PATIENT_TEMPLATE,
-          ...flattenLegacyPatientPayload(patient),
-          ...(patient ?? {}),
-        }))
+      ? draft.patientsPayload.map((patient) => {
+          const merged = {
+            ...DEFAULT_PATIENT_TEMPLATE,
+            ...flattenLegacyPatientPayload(patient),
+            ...(patient ?? {}),
+          }
+          
+          // Auto-fill dates if empty
+          if (!merged.receivingDate || merged.receivingDate === "") {
+            merged.receivingDate = currentDate
+          }
+          if (!merged.emtErtDate || merged.emtErtDate === "") {
+            merged.emtErtDate = currentDate
+          }
+          
+          return merged
+        })
       : [
           {
             ...DEFAULT_PATIENT_TEMPLATE,
             // Auto-fill dates for new patients
-            receivingDate: format(new Date(), "yyyy-MM-dd"),
-            emtErtDate: format(new Date(), "yyyy-MM-dd"),
+            receivingDate: currentDate,
+            emtErtDate: currentDate,
             // Migrate global injury data to first patient for backward compatibility
             injuryPayload: draft.injuryPayload || DEFAULT_INJURY_TEMPLATE,
             ...flattenLegacyPatientPayload(draft.patientsPayload && draft.patientsPayload[0] ? draft.patientsPayload[0] : {}), // Backward compatibility
@@ -1050,23 +1084,49 @@ export function ErTeamReportForm({
   const statusMeta = STATUS_BADGE[draft.status]
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-t-lg bg-white shadow-lg ring-1 ring-orange-100 sm:rounded-3xl">
-      <header className="border-b border-orange-100 bg-gradient-to-r from-orange-500 via-orange-400 to-orange-500 px-3 py-3 text-white sm:px-6 sm:py-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-          <div>
+    <div className="flex h-full flex-col overflow-hidden bg-white">
+      <header className="relative border-b border-orange-100 bg-gradient-to-r from-orange-500 via-orange-400 to-orange-500 px-3 py-3 text-white sm:px-6 sm:py-4">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-3 right-3 flex items-center gap-1 px-3 py-2 rounded-full hover:bg-white/20 transition-colors text-sm font-medium"
+          aria-label="Back"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span className="hidden sm:inline">Back</span>
+        </button>
+        <div className="flex flex-col gap-2 pr-12">
+          <div className="flex-1">
             <p className="text-[10px] uppercase tracking-wide text-orange-100 sm:text-xs">Patient Care Report</p>
-            <h2 className="text-base font-semibold sm:text-lg">Draft #{draft.clientDraftId.slice(0, 8)}</h2>
-            <p className="mt-1 text-[10px] text-orange-100 sm:text-xs">
-              Last updated {new Date(draft.updatedAt).toLocaleString()} {draft.synced ? "• Synced" : "• Draft mode"}
-            </p>
-          </div>
-          <div className="flex flex-col items-start gap-1 sm:items-end sm:gap-2">
-            <Badge className={statusMeta.className}>{statusMeta.label}</Badge>
-            {draft.lastSyncError ? (
-              <span className="flex items-center gap-1 text-[10px] text-red-200 sm:text-xs">
-                <AlertCircle className="h-3 w-3" /> {draft.lastSyncError}
-              </span>
-            ) : null}
+            <h2 className="text-base font-semibold sm:text-lg">Incident Details</h2>
+            <div className="mt-2 space-y-1">
+              {incidentInfo?.reporterName && (
+                <p className="text-[11px] text-white sm:text-sm">
+                  <span className="text-orange-100">Reporter:</span> {incidentInfo.reporterName}
+                </p>
+              )}
+              {incidentInfo?.incidentType && (
+                <p className="text-[11px] text-white sm:text-sm">
+                  <span className="text-orange-100">Type:</span> {incidentInfo.incidentType}
+                </p>
+              )}
+              {incidentInfo?.locationAddress && (
+                <p className="text-[11px] text-white sm:text-sm">
+                  <span className="text-orange-100">Location:</span> {incidentInfo.locationAddress}
+                </p>
+              )}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <p className="text-[10px] text-orange-100 sm:text-xs">
+                Last updated {new Date(draft.updatedAt).toLocaleString()} {draft.synced ? "• Synced" : "• Draft mode"}
+              </p>
+              <Badge className={statusMeta.className}>{statusMeta.label}</Badge>
+              {draft.lastSyncError && (
+                <span className="flex items-center gap-1 text-[10px] text-red-200 sm:text-xs">
+                  <AlertCircle className="h-3 w-3" /> {draft.lastSyncError}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -1224,15 +1284,29 @@ export function ErTeamReportForm({
                     </div>
                     <div>
                       <Label htmlFor="incident-location" className="block text-xs font-medium text-gray-700 mb-1 sm:text-sm">
-                        Incident location
+                        Incident location (Barangay)
                       </Label>
-                      <Textarea
-                        id="incident-location"
-                        value={activePatient.incidentLocation}
-                        onChange={(event) => updatePatient(activePatientIndex, { incidentLocation: event.target.value })}
-                        rows={2}
-                        className="text-xs sm:text-sm"
-                      />
+                      <Select
+                        value={activePatient.incidentLocation ?? ""}
+                        onValueChange={(value: string) => updatePatient(activePatientIndex, { incidentLocation: value })}
+                      >
+                        <SelectTrigger id="incident-location" className="text-xs sm:text-sm h-20">
+                          <SelectValue placeholder="Select barangay" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-56 overflow-y-auto">
+                          {barangays.length > 0 ? (
+                            barangays.map((barangay) => (
+                              <SelectItem key={barangay.id} value={barangay.name}>
+                                {barangay.name}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <div className="px-2 py-4 text-xs text-gray-500 text-center">
+                              Loading barangays...
+                            </div>
+                          )}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                 </CardContent>
@@ -1515,15 +1589,29 @@ export function ErTeamReportForm({
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
                         <div>
                           <Label htmlFor="incident-location" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
-                            Incident location
+                            Incident Location
                           </Label>
-                          <Input
-                            id="incident-location"
-                            value={activePatient.incidentLocation}
-                            onChange={(event) => updatePatient(activePatientIndex, { incidentLocation: event.target.value })}
-                            required
-                            className="text-xs sm:text-sm"
-                          />
+                          <Select
+                            value={activePatient.incidentLocation ?? ""}
+                            onValueChange={(value: string) => updatePatient(activePatientIndex, { incidentLocation: value })}
+                          >
+                            <SelectTrigger id="incident-location" className="text-xs sm:text-sm">
+                              <SelectValue placeholder="Select barangay" />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-56 overflow-y-auto">
+                              {barangays.length > 0 ? (
+                                barangays.map((barangay) => (
+                                  <SelectItem key={barangay.id} value={barangay.name}>
+                                    {barangay.name}
+                                  </SelectItem>
+                                ))
+                              ) : (
+                                <div className="px-2 py-4 text-xs text-gray-500 text-center">
+                                  Loading barangays...
+                                </div>
+                              )}
+                            </SelectContent>
+                          </Select>
                         </div>
                         <div className="md:col-span-2">
                           <Label className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">Evacuation priority</Label>
@@ -1656,11 +1744,17 @@ export function ErTeamReportForm({
                             <SelectValue placeholder="Select hospital" />
                           </SelectTrigger>
                           <SelectContent className="max-h-56 overflow-y-auto">
-                            {hospitals.map((hospital) => (
-                              <SelectItem key={hospital.id} value={hospital.id}>
-                                {hospital.name}
-                              </SelectItem>
-                            ))}
+                            {hospitals.length > 0 ? (
+                              hospitals.map((hospital) => (
+                                <SelectItem key={hospital.id} value={String(hospital.id)}>
+                                  {hospital.name}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <div className="px-2 py-4 text-xs text-gray-500 text-center">
+                                Loading hospitals...
+                              </div>
+                            )}
                           </SelectContent>
                         </Select>
                       </div>

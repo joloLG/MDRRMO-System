@@ -8,6 +8,8 @@ const assetsToCache = [
   '/',
   '/manifest.json',
   '/sounds/alert.mp3',
+  '/body_part_front-01.svg',
+  '/body_part_back-01.svg',
   NOTIFICATION_ICON
 ]
 

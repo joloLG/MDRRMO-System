@@ -1,7 +1,7 @@
 import { Capacitor } from '@capacitor/core'
 import { LocalNotifications } from '@capacitor/local-notifications'
 
-export class CapacitorNotifications {
+class CapacitorNotifications {
   private static permissionGranted = false
   private static permissionRequest: Promise<boolean> | null = null
 
@@ -83,3 +83,5 @@ export class CapacitorNotifications {
     // as the sound is specified in the notification scheduling
   }
 }
+
+export { CapacitorNotifications }

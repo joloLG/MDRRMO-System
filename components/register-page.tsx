@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/componen
 import { supabase } from "@/lib/supabase"
 import { Eye, EyeOff, AlertCircle, Check, X, UserPlus, Shield, XCircle, AlertTriangle, Lock, Languages, ScrollText } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import Link from "next/link"
@@ -797,6 +798,16 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin, selectedRoleD
       {/* Success Modal */}
       <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
         <DialogContent className="sm:max-w-[425px] bg-white">
+          <VisuallyHidden>
+            <DialogTitle>
+              {requestedRole === 'user' ? 'Registration Successful' : 'Account Request Submitted'}
+            </DialogTitle>
+          </VisuallyHidden>
+          <VisuallyHidden>
+            <DialogDescription>
+              {success || "Your registration has been processed."}
+            </DialogDescription>
+          </VisuallyHidden>
           <div className="flex flex-col items-center text-center p-6">
             <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
               <Check className="h-8 w-8 text-green-600" />

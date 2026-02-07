@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabase"
 import { Bell, BellOff, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon, FireExtinguisher, HeartPulse, Car, CloudRain, Swords, HelpCircle, PersonStanding, Navigation, Clock } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
 import AdminRealtimeOverlay, { AdminRealtimeOverlayRef, AdminNotificationRow } from "@/components/admin/AdminRealtimeOverlay"
+import { StandaloneReportsList } from "@/components/admin/standalone-reports-list"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Calendar } from "@/components/ui/calendar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -31,7 +32,7 @@ interface Notification {
   message: string;
   is_read: boolean;
   created_at: string;
-  type: 'new_report' | 'report_update';
+  type: 'new_report' | 'report_update' | 'report_review';
   reporterFirstName?: string;
   reporterLastName?: string;
   reporterMobileNumber?: string;
@@ -433,7 +434,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
           user_id
         )
       `)
-      .eq('type', 'new_report')
+      .in('type', ['new_report', 'report_review'])
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -853,8 +854,8 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         async (payload) => {
           console.log('Change received on emergency_reports:', payload);
           
+          // Handle INSERT - new reports
           if (payload.eventType === 'INSERT' && payload.new) {
-            // Add new report to the list
             const newReport = payload.new as Report;
             setAllReports(prev => {
               const exists = prev.some(r => r.id === newReport.id);
@@ -863,14 +864,50 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
               }
               return prev;
             });
-          } else if (payload.eventType === 'UPDATE' && payload.new) {
-            // Update existing report
+          } 
+          // Handle UPDATE - status changes from ER Team
+          else if (payload.eventType === 'UPDATE' && payload.new) {
             const updatedReport = payload.new as Report;
-            setAllReports(prev => prev.map(r => r.id === updatedReport.id ? updatedReport : r));
-          } else if (payload.eventType === 'DELETE' && payload.old) {
-            // Remove deleted report
+            const oldReport = payload.old as Report;
+            
+            // Update the report in state immediately
+            setAllReports(prev => prev.map(r => r.id === updatedReport.id ? { ...r, ...updatedReport } : r));
+            
+            // Check if this is a status change from ER Team (responded_at or resolved_at changed)
+            const respondedAtChanged = !oldReport?.responded_at && updatedReport.responded_at;
+            const resolvedAtChanged = !oldReport?.resolved_at && updatedReport.resolved_at;
+            
+            if (respondedAtChanged || resolvedAtChanged) {
+              console.log(`[AdminDashboard] ER Team updated incident ${updatedReport.id}:`, {
+                status: updatedReport.status,
+                respondedAt: updatedReport.responded_at,
+                resolvedAt: updatedReport.responded_at
+              });
+              
+              // If the updated report is currently selected, update it
+              if (selectedReport?.id === updatedReport.id) {
+                setSelectedReport(prev => prev ? { ...prev, ...updatedReport } : null);
+              }
+              
+              // Show notification for significant status changes
+              if (resolvedAtChanged && overlayRef.current) {
+                overlayRef.current.showNotificationOverlay({
+                  id: `status-resolved-${updatedReport.id}`,
+                  type: 'default',
+                  message: `Incident resolved by ER Team: ${updatedReport.emergency_type} at ${updatedReport.location_address || 'Unknown location'}`,
+                  created_at: new Date().toISOString(),
+                  emergency_report_id: updatedReport.id
+                });
+              }
+            }
+          } 
+          // Handle DELETE
+          else if (payload.eventType === 'DELETE' && payload.old) {
             const deletedId = payload.old.id;
             setAllReports(prev => prev.filter(r => r.id !== deletedId));
+            if (selectedReport?.id === deletedId) {
+              setSelectedReport(null);
+            }
           }
         }
       )
@@ -919,6 +956,21 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                       type: fullNotification.type,
                     });
                   }
+                } else if (newNotification.type === 'report_review') {
+                  // Handle report review notifications from ER Team
+                  playAlertSound();
+                  if (overlayRef.current) {
+                    console.log('Triggering overlay for report review:', newNotification);
+                    overlayRef.current.showNotificationOverlay({
+                      id: fullNotification.id,
+                      type: 'report_review',
+                      message: fullNotification.message,
+                      created_at: fullNotification.created_at,
+                      emergency_report_id: fullNotification.emergency_report_id,
+                    });
+                  }
+                  // Also refresh ER Team reports list
+                  void fetchErTeamReports();
                 }
               } catch (e) {
                 console.warn('Failed to process notification payload for sound:', e);
@@ -1016,7 +1068,51 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'er_team_reports' },
         (payload) => {
-          console.log('Change received on er_team_reports, refetching ER team reports:', payload);
+          console.log('Change received on er_team_reports:', payload);
+          
+          // Immediate UI update for status changes
+          if (payload.eventType === 'UPDATE' && payload.new) {
+            const updatedReport = payload.new as ErTeamReportSummary;
+            setErTeamReports(prev => prev.map(r => r.id === updatedReport.id ? { ...r, ...updatedReport } : r));
+            
+            // Show notification for reports moving to pending_review
+            if (payload.old && (payload.old as any).status !== 'pending_review' && updatedReport.status === 'pending_review') {
+              const reportInfo = updatedReport.emergency_report;
+              if (overlayRef.current) {
+                overlayRef.current.showNotificationOverlay({
+                  id: `er-report-${updatedReport.id}`,
+                  type: 'report_review',
+                  message: `New PCR Report ready for review: ${reportInfo?.emergency_type || 'Incident'} at ${reportInfo?.location_address || 'Unknown location'}`,
+                  created_at: new Date().toISOString(),
+                  emergency_report_id: updatedReport.emergency_report_id || undefined
+                });
+              }
+              void playAlertSound();
+            }
+          } else if (payload.eventType === 'INSERT' && payload.new) {
+            const newReport = payload.new as ErTeamReportSummary;
+            setErTeamReports(prev => [newReport, ...prev]);
+            
+            // Show notification for new reports pending review
+            if (newReport.status === 'pending_review') {
+              const reportInfo = newReport.emergency_report;
+              if (overlayRef.current) {
+                overlayRef.current.showNotificationOverlay({
+                  id: `er-report-${newReport.id}`,
+                  type: 'report_review',
+                  message: `New PCR Report submitted: ${reportInfo?.emergency_type || 'Incident'} at ${reportInfo?.location_address || 'Unknown location'}`,
+                  created_at: new Date().toISOString(),
+                  emergency_report_id: newReport.emergency_report_id || undefined
+                });
+              }
+              void playAlertSound();
+            }
+          } else if (payload.eventType === 'DELETE' && payload.old) {
+            const deletedId = (payload.old as any).id;
+            setErTeamReports(prev => prev.filter(r => r.id !== deletedId));
+          }
+          
+          // Also refresh full list to ensure consistency
           void fetchErTeamReports();
         }
       )
@@ -1415,6 +1511,9 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
             <DialogTitle>{pendingBroadcastType === 'earthquake' ? 'Earthquake Alert' : pendingBroadcastType === 'tsunami' ? 'Tsunami Alert' : 'Alert'} Message</DialogTitle>
+            <DialogDescription>
+              Compose the alert message that will be sent to all users.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -1850,6 +1949,11 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
             </div>
           </>
       </main>
+
+      {/* ER Team Standalone Reports Section */}
+      <section className="mt-8">
+        <StandaloneReportsList />
+      </section>
 
       
       <Dialog open={showActiveModal} onOpenChange={setShowActiveModal}>

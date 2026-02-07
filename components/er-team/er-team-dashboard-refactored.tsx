@@ -37,7 +37,6 @@ import { useAssignedIncidents, type AssignedIncident } from "@/lib/hooks/useAssi
 import { useErTeamReports, type SyncedReport } from "@/lib/hooks/useErTeamReports"
 import { useErTeamReferences } from "@/lib/hooks/useErTeamReferences"
 import { useErTeamLocation } from "@/lib/hooks/useErTeamLocation"
-import { useErTeamRealtime } from "@/lib/hooks/useErTeamRealtime"
 
 const DASHBOARD_BACKGROUND_STYLE: React.CSSProperties = {
   backgroundImage: 'url("/images/mdrrmo_dashboard_bg.jpg")',
@@ -112,18 +111,11 @@ function createDraftForIncident(incident: AssignedIncident): LocalDraft {
     ? deepCopy(baseIncidentPayload as Record<string, any>)
     : {}
 
-  // Auto-populate incident data from emergency report
   if (!incidentPayload.incidentDate && incident.created_at) {
     incidentPayload.incidentDate = incident.created_at.slice(0, 10)
   }
   if (!incidentPayload.incidentTime && incident.created_at) {
     incidentPayload.incidentTime = incident.created_at.slice(11, 16)
-  }
-  if (!incidentPayload.incidentTypeLabel && incident.emergency_type) {
-    incidentPayload.incidentTypeLabel = incident.emergency_type
-  }
-  if (!incidentPayload.locationAddress && incident.location_address) {
-    incidentPayload.locationAddress = incident.location_address
   }
 
   const baseInjuryPayload = incident.er_team_report?.injury_payload
@@ -316,7 +308,6 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
     refreshAssignedIncidents,
     setAssignedError,
     updateIncident,
-    instantUpdateIncident,
   } = useAssignedIncidents({
     teamId: profile.teamId,
     isAuthorized: profile.profileStatus === "authorized",
@@ -361,53 +352,6 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
   const [hasUnreadDispatchAlert, setHasUnreadDispatchAlert] = React.useState(false)
   const [isNotificationDropdownOpen, setIsNotificationDropdownOpen] = React.useState(false)
   const [lastAssignedRefresh, setLastAssignedRefresh] = React.useState<number>(0)
-
-  // Notification handler for realtime
-  const handleNewDispatch = React.useCallback((notification: TeamDispatchNotification) => {
-    setDispatchNotifications(prev => [notification, ...prev.slice(0, MAX_DISPATCH_NOTIFICATIONS - 1)])
-    setHasUnreadDispatchAlert(true)
-    
-    // Show overlay
-    if (lastDispatchOverlayIdRef.current !== notification.id) {
-      setDispatchOverlay(notification)
-      if (dispatchOverlayTimeoutRef.current) {
-        clearTimeout(dispatchOverlayTimeoutRef.current)
-      }
-      dispatchOverlayTimeoutRef.current = setTimeout(() => {
-        setDispatchOverlay(null)
-        dispatchOverlayTimeoutRef.current = null
-      }, DISPATCH_OVERLAY_DURATION_MS)
-      lastDispatchOverlayIdRef.current = notification.id
-    }
-
-    // Use Capacitor notifications
-    CapacitorNotifications.showDispatchAlert({
-      title: 'ER Team Dispatch Alert',
-      body: `${notification.incidentType ?? "Incident"}: ${notification.locationAddress ?? "Location pending"}`,
-      id: notification.id.toString(),
-      sound: true,
-      extra: {
-        emergencyReportId: notification.emergencyReportId,
-        eventType: notification.eventType,
-      }
-    }).catch((error) => {
-      console.warn('Failed to show Capacitor notification:', error)
-    })
-  }, [])
-
-  // Optimized realtime subscriptions
-  useErTeamRealtime({
-    teamId: profile.teamId,
-    isAuthorized: profile.profileStatus === "authorized",
-    userId: profile.userId,
-    assignedIncidents,
-    userLocation,
-    onAssignedIncidentChange: refreshAssignedIncidents,
-    onReportChange: refreshReports,
-    onInternalReportChange: refreshAssignedIncidents,
-    onNewDispatch: handleNewDispatch,
-    onInstantIncidentUpdate: instantUpdateIncident,
-  })
 
   const dispatchOverlayTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const assignedIncidentIdsRef = React.useRef<Set<string>>(new Set())

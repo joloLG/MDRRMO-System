@@ -1,6 +1,7 @@
 "use client"
 
 import { MakeReportForm, type AdminReport, type AdminErTeamReportDetails } from "@/components/admin/make-report-form";
+import { StandaloneReportsList } from "@/components/admin/standalone-reports-list";
 import { supabase } from "@/lib/supabase";
 import React from "react";
 import { Button } from "@/components/ui/button";
