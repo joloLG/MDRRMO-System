@@ -855,9 +855,9 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin, selectedRoleD
 
       {/* Terms and Conditions Dialog */}
       <Dialog open={showTerms} onOpenChange={setShowTerms}>
-        <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-hidden bg-white">
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] p-0 overflow-hidden bg-white flex flex-col">
           {/* Progress Bar */}
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gray-200">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gray-200 z-10">
             <div
               className="h-full bg-orange-500 transition-all duration-300 ease-out"
               style={{ width: `${readingProgress}%` }}
@@ -865,11 +865,11 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin, selectedRoleD
           </div>
 
           {/* Header */}
-          <DialogHeader className="pt-6 pb-4">
+          <DialogHeader className="pt-6 pb-4 px-6 flex-shrink-0">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
                 <ScrollText className="h-6 w-6 text-orange-500" />
-                <DialogTitle className="text-2xl font-bold text-gray-800">
+                <DialogTitle className="text-xl sm:text-2xl font-bold text-gray-800">
                   {translations[language].title}
                 </DialogTitle>
               </div>
@@ -884,26 +884,26 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin, selectedRoleD
                 </SelectContent>
               </Select>
             </div>
-            <DialogDescription className="text-gray-600 text-base leading-relaxed">
+            <DialogDescription className="text-gray-600 text-sm sm:text-base leading-relaxed">
               {translations[language].description}
             </DialogDescription>
           </DialogHeader>
 
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto px-1 py-2 max-h-[50vh]">
-            <div className="space-y-6">
+          {/* Content - scrollable */}
+          <div className="flex-1 overflow-y-auto px-6 py-2 min-h-0">
+            <div className="space-y-4 sm:space-y-6 pb-4">
               {translations[language].sections.map((section, index) => {
                 const IconComponent = section.icon
                 return (
-                  <div key={index} className="bg-gray-50 rounded-lg p-5 border border-gray-200 hover:shadow-md transition-shadow">
-                    <div className="flex items-start gap-4">
+                  <div key={index} className="bg-gray-50 rounded-lg p-4 sm:p-5 border border-gray-200 hover:shadow-md transition-shadow">
+                    <div className="flex items-start gap-3 sm:gap-4">
                       <div className="flex-shrink-0">
-                        <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
-                          <IconComponent className="h-5 w-5 text-orange-600" />
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-orange-100 rounded-full flex items-center justify-center">
+                          <IconComponent className="h-4 w-4 sm:h-5 sm:w-5 text-orange-600" />
                         </div>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-semibold text-gray-800 mb-3 leading-tight">
+                        <h3 className="text-base sm:text-lg font-semibold text-gray-800 mb-2 sm:mb-3 leading-tight">
                           {section.title}
                         </h3>
                         {index === 2 ? (
@@ -928,13 +928,13 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin, selectedRoleD
             </div>
           </div>
 
-          {/* Footer */}
-          <DialogFooter className="flex gap-3 pt-4 border-t border-gray-200">
+          {/* Footer - always visible at bottom */}
+          <DialogFooter className="flex flex-col sm:flex-row gap-3 pt-4 pb-6 px-6 border-t border-gray-200 flex-shrink-0 bg-white">
             <Button
               type="button"
               variant="outline"
               onClick={() => setShowTerms(false)}
-              className="flex-1 border-gray-300 text-gray-700 hover:bg-gray-50"
+              className="w-full sm:flex-1 border-gray-300 text-gray-700 hover:bg-gray-50 order-2 sm:order-1"
             >
               {translations[language].close}
             </Button>
@@ -944,7 +944,7 @@ export function RegisterPage({ onRegistrationSuccess, onGoToLogin, selectedRoleD
                 setAcceptedTerms(true)
                 setShowTerms(false)
               }}
-              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-medium"
+              className="w-full sm:flex-1 bg-orange-500 hover:bg-orange-600 text-white font-medium order-1 sm:order-2"
             >
               {translations[language].accept}
             </Button>
