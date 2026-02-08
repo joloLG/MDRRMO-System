@@ -970,7 +970,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                     });
                   }
                   // Also refresh ER Team reports list
-                  void fetchErTeamReports();
+                  void fetchErTeamReports(true);
                 }
               } catch (e) {
                 console.warn('Failed to process notification payload for sound:', e);
@@ -1073,7 +1073,17 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
           // Immediate UI update for status changes
           if (payload.eventType === 'UPDATE' && payload.new) {
             const updatedReport = payload.new as ErTeamReportSummary;
-            setErTeamReports(prev => prev.map(r => r.id === updatedReport.id ? { ...r, ...updatedReport } : r));
+            setErTeamReports(prev => {
+              const exists = prev.some(r => r.id === updatedReport.id);
+              if (exists) {
+                return prev.map(r => r.id === updatedReport.id ? { ...r, ...updatedReport } : r);
+              }
+              // Report transitioned from draft to pending_review/in_review — add it
+              if (updatedReport.status === 'pending_review' || updatedReport.status === 'in_review') {
+                return [updatedReport, ...prev];
+              }
+              return prev;
+            });
             
             // Show notification for reports moving to pending_review
             if (payload.old && (payload.old as any).status !== 'pending_review' && updatedReport.status === 'pending_review') {
@@ -1091,7 +1101,11 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
             }
           } else if (payload.eventType === 'INSERT' && payload.new) {
             const newReport = payload.new as ErTeamReportSummary;
-            setErTeamReports(prev => [newReport, ...prev]);
+            setErTeamReports(prev => {
+              const exists = prev.some(r => r.id === newReport.id);
+              if (exists) return prev;
+              return [newReport, ...prev];
+            });
             
             // Show notification for new reports pending review
             if (newReport.status === 'pending_review') {
@@ -1112,8 +1126,8 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
             setErTeamReports(prev => prev.filter(r => r.id !== deletedId));
           }
           
-          // Also refresh full list to ensure consistency
-          void fetchErTeamReports();
+          // Force refresh full list to ensure consistency (with joined data)
+          void fetchErTeamReports(true);
         }
       )
       .subscribe((status) => {

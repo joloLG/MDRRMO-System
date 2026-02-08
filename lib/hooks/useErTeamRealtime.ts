@@ -148,7 +148,10 @@ export function useErTeamRealtime({
         }
       }
 
-      debouncedRefresh(onReportChange)
+      debouncedRefresh(() => {
+        onReportChange()
+        onAssignedIncidentChange()
+      })
     }
 
     // Handler for emergency report changes

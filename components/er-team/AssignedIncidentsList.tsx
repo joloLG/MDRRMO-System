@@ -261,8 +261,15 @@ export function AssignedIncidentsList({
                     )}
                   </div>
 
-                  {/* Report Status Badge */}
-                  {hasReport && reportStatus && (
+                  {/* Report Status Indicator */}
+                  {hasReport && reportStatus === 'approved' ? (
+                    <div className="mb-3 flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                      <span className="text-sm text-emerald-700 font-medium">
+                        Report approved by admin for this incident.
+                      </span>
+                    </div>
+                  ) : hasReport && reportStatus && (
                     <div className="mb-3">
                       <Badge className={cn("text-xs font-medium border", getReportStatusColor(reportStatus))}>
                         <FileText className="w-3 h-3 mr-1" />
