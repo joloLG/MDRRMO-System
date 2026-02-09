@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { MapPin, Clock, Phone, User, FileText, Navigation, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, Flame, Car, Zap, Droplets, TreePine, Siren, AlertTriangle } from "lucide-react"
+import { MapPin, Clock, User, FileText, CheckCircle2, ChevronLeft, ChevronRight, Flame, Car, Zap, Droplets, TreePine, Siren, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const ITEMS_PER_PAGE = 15
@@ -46,15 +46,15 @@ interface AssignedIncidentsListProps {
 }
 
 // Map emergency type to an appropriate icon
-function getIncidentTypeIcon(type: string | null | undefined) {
+function getIncidentTypeIcon(type: string | null | undefined, size = "w-4 h-4") {
   const t = (type || '').toLowerCase()
-  if (t.includes('fire')) return <Flame className="w-5 h-5" />
-  if (t.includes('vehicular') || t.includes('vehicle') || t.includes('car') || t.includes('accident')) return <Car className="w-5 h-5" />
-  if (t.includes('flood') || t.includes('water')) return <Droplets className="w-5 h-5" />
-  if (t.includes('earthquake') || t.includes('landslide') || t.includes('natural')) return <TreePine className="w-5 h-5" />
-  if (t.includes('electric') || t.includes('lightning')) return <Zap className="w-5 h-5" />
-  if (t.includes('medical') || t.includes('health')) return <Siren className="w-5 h-5" />
-  return <AlertTriangle className="w-5 h-5" />
+  if (t.includes('fire')) return <Flame className={size} />
+  if (t.includes('vehicular') || t.includes('vehicle') || t.includes('car') || t.includes('accident')) return <Car className={size} />
+  if (t.includes('flood') || t.includes('water')) return <Droplets className={size} />
+  if (t.includes('earthquake') || t.includes('landslide') || t.includes('natural')) return <TreePine className={size} />
+  if (t.includes('electric') || t.includes('lightning')) return <Zap className={size} />
+  if (t.includes('medical') || t.includes('health')) return <Siren className={size} />
+  return <AlertTriangle className={size} />
 }
 
 const getStatusColor = (status: string) => {
@@ -98,7 +98,6 @@ export function AssignedIncidentsList({
   formatDateTime,
   isLoading = false,
 }: AssignedIncidentsListProps) {
-  const [expandedId, setExpandedId] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
 
   // Calculate pagination
@@ -172,163 +171,102 @@ export function AssignedIncidentsList({
 
   return (
     <Card className="border-0 bg-gradient-to-br from-white via-white to-orange-50/20 shadow-xl rounded-2xl">
-      <CardHeader className="pb-4">
+      <CardHeader className="pb-2 px-4">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <MapPin className="w-6 h-6 text-orange-600" />
+          <CardTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-orange-600" />
             Assigned Incidents
-            <Badge variant="secondary" className="ml-2 bg-orange-100 text-orange-700 border-orange-200">
+            <Badge variant="secondary" className="ml-1 bg-orange-100 text-orange-700 border-orange-200 text-[10px] px-1.5 py-0">
               {incidents.length}
             </Badge>
           </CardTitle>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="space-y-3">
+      <CardContent className="px-4 pb-4">
+        <div className="space-y-2">
           {paginatedIncidents.map((incident) => {
             const isSelected = selectedIncidentId === incident.id
-            const isExpanded = expandedId === incident.id
             const isResolved = incident.resolved_at || incident.status?.toLowerCase() === 'resolved' || incident.status?.toLowerCase() === 'completed'
             const hasReport = !!incident.er_team_report
             const reportStatus = incident.er_team_report?.status
+            const reportApproved = reportStatus === 'approved'
 
             return (
               <div
                 key={incident.id}
                 className={cn(
-                  "group relative overflow-hidden rounded-xl border-2 transition-all duration-200 cursor-pointer",
+                  "relative overflow-hidden rounded-lg border transition-all duration-150 cursor-pointer",
                   isSelected
-                    ? "border-orange-400 bg-gradient-to-br from-orange-50 to-white shadow-lg ring-2 ring-orange-200"
-                    : "border-gray-200 bg-white hover:border-orange-200 hover:shadow-md"
+                    ? "border-orange-400 bg-orange-50/60 shadow-md ring-1 ring-orange-200"
+                    : "border-gray-200 bg-white hover:border-orange-200 hover:shadow-sm"
                 )}
                 onClick={() => onSelectIncident(incident.id)}
               >
-                {/* Selection indicator */}
-                {isSelected && (
-                  <div className="absolute top-3 right-3 w-3 h-3 bg-orange-500 rounded-full animate-pulse"></div>
-                )}
-                
-                {/* Top gradient accent */}
+                {/* Left accent bar */}
                 <div className={cn(
-                  "absolute top-0 left-0 right-0 h-1",
-                  isResolved ? "bg-gradient-to-r from-green-400 to-emerald-500" : "bg-gradient-to-r from-orange-400 to-red-500"
-                )}></div>
+                  "absolute top-0 left-0 bottom-0 w-1 rounded-l-lg",
+                  isResolved ? "bg-green-500" : "bg-orange-500"
+                )} />
 
-                <div className="p-4">
-                  {/* Header */}
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className={cn(
-                          "w-10 h-10 rounded-lg flex items-center justify-center shadow-sm",
-                          isResolved ? "bg-gradient-to-br from-green-500 to-emerald-500" : "bg-gradient-to-br from-orange-500 to-red-500"
-                        )}>
-                          {isResolved ? (
-                            <CheckCircle2 className="w-5 h-5 text-white" />
-                          ) : (
-                            <AlertCircle className="w-5 h-5 text-white" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-bold text-gray-900 truncate flex items-center gap-1.5">
-                            {getIncidentTypeIcon(incident.emergency_type)}
-                            {incident.emergency_type || "Emergency Incident"}
-                          </h3>
-                          <p className="text-xs text-gray-500 font-mono">
-                            ID: {incident.id.slice(0, 8)}...
-                          </p>
-                        </div>
-                      </div>
+                <div className="pl-3 pr-3 py-2.5">
+                  {/* Row 1: Type icon + name + status badge */}
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <span className={cn(
+                        "flex-shrink-0",
+                        isResolved ? "text-green-600" : "text-orange-600"
+                      )}>
+                        {getIncidentTypeIcon(incident.emergency_type)}
+                      </span>
+                      <h3 className="text-sm font-semibold text-gray-900 truncate">
+                        {incident.emergency_type || "Emergency"}
+                      </h3>
+                      {reportApproved && (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                      )}
                     </div>
-                    
-                    <Badge className={cn("text-xs font-medium border", getStatusColor(incident.status || 'pending'))}>
+                    <Badge className={cn("text-[10px] px-1.5 py-0 font-medium border", getStatusColor(incident.status || 'pending'))}>
                       {incident.status || 'Pending'}
                     </Badge>
                   </div>
 
-                  {/* Info Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3 text-sm">
-                    <div className="flex items-center gap-2 text-gray-700">
-                      <User className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  {/* Row 2: Location */}
+                  <div className="flex items-center gap-1.5 mb-1 text-xs text-gray-600">
+                    <MapPin className="w-3 h-3 text-orange-500 flex-shrink-0" />
+                    <span className="truncate">{incident.location_address || 'No location'}</span>
+                  </div>
+
+                  {/* Row 3: Reporter + time */}
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-gray-500">
+                    <div className="flex items-center gap-1 min-w-0">
+                      <User className="w-3 h-3 flex-shrink-0" />
                       <span className="truncate">
                         {`${incident.firstName || ''} ${incident.lastName || ''}`.trim() || 'Unknown'}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 text-gray-700">
-                      <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                      <span className="truncate">{incident.mobileNumber || 'N/A'}</span>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Clock className="w-3 h-3" />
+                      <span>{formatDateTime(incident.created_at) || 'N/A'}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-gray-700 sm:col-span-2">
-                      <MapPin className="w-4 h-4 text-orange-500 flex-shrink-0" />
-                      <span className="truncate">{incident.location_address || 'No location'}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-gray-600 text-xs">
-                      <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                      <span>Reported: {formatDateTime(incident.created_at) || 'N/A'}</span>
-                    </div>
-                    {incident.responded_at && (
-                      <div className="flex items-center gap-2 text-gray-600 text-xs">
-                        <Clock className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                        <span>Responded: {formatDateTime(incident.responded_at) || 'N/A'}</span>
-                      </div>
-                    )}
                   </div>
 
-                  {/* Report Status Indicator */}
-                  {hasReport && reportStatus === 'approved' ? (
-                    <div className="mb-3 flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                      <span className="text-sm text-emerald-700 font-medium">
-                        Report approved by admin for this incident.
-                      </span>
-                    </div>
-                  ) : hasReport && reportStatus && (
-                    <div className="mb-3">
-                      <Badge className={cn("text-xs font-medium border", getReportStatusColor(reportStatus))}>
-                        <FileText className="w-3 h-3 mr-1" />
-                        Report: {reportStatus.replace('_', ' ')}
+                  {/* Row 4: Report status (compact) */}
+                  {hasReport && reportStatus && !reportApproved && (
+                    <div className="mt-1">
+                      <Badge className={cn("text-[10px] px-1.5 py-0 font-medium border", getReportStatusColor(reportStatus))}>
+                        <FileText className="w-2.5 h-2.5 mr-0.5" />
+                        {reportStatus.replace('_', ' ')}
                       </Badge>
                     </div>
                   )}
 
-                  {/* Expanded Details */}
-                  {isExpanded && (
-                    <div className="mt-3 pt-3 border-t border-gray-200 space-y-2 text-sm">
-                      {incident.resolved_at && (
-                        <div className="flex items-center gap-2 text-green-700">
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span className="font-medium">Resolved: {formatDateTime(incident.resolved_at)}</span>
-                        </div>
-                      )}
-                      {hasReport && incident.er_team_report?.notes && (
-                        <div className="bg-gray-50 p-3 rounded-lg">
-                          <p className="text-xs font-semibold text-gray-700 mb-1">Notes:</p>
-                          <p className="text-xs text-gray-600">{incident.er_team_report.notes}</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-2 mt-3">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 text-xs border-orange-300 text-orange-600 hover:bg-orange-50"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setExpandedId(isExpanded ? null : incident.id)
-                      }}
-                    >
-                      <ChevronDown className={cn("w-3 h-3 mr-1 transition-transform", isExpanded && "rotate-180")} />
-                      {isExpanded ? 'Collapse' : 'Expand'}
-                    </Button>
-                    {/* Hide Report button if admin has approved the report */}
-                    {!(incident.er_team_report?.status === 'approved') && (
+                  {/* Action Buttons - compact row */}
+                  <div className="flex gap-1.5 mt-2">
+                    {!reportApproved && (
                       <Button
                         variant="outline"
                         size="sm"
-                        className="flex-1 text-xs border-blue-300 text-blue-600 hover:bg-blue-50"
+                        className="flex-1 h-7 text-[11px] border-blue-200 text-blue-600 hover:bg-blue-50 px-2"
                         onClick={(e) => {
                           e.stopPropagation()
                           onOpenDraft(incident.id)
@@ -341,7 +279,7 @@ export function AssignedIncidentsList({
                     {!isResolved && (
                       <Button
                         size="sm"
-                        className="flex-1 text-xs bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white"
+                        className="flex-1 h-7 text-[11px] bg-green-500 hover:bg-green-600 text-white px-2"
                         onClick={(e) => {
                           e.stopPropagation()
                           onMarkResolved(incident.id)
@@ -360,39 +298,31 @@ export function AssignedIncidentsList({
 
         {/* Pagination Controls */}
         {totalPages > 1 && (
-          <div className="mt-6 flex items-center justify-between border-t border-gray-200 pt-4">
-            <div className="flex items-center gap-2">
-              <p className="text-sm text-gray-600">
-                Showing <span className="font-semibold">{startIndex + 1}</span> to{" "}
-                <span className="font-semibold">{Math.min(endIndex, incidents.length)}</span> of{" "}
-                <span className="font-semibold">{incidents.length}</span> incidents
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
+          <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
+            <p className="text-xs text-gray-500">
+              {startIndex + 1}-{Math.min(endIndex, incidents.length)} of {incidents.length}
+            </p>
+            <div className="flex items-center gap-1.5">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={goToPreviousPage}
                 disabled={currentPage === 1}
-                className="text-orange-600 border-orange-300 hover:bg-orange-50 disabled:opacity-50"
+                className="h-7 px-2 text-xs text-orange-600 border-orange-200 hover:bg-orange-50 disabled:opacity-50"
               >
-                <ChevronLeft className="w-4 h-4 mr-1" />
-                Previous
+                <ChevronLeft className="w-3.5 h-3.5" />
               </Button>
-              <div className="flex items-center gap-1 px-3 py-1 bg-orange-50 rounded-lg border border-orange-200">
-                <span className="text-sm font-semibold text-orange-700">
-                  Page {currentPage} of {totalPages}
-                </span>
-              </div>
+              <span className="text-xs font-medium text-gray-600 px-1">
+                {currentPage}/{totalPages}
+              </span>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={goToNextPage}
                 disabled={currentPage === totalPages}
-                className="text-orange-600 border-orange-300 hover:bg-orange-50 disabled:opacity-50"
+                className="h-7 px-2 text-xs text-orange-600 border-orange-200 hover:bg-orange-50 disabled:opacity-50"
               >
-                Next
-                <ChevronRight className="w-4 h-4 ml-1" />
+                <ChevronRight className="w-3.5 h-3.5" />
               </Button>
             </div>
           </div>

@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, Pill, User, Activity, AlertCircle, Droplet, CalendarDays, XCircle, X, ArrowLeft } from "lucide-react"
+import { Loader2, Pill, User, Activity, AlertCircle, Droplet, CalendarDays, XCircle, X, ArrowLeft, Search, MapPin } from "lucide-react"
 import { FRONT_BODY_REGION_IDS, BACK_BODY_REGION_IDS } from "@/components/admin/make-report-form"
 import { PRIORITY_COLORS, PRIORITY_LABELS } from "@/lib/priority"
 import { cn } from "@/lib/utils"
@@ -194,6 +194,120 @@ const CIRCULATION_OPTIONS = [
 ] as const
 
 const BLOOD_LOSS_OPTIONS = ["Major", "Minor", "None"] as const
+
+// Searchable barangay combobox component
+function BarangaySearchInput({
+  value,
+  onChange,
+  barangays,
+  id,
+  label,
+  labelClassName,
+}: {
+  value: string
+  onChange: (value: string) => void
+  barangays: { id: string; name: string }[]
+  id?: string
+  label: string
+  labelClassName?: string
+}) {
+  const [query, setQuery] = React.useState("")
+  const [open, setOpen] = React.useState(false)
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const containerRef = React.useRef<HTMLDivElement>(null)
+
+  // Sync query with external value when value changes and dropdown is closed
+  React.useEffect(() => {
+    if (!open) setQuery(value)
+  }, [value, open])
+
+  const filtered = React.useMemo(() => {
+    if (!query.trim()) return barangays
+    const q = query.toLowerCase()
+    return barangays.filter((b) => b.name.toLowerCase().includes(q))
+  }, [query, barangays])
+
+  // Close on outside click
+  React.useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        // Reset query to selected value if user clicked away without selecting
+        if (!barangays.some((b) => b.name === query)) {
+          setQuery(value)
+        }
+      }
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [value, query, barangays])
+
+  return (
+    <div ref={containerRef} className="relative">
+      <Label htmlFor={id} className={labelClassName}>
+        {label}
+      </Label>
+      <div className="relative">
+        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        <Input
+          ref={inputRef}
+          id={id}
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value)
+            setOpen(true)
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder="Search barangay..."
+          className="text-xs sm:text-sm pl-7 h-8"
+          autoComplete="off"
+        />
+        {value && (
+          <button
+            type="button"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            onClick={() => {
+              onChange("")
+              setQuery("")
+              setOpen(true)
+              inputRef.current?.focus()
+            }}
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full max-h-44 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+          {filtered.length > 0 ? (
+            filtered.map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                className={cn(
+                  "w-full text-left px-3 py-2 text-xs hover:bg-orange-50 transition-colors flex items-center gap-2",
+                  value === b.name && "bg-orange-50 text-orange-700 font-medium"
+                )}
+                onClick={() => {
+                  onChange(b.name)
+                  setQuery(b.name)
+                  setOpen(false)
+                }}
+              >
+                <MapPin className="w-3 h-3 text-orange-400 flex-shrink-0" />
+                {b.name}
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-4 text-xs text-gray-500 text-center">
+              {barangays.length === 0 ? "Loading barangays..." : "No matching barangay"}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const flattenLegacyPatientPayload = (source: unknown): Partial<ErTeamPatientPayload> => {
   if (!source || typeof source !== "object") return {}
@@ -1083,51 +1197,49 @@ export function ErTeamReportForm({
 
   const statusMeta = STATUS_BADGE[draft.status]
 
+  // Auto-scroll focused input into view when mobile keyboard appears
+  React.useEffect(() => {
+    const vv = typeof window !== "undefined" ? window.visualViewport : null
+    if (!vv) return
+
+    const handleResize = () => {
+      const active = document.activeElement as HTMLElement | null
+      if (
+        active &&
+        (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")
+      ) {
+        // Small delay to let the keyboard settle
+        setTimeout(() => {
+          active.scrollIntoView({ behavior: "smooth", block: "center" })
+        }, 100)
+      }
+    }
+
+    vv.addEventListener("resize", handleResize)
+    return () => vv.removeEventListener("resize", handleResize)
+  }, [])
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-white">
-      <header className="relative border-b border-orange-100 bg-gradient-to-r from-orange-500 via-orange-400 to-orange-500 px-3 py-3 text-white sm:px-6 sm:py-4">
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute top-3 right-3 flex items-center gap-1 px-3 py-2 rounded-full hover:bg-white/20 transition-colors text-sm font-medium"
-          aria-label="Back"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          <span className="hidden sm:inline">Back</span>
-        </button>
-        <div className="flex flex-col gap-2 pr-12">
-          <div className="flex-1">
-            <p className="text-[10px] uppercase tracking-wide text-orange-100 sm:text-xs">Patient Care Report</p>
-            <h2 className="text-base font-semibold sm:text-lg">Incident Details</h2>
-            <div className="mt-2 space-y-1">
-              {incidentInfo?.reporterName && (
-                <p className="text-[11px] text-white sm:text-sm">
-                  <span className="text-orange-100">Reporter:</span> {incidentInfo.reporterName}
-                </p>
-              )}
-              {incidentInfo?.incidentType && (
-                <p className="text-[11px] text-white sm:text-sm">
-                  <span className="text-orange-100">Type:</span> {incidentInfo.incidentType}
-                </p>
-              )}
-              {incidentInfo?.locationAddress && (
-                <p className="text-[11px] text-white sm:text-sm">
-                  <span className="text-orange-100">Location:</span> {incidentInfo.locationAddress}
-                </p>
-              )}
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <p className="text-[10px] text-orange-100 sm:text-xs">
-                Last updated {new Date(draft.updatedAt).toLocaleString()} {draft.synced ? "• Synced" : "• Draft mode"}
-              </p>
-              <Badge className={statusMeta.className}>{statusMeta.label}</Badge>
-              {draft.lastSyncError && (
-                <span className="flex items-center gap-1 text-[10px] text-red-200 sm:text-xs">
-                  <AlertCircle className="h-3 w-3" /> {draft.lastSyncError}
-                </span>
-              )}
+      <header className="border-b border-orange-100 bg-gradient-to-r from-orange-500 via-orange-400 to-orange-500 px-3 py-2 text-white sm:px-6 sm:py-3">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex items-center gap-1 rounded-full hover:bg-white/20 transition-colors p-1.5"
+            aria-label="Back"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-sm font-semibold truncate sm:text-base">Patient Care Report</h2>
+            <div className="flex items-center gap-2 text-[10px] text-orange-100 sm:text-xs">
+              {incidentInfo?.incidentType && <span>{incidentInfo.incidentType}</span>}
+              {incidentInfo?.incidentType && incidentInfo?.locationAddress && <span>•</span>}
+              {incidentInfo?.locationAddress && <span className="truncate">{incidentInfo.locationAddress}</span>}
             </div>
           </div>
+          <Badge className={cn(statusMeta.className, "text-[10px] px-1.5 py-0")}>{statusMeta.label}</Badge>
         </div>
       </header>
 
@@ -1282,32 +1394,14 @@ export function ErTeamReportForm({
                         className="text-xs sm:text-sm"
                       />
                     </div>
-                    <div>
-                      <Label htmlFor="incident-location" className="block text-xs font-medium text-gray-700 mb-1 sm:text-sm">
-                        Incident location (Barangay)
-                      </Label>
-                      <Select
-                        value={activePatient.incidentLocation ?? ""}
-                        onValueChange={(value: string) => updatePatient(activePatientIndex, { incidentLocation: value })}
-                      >
-                        <SelectTrigger id="incident-location" className="text-xs sm:text-sm h-20">
-                          <SelectValue placeholder="Select barangay" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-56 overflow-y-auto">
-                          {barangays.length > 0 ? (
-                            barangays.map((barangay) => (
-                              <SelectItem key={barangay.id} value={barangay.name}>
-                                {barangay.name}
-                              </SelectItem>
-                            ))
-                          ) : (
-                            <div className="px-2 py-4 text-xs text-gray-500 text-center">
-                              Loading barangays...
-                            </div>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <BarangaySearchInput
+                      id="incident-location-patient"
+                      label="Incident location (Barangay)"
+                      labelClassName="block text-xs font-medium text-gray-700 mb-1 sm:text-sm"
+                      value={activePatient.incidentLocation ?? ""}
+                      onChange={(val) => updatePatient(activePatientIndex, { incidentLocation: val })}
+                      barangays={barangays}
+                    />
                   </div>
                 </CardContent>
               </Card>
@@ -1334,8 +1428,9 @@ export function ErTeamReportForm({
                       </Label>
                       <Input
                         id="pulse-rate"
+                        inputMode="numeric"
                         value={activePatient.pulseRate}
-                        onChange={(event) => updatePatient(activePatientIndex, { pulseRate: event.target.value })}
+                        onChange={(event) => updatePatient(activePatientIndex, { pulseRate: event.target.value.replace(/[^0-9]/g, "") })}
                         placeholder="bpm"
                         className="text-xs sm:text-sm h-8"
                       />
@@ -1346,8 +1441,9 @@ export function ErTeamReportForm({
                       </Label>
                       <Input
                         id="bpm"
+                        inputMode="numeric"
                         value={activePatient.bpm}
-                        onChange={(event) => updatePatient(activePatientIndex, { bpm: event.target.value })}
+                        onChange={(event) => updatePatient(activePatientIndex, { bpm: event.target.value.replace(/[^0-9]/g, "") })}
                         placeholder="Beats per minute"
                         className="text-xs sm:text-sm h-8"
                       />
@@ -1370,8 +1466,9 @@ export function ErTeamReportForm({
                       </Label>
                       <Input
                         id="respiratory-rate"
+                        inputMode="numeric"
                         value={activePatient.respiratoryRate}
-                        onChange={(event) => updatePatient(activePatientIndex, { respiratoryRate: event.target.value })}
+                        onChange={(event) => updatePatient(activePatientIndex, { respiratoryRate: event.target.value.replace(/[^0-9]/g, "") })}
                         placeholder="e.g., 16"
                         className="text-xs sm:text-sm h-8"
                       />
@@ -1382,8 +1479,9 @@ export function ErTeamReportForm({
                       </Label>
                       <Input
                         id="oxygen-saturation"
+                        inputMode="numeric"
                         value={activePatient.oxygenSaturation}
-                        onChange={(event) => updatePatient(activePatientIndex, { oxygenSaturation: event.target.value })}
+                        onChange={(event) => updatePatient(activePatientIndex, { oxygenSaturation: event.target.value.replace(/[^0-9]/g, "") })}
                         placeholder="e.g., 98"
                         className="text-xs sm:text-sm h-8"
                       />
@@ -1394,8 +1492,9 @@ export function ErTeamReportForm({
                       </Label>
                       <Input
                         id="temperature"
+                        inputMode="decimal"
                         value={activePatient.temperature}
-                        onChange={(event) => updatePatient(activePatientIndex, { temperature: event.target.value })}
+                        onChange={(event) => updatePatient(activePatientIndex, { temperature: event.target.value.replace(/[^0-9.]/g, "") })}
                         placeholder="e.g., 36.5"
                         className="text-xs sm:text-sm h-8"
                       />
@@ -1406,9 +1505,7 @@ export function ErTeamReportForm({
                       </Label>
                       <Input
                         id="pain-scale"
-                        type="number"
-                        min="0"
-                        max="10"
+                        inputMode="numeric"
                         value={activePatient.painScale}
                         onChange={(event) => updatePatient(activePatientIndex, { painScale: event.target.value.replace(/[^0-9]/g, "").slice(0, 2) })}
                         className="text-xs sm:text-sm h-8"
@@ -1587,32 +1684,14 @@ export function ErTeamReportForm({
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
-                        <div>
-                          <Label htmlFor="incident-location" className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">
-                            Incident Location
-                          </Label>
-                          <Select
-                            value={activePatient.incidentLocation ?? ""}
-                            onValueChange={(value: string) => updatePatient(activePatientIndex, { incidentLocation: value })}
-                          >
-                            <SelectTrigger id="incident-location" className="text-xs sm:text-sm">
-                              <SelectValue placeholder="Select barangay" />
-                            </SelectTrigger>
-                            <SelectContent className="max-h-56 overflow-y-auto">
-                              {barangays.length > 0 ? (
-                                barangays.map((barangay) => (
-                                  <SelectItem key={barangay.id} value={barangay.name}>
-                                    {barangay.name}
-                                  </SelectItem>
-                                ))
-                              ) : (
-                                <div className="px-2 py-4 text-xs text-gray-500 text-center">
-                                  Loading barangays...
-                                </div>
-                              )}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                        <BarangaySearchInput
+                          id="incident-location-survey"
+                          label="Incident Location"
+                          labelClassName="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs"
+                          value={activePatient.incidentLocation ?? ""}
+                          onChange={(val) => updatePatient(activePatientIndex, { incidentLocation: val })}
+                          barangays={barangays}
+                        />
                         <div className="md:col-span-2">
                           <Label className="block text-[10px] font-semibold text-gray-600 mb-1 sm:text-xs">Evacuation priority</Label>
                           <div className="grid grid-cols-2 gap-1 sm:gap-2">
@@ -1817,8 +1896,9 @@ export function ErTeamReportForm({
                         </Label>
                         <Input
                           id="estimated-blood-loss"
+                          inputMode="decimal"
                           value={activePatient.estimatedBloodLoss}
-                          onChange={(event) => updatePatient(activePatientIndex, { estimatedBloodLoss: event.target.value })}
+                          onChange={(event) => updatePatient(activePatientIndex, { estimatedBloodLoss: event.target.value.replace(/[^0-9.]/g, "") })}
                           placeholder="e.g., 0.5"
                           className="text-xs sm:text-sm"
                         />
