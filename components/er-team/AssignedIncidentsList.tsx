@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { MapPin, Clock, Phone, User, FileText, Navigation, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react"
+import { MapPin, Clock, Phone, User, FileText, Navigation, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, Flame, Car, Zap, Droplets, TreePine, Siren, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const ITEMS_PER_PAGE = 15
@@ -43,6 +43,18 @@ interface AssignedIncidentsListProps {
   onMarkResolved: (incidentId: string) => void
   formatDateTime: (value?: string | null) => string | null
   isLoading?: boolean
+}
+
+// Map emergency type to an appropriate icon
+function getIncidentTypeIcon(type: string | null | undefined) {
+  const t = (type || '').toLowerCase()
+  if (t.includes('fire')) return <Flame className="w-5 h-5" />
+  if (t.includes('vehicular') || t.includes('vehicle') || t.includes('car') || t.includes('accident')) return <Car className="w-5 h-5" />
+  if (t.includes('flood') || t.includes('water')) return <Droplets className="w-5 h-5" />
+  if (t.includes('earthquake') || t.includes('landslide') || t.includes('natural')) return <TreePine className="w-5 h-5" />
+  if (t.includes('electric') || t.includes('lightning')) return <Zap className="w-5 h-5" />
+  if (t.includes('medical') || t.includes('health')) return <Siren className="w-5 h-5" />
+  return <AlertTriangle className="w-5 h-5" />
 }
 
 const getStatusColor = (status: string) => {
@@ -218,7 +230,8 @@ export function AssignedIncidentsList({
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h3 className="font-bold text-gray-900 truncate">
+                          <h3 className="font-bold text-gray-900 truncate flex items-center gap-1.5">
+                            {getIncidentTypeIcon(incident.emergency_type)}
                             {incident.emergency_type || "Emergency Incident"}
                           </h3>
                           <p className="text-xs text-gray-500 font-mono">
@@ -246,7 +259,7 @@ export function AssignedIncidentsList({
                       <span className="truncate">{incident.mobileNumber || 'N/A'}</span>
                     </div>
                     <div className="flex items-center gap-2 text-gray-700 sm:col-span-2">
-                      <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                      <MapPin className="w-4 h-4 text-orange-500 flex-shrink-0" />
                       <span className="truncate">{incident.location_address || 'No location'}</span>
                     </div>
                     <div className="flex items-center gap-2 text-gray-600 text-xs">
@@ -310,18 +323,21 @@ export function AssignedIncidentsList({
                       <ChevronDown className={cn("w-3 h-3 mr-1 transition-transform", isExpanded && "rotate-180")} />
                       {isExpanded ? 'Collapse' : 'Expand'}
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 text-xs border-blue-300 text-blue-600 hover:bg-blue-50"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onOpenDraft(incident.id)
-                      }}
-                    >
-                      <FileText className="w-3 h-3 mr-1" />
-                      Report
-                    </Button>
+                    {/* Hide Report button if admin has approved the report */}
+                    {!(incident.er_team_report?.status === 'approved') && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 text-xs border-blue-300 text-blue-600 hover:bg-blue-50"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onOpenDraft(incident.id)
+                        }}
+                      >
+                        <FileText className="w-3 h-3 mr-1" />
+                        Report
+                      </Button>
+                    )}
                     {!isResolved && (
                       <Button
                         size="sm"

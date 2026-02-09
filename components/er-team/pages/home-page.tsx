@@ -4,7 +4,7 @@ import React from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Wifi, WifiOff, RefreshCw, Loader2, MapPin, Navigation, FileText, CheckCircle2 } from "lucide-react"
+import { Wifi, WifiOff, RefreshCw, Loader2, MapPin, Navigation, FileText, CheckCircle2, Flame, Car, Zap, Droplets, TreePine, Siren, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useErTeam } from "./er-team-context"
 import { AssignedIncidentsList } from "../AssignedIncidentsList"
@@ -24,6 +24,18 @@ const STATUS_BADGE_STYLES: Record<string, string> = {
 const SYNC_BADGE_CLASSES: Record<"synced" | "pending", string> = {
   synced: "bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 border border-green-300 shadow-sm",
   pending: "bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-800 border border-amber-300 shadow-sm",
+}
+
+// Map emergency type to an appropriate icon
+function getIncidentTypeIcon(type: string | null | undefined) {
+  const t = (type || '').toLowerCase()
+  if (t.includes('fire')) return <Flame className="w-5 h-5" />
+  if (t.includes('vehicular') || t.includes('vehicle') || t.includes('car') || t.includes('accident')) return <Car className="w-5 h-5" />
+  if (t.includes('flood') || t.includes('water')) return <Droplets className="w-5 h-5" />
+  if (t.includes('earthquake') || t.includes('landslide') || t.includes('natural')) return <TreePine className="w-5 h-5" />
+  if (t.includes('electric') || t.includes('lightning')) return <Zap className="w-5 h-5" />
+  if (t.includes('medical') || t.includes('health')) return <Siren className="w-5 h-5" />
+  return <AlertTriangle className="w-5 h-5" />
 }
 
 export function HomePage() {
@@ -64,31 +76,25 @@ export function HomePage() {
       {selectedIncidentCoords && (
         <Card className="border-0 bg-gradient-to-br from-white via-white to-blue-50/30 shadow-xl rounded-2xl">
           <CardHeader className="space-y-3 pb-4">
-            {/* Incident Type Header */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="px-3 py-1 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg font-bold text-sm shadow-md">
-                  {selectedIncident?.emergency_type || 'Emergency Incident'}
-                </div>
-                <Badge className={cn(
-                  "text-xs font-medium border",
-                  selectedIncident?.status?.toLowerCase() === 'resolved' || selectedIncident?.resolved_at
-                    ? "bg-green-100 text-green-700 border-green-300"
-                    : "bg-amber-100 text-amber-700 border-amber-300"
-                )}>
-                  {selectedIncident?.status || 'Pending'}
-                </Badge>
-              </div>
-            </div>
-
-            {/* Location Info */}
+            {/* Incident Type as Title with Icon */}
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center text-white shadow-lg animate-pulse">
-                <MapPin className="w-6 h-6" />
+                {getIncidentTypeIcon(selectedIncident?.emergency_type)}
               </div>
               <div className="flex-1">
-                <CardTitle className="text-lg font-bold text-gray-900">🚨 Incident Location</CardTitle>
-                <CardDescription className="text-sm text-gray-600">
+                <CardTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  {selectedIncident?.emergency_type || 'Emergency Incident'}
+                  <Badge className={cn(
+                    "text-xs font-medium border ml-1",
+                    selectedIncident?.status?.toLowerCase() === 'resolved' || selectedIncident?.resolved_at
+                      ? "bg-green-100 text-green-700 border-green-300"
+                      : "bg-amber-100 text-amber-700 border-amber-300"
+                  )}>
+                    {selectedIncident?.status || 'Pending'}
+                  </Badge>
+                </CardTitle>
+                <CardDescription className="text-sm text-gray-600 flex items-center gap-1.5 mt-1">
+                  <MapPin className="w-4 h-4 text-orange-500 flex-shrink-0" />
                   {selectedIncident?.location_address || 'Location map'}
                 </CardDescription>
               </div>
@@ -136,20 +142,23 @@ export function HomePage() {
                     View Details
                   </Button>
                   
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="bg-white hover:bg-blue-50 border-blue-300 text-blue-700 font-semibold"
-                    onClick={() => {
-                      if (selectedIncident?.id) {
-                        const draft = drafts.find(d => d.emergencyReportId === selectedIncident.id)
-                        if (draft) handleOpenDraft(draft.clientDraftId)
-                      }
-                    }}
-                  >
-                    <FileText className="w-4 h-4 mr-2" />
-                    Report Form
-                  </Button>
+                  {/* Hide Report Form button if admin has approved the report */}
+                  {!(selectedIncident?.er_team_report?.status === 'approved') && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="bg-white hover:bg-blue-50 border-blue-300 text-blue-700 font-semibold"
+                      onClick={() => {
+                        if (selectedIncident?.id) {
+                          const draft = drafts.find(d => d.emergencyReportId === selectedIncident.id)
+                          if (draft) handleOpenDraft(draft.clientDraftId)
+                        }
+                      }}
+                    >
+                      <FileText className="w-4 h-4 mr-2" />
+                      Report Form
+                    </Button>
+                  )}
                 </div>
 
                 {/* Resolve Button (if not resolved) */}
