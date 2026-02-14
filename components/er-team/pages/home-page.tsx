@@ -131,17 +131,7 @@ export function HomePage() {
                 </Button>
 
                 {/* Action Buttons Row */}
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="bg-white hover:bg-orange-50 border-orange-300 text-orange-700 font-semibold"
-                    onClick={() => setSelectedIncidentId(selectedIncident?.id || null)}
-                  >
-                    <FileText className="w-4 h-4 mr-2" />
-                    View Details
-                  </Button>
-                  
+                <div className="grid grid-cols-1 gap-2">
                   {/* Hide Report Form button if admin has approved the report */}
                   {!(selectedIncident?.er_team_report?.status === 'approved') && (
                     <Button
