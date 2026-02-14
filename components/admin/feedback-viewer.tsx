@@ -13,9 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Mail, ArrowLeft, Star, RefreshCw, Search } from "lucide-react";
+import { Mail, Star, RefreshCw, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import Link from "next/link";
 
 
 interface UserFeedback {
@@ -226,17 +225,6 @@ export function FeedbackViewer() {
 
   return (
     <div className="grid grid-cols-1 gap-6">
-      <div className="flex justify-start mb-4">
-        <Button
-          variant="outline"
-          className="bg-gray-200 hover:bg-gray-300 text-gray-800"
-          asChild
-        >
-          <Link href="/">
-            <ArrowLeft className="h-4 w-4 mr-2" /> Back
-          </Link>
-        </Button>
-      </div>
     <Card className="shadow-lg h-full lg:col-span-3">
       <CardHeader className="bg-orange-600 text-white flex flex-row justify-between items-center">
         <div className="flex items-center">

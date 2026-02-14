@@ -6,7 +6,6 @@ import { supabase } from "@/lib/supabase";
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from 'next/navigation';
@@ -277,7 +276,7 @@ function MakeReportContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 flex items-center justify-center text-gray-600 font-sans">
+      <div className="p-4 sm:p-6 lg:p-8 flex items-center justify-center text-gray-600 font-sans">
         Loading form data...
       </div>
     );
@@ -288,19 +287,9 @@ function MakeReportContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
+    <div className="p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
       <h1 className="text-3xl font-bold text-gray-800 mb-8">Make Report Form</h1>
       <div className="grid grid-cols-1 gap-6">
-        <div className="flex justify-start mb-4">
-          <Button
-            variant="outline"
-            className="bg-gray-200 hover:bg-gray-300 text-gray-800"
-            onClick={() => router.push('/')}
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" /> Back
-          </Button>
-        </div>
-
         <MakeReportForm
           selectedReport={selectedReport}
           erTeams={erTeams}

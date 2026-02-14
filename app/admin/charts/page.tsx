@@ -194,14 +194,14 @@ export default function ChartsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 flex items-center justify-center text-gray-600 font-sans">
+      <div className="p-4 sm:p-6 lg:p-8 flex items-center justify-center text-gray-600 font-sans">
         Loading chart data...
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
+    <div className="p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold text-gray-800">Analytics & Charts</h1>
         <div className="flex items-center gap-3">

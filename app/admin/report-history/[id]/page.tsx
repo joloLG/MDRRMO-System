@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { InternalReportDetail, type InternalReportRecord, type InternalReportPatientRecord } from "@/components/admin/internal-report-detail"
 
@@ -71,7 +71,6 @@ const fetchInternalReportById = async (id: number) => {
 
 const InternalReportDetailPage = () => {
   const params = useParams()
-  const router = useRouter()
   const reportId = Number(params?.id)
 
   const [report, setReport] = React.useState<InternalReportRecord | null>(null)
@@ -155,7 +154,7 @@ const InternalReportDetailPage = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 p-6 flex items-center justify-center text-gray-600">
+      <div className="p-6 flex items-center justify-center text-gray-600">
         Loading report detail...
       </div>
     )
@@ -163,41 +162,23 @@ const InternalReportDetailPage = () => {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-100 p-6 flex flex-col items-center justify-center text-red-600 space-y-4">
+      <div className="p-6 flex flex-col items-center justify-center text-red-600 space-y-4">
         <p>{error}</p>
-        <button
-          className="rounded bg-orange-500 px-4 py-2 text-white hover:bg-orange-600"
-          onClick={() => router.back()}
-        >
-          Back to Report History
-        </button>
       </div>
     )
   }
 
   if (!report) {
     return (
-      <div className="min-h-screen bg-gray-100 p-6 flex flex-col items-center justify-center text-gray-600 space-y-4">
+      <div className="p-6 flex flex-col items-center justify-center text-gray-600 space-y-4">
         <p>Report not found.</p>
-        <button
-          className="rounded bg-orange-500 px-4 py-2 text-white hover:bg-orange-600"
-          onClick={() => router.back()}
-        >
-          Back to Report History
-        </button>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       <div className="mx-auto max-w-5xl">
-        <button
-          className="mb-6 rounded bg-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-300"
-          onClick={() => router.back()}
-        >
-          Back to Report History
-        </button>
         <InternalReportDetail
           report={report}
           patients={patients}

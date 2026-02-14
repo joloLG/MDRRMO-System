@@ -1,14 +1,13 @@
 "use client"
 
 import React, { useEffect, useState, useCallback, useRef } from 'react'
-import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Trash2, Play, CheckCircle2, UploadCloud, RefreshCw, ArrowLeft } from "lucide-react"
+import { Trash2, Play, CheckCircle2, UploadCloud, RefreshCw } from "lucide-react"
 
 interface FileEntry {
   name: string
@@ -20,7 +19,6 @@ interface FileEntry {
 }
 
 export default function AlertManagementPage() {
-  const router = useRouter()
   const [files, setFiles] = useState<FileEntry[]>([])
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null)
   const [adminIncidentPath, setAdminIncidentPath] = useState<string | null>(null)
@@ -248,18 +246,9 @@ export default function AlertManagementPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
-      <div className="mb-6 flex flex-col gap-4">
+    <div className="p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
+      <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Alert Sound Management</h1>
-        <div className="w-fit rounded-lg border border-gray-200 bg-white shadow-sm">
-          <Button
-            variant="ghost"
-            className="flex items-center gap-2"
-            onClick={() => router.back()}
-          >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </Button>
-        </div>
       </div>
       <Card className="mb-6 shadow-lg">
         <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex items-center justify-between">

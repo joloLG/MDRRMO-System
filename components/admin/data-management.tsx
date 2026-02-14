@@ -6,8 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabase"
-import { PlusCircle, Edit, Trash2, Save, X, CheckCircle2, XCircle, ArrowLeft } from "lucide-react" // Added icons, ArrowLeft
-import Link from "next/link";
+import { PlusCircle, Edit, Trash2, Save, X, CheckCircle2, XCircle } from "lucide-react"
 
 // Interfaces for data types
 interface BaseEntry {
@@ -252,19 +251,6 @@ export function DataManagement({ erTeams, barangays, incidentTypes, fetchErTeams
 
   return (
     <div className="grid grid-cols-1 gap-6">
-    {/* Back Button for Admin Dashboard */}
-    <div className="flex justify-start mb-4">
-      <Button
-        variant="outline"
-        className="bg-gray-200 hover:bg-gray-300 text-gray-800"
-        asChild
-      >
-        <Link href="/">
-          <ArrowLeft className="h-4 w-4 mr-2" /> Back
-        </Link>
-      </Button>
-    </div>
-
     {/* Pie Chart: Incidents per Barangay */}
     <Card className="shadow-lg h-full lg:col-span-3 rounded-lg">
       <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex justify-between items-center">

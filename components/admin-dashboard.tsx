@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { supabase } from "@/lib/supabase"
 import { Bell, BellOff, LogOut, CheckCircle, MapPin, Send, Map, FileText, Calendar as CalendarIcon, FireExtinguisher, HeartPulse, Car, CloudRain, Swords, HelpCircle, PersonStanding, Navigation, Clock } from "lucide-react"
-import { Sidebar } from "@/components/sidebar"
+import { AdminHeader } from "@/components/admin/AdminHeader"
 import AdminRealtimeOverlay, { AdminRealtimeOverlayRef, AdminNotificationRow } from "@/components/admin/AdminRealtimeOverlay"
 import { StandaloneReportsList } from "@/components/admin/standalone-reports-list"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -144,8 +144,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [broadcastValidationError, setBroadcastValidationError] = useState<string | null>(null);
 
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-
   const [erTeamReports, setErTeamReports] = useState<ErTeamReportSummary[]>([])
   const [erTeamReportsLoading, setErTeamReportsLoading] = useState(false)
   const [erTeamReportsError, setErTeamReportsError] = useState<string | null>(null)
@@ -156,8 +154,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
     return erTeamReports.find((report) => report.emergency_report_id === selectedReport.id) ?? null
   }, [erTeamReports, selectedReport])
   const overlayRef = useRef<AdminRealtimeOverlayRef>(null)
-  const notificationsDropdownRef = useRef<HTMLDivElement>(null);
-  const notificationsButtonRef = useRef<HTMLButtonElement>(null);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('mdrrmo_admin_sound_enabled');
@@ -392,25 +388,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       setLoading(false);
     }
   }, [userData]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        showNotificationsDropdown &&
-        notificationsDropdownRef.current &&
-        !notificationsDropdownRef.current.contains(event.target as Node) &&
-        notificationsButtonRef.current &&
-        !notificationsButtonRef.current.contains(event.target as Node)
-      ) {
-        setShowNotificationsDropdown(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showNotificationsDropdown]);
 
   const fetchAdminNotifications = useCallback(async () => {
     const { data, error } = await supabase
@@ -1469,47 +1446,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   const respondedReportsList = allReports.filter(r => r.status.trim().toLowerCase() === 'responded');
 
 
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 18) return 'Good afternoon';
-    return 'Good evening';
-  };
-  const [greeting, setGreeting] = useState<string>(getGreeting());
-  useEffect(() => {
-    const update = () => setGreeting(getGreeting());
-    update();
-    const interval = setInterval(update, 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const phDateFormatter = React.useMemo(() => new Intl.DateTimeFormat('en-PH', {
-    timeZone: 'Asia/Manila',
-    weekday: 'long',
-    month: 'long',
-    day: '2-digit',
-    year: 'numeric',
-  }), []);
-  const phTimeFormatter = React.useMemo(() => new Intl.DateTimeFormat('en-PH', {
-    timeZone: 'Asia/Manila',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true,
-  }), []);
-  const [phDate, setPhDate] = useState<string>(phDateFormatter.format(new Date()));
-  const [phTime, setPhTime] = useState<string>(phTimeFormatter.format(new Date()));
-  useEffect(() => {
-    const tick = () => {
-      const now = new Date();
-      setPhDate(phDateFormatter.format(now));
-      setPhTime(phTimeFormatter.format(now));
-    };
-    const id = setInterval(tick, 1000);
-    tick();
-    return () => clearInterval(id);
-  }, [phDateFormatter, phTimeFormatter]);
-
   if (error) {
     return (
       <div className="flex justify-center items-center h-screen text-red-500 font-sans">
@@ -1519,8 +1455,21 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
+    <div className="min-h-screen bg-gray-100 font-sans text-gray-800">
       <AdminRealtimeOverlay ref={overlayRef} />
+      <AdminHeader
+        adminUser={adminUser}
+        externalNotifications={notifications}
+        externalUnreadCount={unreadCount}
+        onNotificationClick={handleNotificationClick}
+        onMarkAllRead={markAllNotificationsAsRead}
+        externalSoundEnabled={soundEnabled}
+        onToggleSound={toggleSound}
+        onLogout={onLogout}
+        onTriggerBroadcast={triggerBroadcastAlert}
+        connectionStatus={connectionStatus}
+        isLoadingAction={isLoadingAction}
+      />
       <Dialog open={broadcastModalOpen} onOpenChange={handleBroadcastModalChange}>
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
@@ -1555,98 +1504,8 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
           </div>
         </DialogContent>
       </Dialog>
-      <header className="flex items-center mb-8">
-        <div className="flex items-center">
-          <Sidebar/>
-          <div className="ml-4">
-            <h1 className="text-3xl font-bold text-gray-800">Admin Dashboard</h1>
-            {adminUser && (
-              <div className="text-sm sm:text-base font-medium text-gray-700 mt-1">
-                {greeting}, {adminUser.firstName || adminUser.username || 'Admin'}
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="flex-1 flex flex-col items-center mx-2">
-          <div className="mt-0 flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 shadow-sm">
-            <Clock className="h-4 w-4 text-gray-600" />
-            <span className="font-mono tabular-nums whitespace-nowrap text-lg sm:text-2xl md:text-3xl font-bold text-gray-900 leading-none">{phTime}</span>
-          </div>
-          <div className="mt-1 text-sm sm:text-base md:text-lg font-semibold text-gray-700">{phDate}</div>
-        </div>
-        <div className="flex items-center space-x-2 sm:space-x-4 ml-auto">
-          <div className="hidden md:flex items-center gap-2 mr-2">
-            <Button
-              variant="destructive"
-              onClick={() => triggerBroadcastAlert('tsunami')}
-              disabled={isLoadingAction}
-              title="Send Tsunami Alert to all users"
-            >
-              TSUNAMI ALERT
-            </Button>
-            <Button
-              variant="default"
-              onClick={() => triggerBroadcastAlert('earthquake')}
-              disabled={isLoadingAction}
-              title="Send Earthquake Alert to all users"
-            >
-              EARTHQUAKE ALERT
-            </Button>
-          </div>
-          {connectionStatus !== 'ok' && (
-            <span
-              className={`hidden sm:inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${connectionStatus === 'offline' ? 'bg-red-100 text-red-800 border-red-300' : 'bg-yellow-100 text-yellow-800 border-yellow-300'}`}
-              title={connectionStatus === 'offline' ? 'Offline: live updates paused' : 'Network degraded: updates may be delayed'}
-            >
-              {connectionStatus === 'offline' ? 'Offline' : 'Connection degraded'}
-            </span>
-          )}
-          <div className="relative">
-            <Button
-              variant="outline"
-              onClick={toggleSound}
-              title={soundEnabled ? 'Disable alert sound' : 'Enable alert sound'}
-              aria-label="Toggle alert sound"
-            >
-              {soundEnabled ? 'Sounds On' : 'Sounds Off'}
-            </Button>
-          </div>
-          <div className="relative">
-            <Button variant="ghost" size="icon" onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)} ref={notificationsButtonRef}>
-              <Bell className="h-6 w-6" />
-              {unreadCount > 0 && <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />}
-            </Button>
-            {showNotificationsDropdown && (
-              <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl z-20" ref={notificationsDropdownRef}>
-                <div className="p-4 font-bold border-b">Notifications</div>
-                <ul className="max-h-96 overflow-y-auto">
-                  {notifications.length > 0 ? notifications.map(n => (
-                    <li key={n.id} onClick={() => handleNotificationClick(n)} className={`p-4 border-b hover:bg-gray-100 cursor-pointer ${!n.is_read ? 'font-semibold bg-blue-50' : ''}`}>
-                      <p className="text-sm text-gray-700">{n.message}</p>
-                      <p className="text-xs text-gray-500 mt-1">{new Date(n.created_at).toLocaleString()}</p>
-                    </li>
-                  )) : <li className="p-4 text-center text-gray-500">No new notifications.</li>}
-                </ul>
-                {notifications.length > 0 && (
-                  <div className="p-2 border-t">
-                    <Button
-                      variant="link"
-                      className="w-full"
-                      onClick={markAllNotificationsAsRead}
-                      disabled={isLoadingAction || unreadCount === 0}
-                    >
-                      Mark all as read
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-          <Button onClick={() => setShowLogoutConfirm(true)} variant="destructive"><LogOut className="mr-2 h-4 w-4" /> Logout</Button>
-        </div>
-      </header>
 
-      <main className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <main className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-4 sm:p-6 lg:p-8">
         <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card className="shadow cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setShowActiveModal(true)}>
               <CardHeader><CardTitle>Active Emergencies</CardTitle></CardHeader>
@@ -1698,9 +1557,9 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         {/* The main dashboard content remains here, as it's the default view */}
         <>
             <div className="lg:col-span-2">
-              <Card className="shadow-lg h-full">
+              <Card className="shadow-lg h-full flex flex-col">
                 <CardHeader className="bg-orange-600 text-white"><CardTitle className="flex items-center"><MapPin className="mr-3" />Incident Details & Actions</CardTitle></CardHeader>
-                <CardContent className="p-6">
+                <CardContent className="p-6 flex-1 min-h-0 overflow-y-auto">
                   {selectedReport ? (
                     <div>
                       <div className="flex items-center mb-4">
@@ -1922,11 +1781,10 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
             </div>
 
             <div className="lg:col-span-1">
-              <Card className="shadow-lg h-full">
+              <Card className="shadow-lg flex flex-col">
                 <CardHeader className="bg-orange-600 text-white"><CardTitle>All Reports</CardTitle></CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-y-auto max-h-[400px] custom-scrollbar">
-                    <table className="min-w-full divide-y divide-gray-200">
+                <CardContent className="p-0 overflow-y-auto custom-scrollbar" style={{ maxHeight: '700px' }}>
+                  <table className="min-w-full divide-y divide-gray-200">
                       <tbody className="bg-white divide-y divide-gray-200">
                         {allReports.map((report) => (
                           <tr
@@ -1957,7 +1815,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
                         ))}
                       </tbody>
                     </table>
-                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -1965,7 +1822,7 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
       </main>
 
       {/* ER Team Standalone Reports Section */}
-      <section className="mt-8">
+      <section className="mt-8 px-4 sm:px-6 lg:px-8 pb-8">
         <StandaloneReportsList />
       </section>
 
@@ -2061,24 +1918,6 @@ export function AdminDashboard({ onLogout, userData }: AdminDashboardProps) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showLogoutConfirm} onOpenChange={setShowLogoutConfirm}>
-        <DialogContent className="w-80">
-          <DialogHeader>
-            <DialogTitle>Confirm Logout</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to log out of the admin dashboard?
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end space-x-2 mt-4">
-            <Button variant="outline" onClick={() => setShowLogoutConfirm(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleLogout}>
-              Confirm Logout
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

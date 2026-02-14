@@ -367,7 +367,7 @@ export default function ReportHistoryPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 flex items-center justify-center text-gray-600 font-sans">
+      <div className="p-4 sm:p-6 lg:p-8 flex items-center justify-center text-gray-600 font-sans">
         Loading report history...
       </div>
     );
@@ -375,14 +375,14 @@ export default function ReportHistoryPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 flex items-center justify-center text-red-500 font-sans">
+      <div className="p-4 sm:p-6 lg:p-8 flex items-center justify-center text-red-500 font-sans">
         Error loading report history: {error}
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
+    <div className="p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
       <h1 className="text-3xl font-bold text-gray-800 mb-8">Admin Report History</h1>
       <ReportHistoryTable 
         internalReports={paginatedReports} 

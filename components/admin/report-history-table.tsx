@@ -5,8 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { format } from "date-fns"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, Search, ChevronLeft, ChevronRight } from "lucide-react" // Added Chevron icons
-import Link from "next/link";
+import { Search, ChevronLeft, ChevronRight } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
@@ -255,19 +254,6 @@ export function ReportHistoryTable({
 
   return (
     <div className="grid grid-cols-1 gap-6">
-      {/* Back Button for Admin Dashboard */}
-      <div className="flex justify-start mb-4">
-        <Button
-          variant="outline"
-          className="bg-gray-200 hover:bg-gray-300 text-gray-800"
-          asChild
-        >
-          <Link href="/">
-            <ArrowLeft className="h-4 w-4 mr-2" /> Back
-          </Link>
-        </Button>
-      </div>
-
     <Card className="shadow-lg h-full rounded-lg">
       <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <CardTitle className="text-2xl font-bold">History of Admin Reports</CardTitle>

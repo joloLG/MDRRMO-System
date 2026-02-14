@@ -1,9 +1,6 @@
 import { IncidentHeatMap } from "@/components/admin/IncidentHeatMap"
 import { Card, CardContent } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Button } from "@/components/ui/button"
-import Link from "next/link"
-import { ArrowLeft } from "lucide-react"
 import { supabaseAdmin } from "@/lib/supabaseAdmin"
 
 interface BaseEntry {
@@ -50,15 +47,8 @@ export default async function AdminHeatMapPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       <h1 className="text-3xl font-bold text-gray-800">Incident Heat Map</h1>
-      <div>
-        <Button variant="outline" className="bg-gray-200 hover:bg-gray-300 text-gray-800" asChild>
-          <Link href="/">
-            <ArrowLeft className="h-4 w-4 mr-2" /> Back
-          </Link>
-        </Button>
-      </div>
       {error && (
         <Card className="max-w-xl">
           <CardContent className="p-4">

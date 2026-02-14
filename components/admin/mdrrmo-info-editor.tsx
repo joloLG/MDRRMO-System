@@ -4,9 +4,8 @@ import React, { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Info, Edit, ArrowLeft } from "lucide-react";
+import { Info, Edit } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import Link from "next/link";
 
 interface MdrrmoInfo {
   id: string;
@@ -113,19 +112,6 @@ export function MdrrmoInfoEditor() {
 
   return (
     <div className="grid grid-cols-1 gap-6">
-    {/* Back Button for Admin Dashboard */}
-    <div className="flex justify-start mb-4">
-      <Button
-        variant="outline"
-        className="bg-gray-200 hover:bg-gray-300 text-gray-800"
-        asChild
-      >
-        <Link href="/">
-          <ArrowLeft className="h-4 w-4 mr-2" /> Back
-        </Link>
-      </Button>
-    </div>
-
     {/* Pie Chart: Incidents per Barangay */}
     <Card className="shadow-lg h-full">
       <CardHeader className="bg-orange-600 text-white flex justify-between items-center">

@@ -7,7 +7,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid
 } from 'recharts';
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, parseISO, getWeek, getDate, getMonth, getYear, eachDayOfInterval, eachMonthOfInterval } from 'date-fns';
-import { Calendar as CalendarIcon, Download, ArrowLeft } from "lucide-react"
+import { Calendar as CalendarIcon, Download } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
@@ -16,7 +16,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import Link from "next/link";
 
 interface EmergencyReport {
   id: string;
@@ -635,18 +634,6 @@ export function ChartsDashboard({ allEmergencyReports, allInternalReports, baran
   };
   return (
     <div className="grid grid-cols-1 gap-6">
-      <div className="flex justify-start mb-4">
-        <Button
-          variant="outline"
-          className="bg-gray-200 hover:bg-gray-300 text-gray-800"
-          asChild
-        >
-          <Link href="/">
-            <ArrowLeft className="h-4 w-4 mr-2" /> Back
-          </Link>
-        </Button>
-      </div>
-
       {/* Pie Chart: Incidents per Barangay */}
       <Card id="barangay-incident-chart" className="shadow-lg col-span-full">
         <CardHeader className="bg-orange-600 text-white rounded-t-lg p-4 flex flex-row items-center justify-between">

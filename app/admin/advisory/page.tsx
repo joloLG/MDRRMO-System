@@ -1,7 +1,6 @@
 "use client"
 
 import React, { useEffect, useMemo, useState, useCallback } from "react"
-import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -10,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Megaphone, Trash2, Clock, CheckCircle2, ArrowLeft, RefreshCw, CalendarClock } from "lucide-react"
+import { Megaphone, Trash2, Clock, CheckCircle2, RefreshCw, CalendarClock } from "lucide-react"
 
 interface Advisory {
   id: string
@@ -33,7 +32,6 @@ const PRESETS = [
 ]
 
 export default function AdvisoryManagementPage() {
-  const router = useRouter()
   const [preset, setPreset] = useState<string>('general')
   const [title, setTitle] = useState<string>('')
   const [body, setBody] = useState<string>('')
@@ -174,14 +172,9 @@ export default function AdvisoryManagementPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
-      <div className="mb-6 flex flex-col gap-4">
+    <div className="p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
+      <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Advisory Management</h1>
-        <div className="w-fit rounded-lg border border-gray-200 bg-white shadow-sm">
-          <Button variant="ghost" className="flex items-center gap-2" onClick={() => router.back()}>
-            <ArrowLeft className="h-4 w-4" /> Back
-          </Button>
-        </div>
       </div>
 
       <Card className="mb-6 shadow-lg">

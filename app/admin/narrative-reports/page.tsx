@@ -2,9 +2,8 @@
 
 import React from "react"
 import useSWR from "swr"
-import { useRouter } from "next/navigation"
 import { formatDistanceToNow } from "date-fns"
-import { ArrowLeft, Filter, ImagePlus, Loader2, Search, Upload, XCircle } from "lucide-react"
+import { Filter, ImagePlus, Loader2, Search, Upload, XCircle } from "lucide-react"
 
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
@@ -74,7 +73,6 @@ const fetchNarratives = async (params: NarrativeQueryParams) => {
 }
 
 export default function NarrativeReportsPage() {
-  const router = useRouter()
   const { toast } = useToast()
   const [activeTab, setActiveTab] = React.useState<"draft" | "published">("draft")
   const [searchDrafts, setSearchDrafts] = React.useState("")
@@ -241,19 +239,10 @@ export default function NarrativeReportsPage() {
   const currentPage = activeTab === "draft" ? draftPage : publishedPage
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
-      <div className="mb-6 flex flex-col gap-4">
+    <div className="p-4 sm:p-6 lg:p-8 font-sans text-gray-800">
+      <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Narrative Reports</h1>
-        <div className="flex justify-start">
-          <Button
-            variant="outline"
-            onClick={() => router.push("/")}
-            className="bg-gray-200 hover:bg-gray-300 text-gray-800 flex items-center gap-2"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </Button>
-        </div>
-        <p className="text-sm text-gray-600 max-w-2xl">
+        <p className="text-sm text-gray-600 max-w-2xl mt-2">
           Manage internal report narratives: review drafts, add cover images, and publish to the MDRRMO Incident Posts feed.
         </p>
       </div>
