@@ -50,6 +50,27 @@ async function refreshSession(): Promise<boolean> {
   return refreshPromise;
 }
 
+// Check if current user is ER Team (to prevent session expiration redirects)
+function isErTeamUser(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const userData = localStorage.getItem('mdrrmo_user');
+    if (userData) {
+      const user = JSON.parse(userData);
+      return user.user_type === 'er_team';
+    }
+    // Also check ER Team specific storage
+    const erTeamSession = localStorage.getItem('er_team_user_data');
+    if (erTeamSession) {
+      const erUser = JSON.parse(erTeamSession);
+      return erUser.user_type === 'er_team';
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
 export async function fetchWithRetry(
   input: RequestInfo | URL,
   options: FetchWithRetryOptions = {}
@@ -72,7 +93,23 @@ export async function fetchWithRetry(
       if (shouldRefreshSession && !skipAuthRefresh) {
         const refreshSuccess = await refreshSession();
         if (!refreshSuccess) {
-          // If refresh failed, redirect to login
+          // For ER Team, don't redirect to login - let them continue with offline mode
+          if (isErTeamUser()) {
+            console.log('[ER Team] Session refresh failed, continuing in offline mode');
+            // Return a mock response that indicates offline mode
+            return new Response(
+              JSON.stringify({
+                ok: false,
+                offline: true,
+                message: 'Operating in offline mode - session refresh failed',
+              }),
+              {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+              }
+            );
+          }
+          // If refresh failed, redirect to login (for non-ER Team users)
           if (typeof window !== 'undefined') {
             window.location.href = '/login?session_expired=1';
           }

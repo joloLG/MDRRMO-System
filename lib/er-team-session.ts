@@ -87,10 +87,10 @@ export function loadErTeamSession(): PersistentSession | null {
 
     const session: PersistentSession = JSON.parse(stored)
 
-    // Check if session is still valid (with 1 hour buffer)
-    const bufferMs = 60 * 60 * 1000 // 1 hour
-    if (Date.now() > session.expires_at - bufferMs) {
-      console.log("[ER Team] Session expired or about to expire")
+    // ER Team sessions should persist based on refresh token (30 days), not access token (1 hour)
+    // Only invalidate if explicitly marked as expired or missing critical data
+    if (!session.access_token || !session.refresh_token || !session.user_id) {
+      console.log("[ER Team] Session invalid - missing critical data")
       return null
     }
 
