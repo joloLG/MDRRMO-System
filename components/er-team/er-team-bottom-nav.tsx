@@ -22,7 +22,7 @@ const navItems: { id: ErTeamTab; label: string; icon: React.ElementType }[] = [
 
 export function ErTeamBottomNav({ activeTab, onTabChange, draftCount = 0 }: ErTeamBottomNavProps) {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-lg">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-lg safe-bottom">
       <div className="flex items-center justify-around h-16 max-w-lg mx-auto">
         {navItems.map((item) => {
           const isActive = activeTab === item.id

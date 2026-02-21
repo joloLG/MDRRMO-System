@@ -1774,7 +1774,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
       />
 
       <div className="relative min-h-screen">
-        <div className="sticky top-0 z-30 bg-orange-500/95 backdrop-blur-sm text-white p-4 shadow-lg">
+        <div className="sticky top-0 z-30 bg-orange-500/95 backdrop-blur-sm text-white p-4 shadow-lg safe-top">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <button 
@@ -2630,7 +2630,7 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
     </div>
 
     {/* Bottom Navigation */}
-    <div className="fixed bottom-0 left-0 right-0 bg-orange-500/95 backdrop-blur-sm text-white p-4 z-10">
+    <div className="fixed bottom-0 left-0 right-0 bg-orange-500/95 backdrop-blur-sm text-white p-4 z-10 safe-bottom">
       <div className="flex justify-center items-center">
         <span className="text-xs sm:text-sm font-medium">Copyright © 2025 | Jolo Gracilla</span>
       </div>

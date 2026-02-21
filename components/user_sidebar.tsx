@@ -137,7 +137,7 @@ export function UserSidebar({ isOpen, onClose, onChangeView }: UserSidebarProps)
               <Button
                 variant="ghost"
                 className="w-full justify-start text-white bg-purple-600 hover:bg-purple-700 hover:text-white text-left h-auto py-3"
-                onClick={() => window.open('https://github.com/joloLG/MDRRMO-System/releases/tag/v1.1.6', '_blank', 'noopener,noreferrer')}
+                onClick={() => window.open('https://github.com/joloLG/MDRRMO-System/releases/tag/1.1.8', '_blank', 'noopener,noreferrer')}
               >
                 <Download className="mr-3 h-5 w-5 flex-shrink-0 mt-0.5" />
                 <span className="break-words leading-tight">Download App</span>

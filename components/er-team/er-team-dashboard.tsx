@@ -1080,7 +1080,7 @@ export function ErTeamDashboard({ onLogout }: ErTeamDashboardProps) {
           )}
 
           {/* Header */}
-          <header className="sticky top-0 z-20 flex flex-col gap-1 bg-gradient-to-r from-orange-500 via-orange-600 to-red-500/95 px-4 py-1 text-white shadow-xl backdrop-blur-sm border-b border-orange-400/30 sm:px-6 min-h-[56px] h-14 w-full">
+          <header className="sticky top-0 z-20 flex flex-col gap-1 bg-gradient-to-r from-orange-500 via-orange-600 to-red-500/95 px-4 py-1 text-white shadow-xl backdrop-blur-sm border-b border-orange-400/30 sm:px-6 min-h-[56px] h-14 w-full safe-top">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h1 className="text-sm font-bold sm:text-base bg-gradient-to-r from-white to-orange-100 bg-clip-text text-transparent">ER TEAM DASHBOARD</h1>

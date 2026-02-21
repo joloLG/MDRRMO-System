@@ -14,6 +14,13 @@ export const metadata: Metadata = {
   description: "Emergency Reporting System",
   manifest: "/manifest.json",
   themeColor: "#ea580c",
+  viewport: {
+    width: "device-width",
+    initialScale: 1,
+    maximumScale: 1,
+    userScalable: false,
+    viewportFit: "cover",
+  },
   icons: {
     icon: '/images/logo.png?v=2',
     apple: '/images/logo.png?v=2',

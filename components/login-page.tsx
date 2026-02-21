@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { supabase } from "@/lib/supabase"
-import { Eye, EyeOff } from "lucide-react" // Import icons from lucide-react
+import { Eye, EyeOff, Download, Share, Smartphone } from "lucide-react"
+import { useAppStore } from '@/lib/store' // Import icons from lucide-react
 
 interface LoginPageProps {
   onLoginSuccess: (userData: any) => void
@@ -30,6 +32,13 @@ export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection 
   // If a user is banned, show message immediately after sign-in instead of proceeding
   const [banInfo, setBanInfo] = useState<{ reason?: string; until?: string | null } | null>(null)
   const [logoClicks, setLogoClicks] = useState(0) // Secret toggle for role selection
+  
+  // Platform detection and install options
+  const [isAndroid, setIsAndroid] = useState(false)
+  const [isIOS, setIsIOS] = useState(false)
+  const [showIOSInstructions, setShowIOSInstructions] = useState(false)
+  const installPromptEvent = useAppStore(state => state.installPromptEvent)
+  const setInstallPromptEvent = useAppStore(state => state.setInstallPromptEvent)
 
   const handleLogoClick = () => {
     setLogoClicks(prev => prev + 1)
@@ -43,16 +52,24 @@ export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection 
     }
   }, [logoClicks, onGoToRoleSelection])
 
-  // Show any pending single-session conflict error
+  // Removed admin session restrictions - admins can now login from multiple devices/browsers simultaneously
+  
+  // Detect platform for install options
   useEffect(() => {
-    try {
-      const flag = localStorage.getItem('mdrrmo_login_error')
-      if (flag === 'active_session_exists') {
-        setError("This admin account is already active on another device. Please sign out there first.")
-        localStorage.removeItem('mdrrmo_login_error')
-      }
-    } catch {}
+    const ua = window.navigator.userAgent.toLowerCase()
+    const isAndroidDevice = /android/.test(ua)
+    const isIOSDevice = /iphone|ipad|ipod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true
+    
+    setIsAndroid(isAndroidDevice && !isStandalone)
+    setIsIOS(isIOSDevice && !isStandalone)
   }, [])
+  
+  const handleInstallPWA = () => {
+    if (!installPromptEvent) return
+    (installPromptEvent as any).prompt()
+    setInstallPromptEvent(null)
+  }
 
   const handleInputChange = (field: string, value: string) => {
     setLoginData((prev) => ({ ...prev, [field]: value }))
@@ -82,17 +99,6 @@ export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection 
       if (data.user) {
         // Wait a moment for the user to be fully authenticated
         await new Promise((resolve) => setTimeout(resolve, 1000))
-
-        // If the server rejected due to active session, SupabaseListener set a flag
-        try {
-          const flag = localStorage.getItem('mdrrmo_login_error')
-          if (flag === 'active_session_exists') {
-            await supabase.auth.signOut()
-            localStorage.removeItem('mdrrmo_login_error')
-            setError("This admin account is already active on another device. Please sign out there first.")
-            return
-          }
-        } catch {}
 
         // Get user profile with retry logic
         let profile = null
@@ -344,7 +350,54 @@ export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection 
                     Register here
                   </span>
                 </p>
-                <p className="text-xs text-gray-500">Copyright © 2025 | Jolo Gracilla</p>
+                
+                {/* Platform-specific install options */}
+                {isAndroid && (
+                  <div className="mt-4 pt-4 border-t border-gray-200 space-y-2">
+                    <p className="text-xs text-gray-600 font-medium mb-2">Install MDRRMO App:</p>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 text-xs border-orange-300 text-orange-600 hover:bg-orange-50"
+                        onClick={() => window.open('https://github.com/joloLG/MDRRMO-System/releases/tag/1.1.8', '_blank', 'noopener,noreferrer')}
+                      >
+                        <Download className="w-3 h-3 mr-1" />
+                        Download APK
+                      </Button>
+                      {installPromptEvent && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 text-xs border-green-300 text-green-600 hover:bg-green-50"
+                          onClick={handleInstallPWA}
+                        >
+                          <Smartphone className="w-3 h-3 mr-1" />
+                          Install via Browser
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                {isIOS && (
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs border-blue-300 text-blue-600 hover:bg-blue-50"
+                      onClick={() => setShowIOSInstructions(true)}
+                    >
+                      <Share className="w-3 h-3 mr-1" />
+                      Add to Home Screen
+                    </Button>
+                  </div>
+                )}
+                
+                <p className="text-xs text-gray-500 mt-2">Copyright © 2025 | Jolo Gracilla</p>
               </div>
             </>
           )}
@@ -406,6 +459,32 @@ export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection 
           </Card>
         </div>
       )}
+      
+      {/* iOS Add to Home Screen Instructions */}
+      <Dialog open={showIOSInstructions} onOpenChange={setShowIOSInstructions}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add MDRRMO App to Home Screen</DialogTitle>
+            <DialogDescription>
+              For iPhone/iPad using Safari or other iOS browsers:
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p>
+              1. Tap the <span className="inline-flex items-center gap-1 font-medium"><Share className="inline h-4 w-4" /> Share</span> button in the browser toolbar.
+            </p>
+            <p>
+              2. Scroll and choose <span className="font-medium">Add to Home Screen</span>.
+            </p>
+            <p>
+              3. Tap <span className="font-medium">Add</span> to confirm.
+            </p>
+            <p className="text-muted-foreground text-xs">
+              Tip: On iPad or in landscape, the Share button may be at the top-right.
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

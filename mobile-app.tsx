@@ -29,19 +29,6 @@ export default function MobileApp() {
   const [selectedRoleData, setSelectedRoleData] = useState<any>(null)
 
   useEffect(() => {
-    // Check for active session conflict redirect
-    try {
-      const params = new URLSearchParams(window.location.search)
-      if (params.get('error') === 'active_session_conflict') {
-        try { localStorage.setItem('mdrrmo_login_error', 'active_session_exists') } catch {}
-        // Best-effort sign-out to clear any partial state
-        supabase.auth.signOut().catch(() => {})
-        setUserData(null)
-        setIsLoggedIn(false)
-        setCurrentScreen("login")
-      }
-    } catch {}
-
     // Check if user is already logged in and automatically redirect
     const storedUser = localStorage.getItem("mdrrmo_user")
     if (storedUser) {
