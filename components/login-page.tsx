@@ -9,7 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { supabase } from "@/lib/supabase"
 import { Eye, EyeOff, Download, Share, Smartphone } from "lucide-react"
-import { useAppStore } from '@/lib/store' // Import icons from lucide-react
+import { ShakeDetector } from '@/lib/shake-detector'
+import { useAppStore } from '@/lib/store'
 
 interface LoginPageProps {
   onLoginSuccess: (userData: any) => void
@@ -37,6 +38,7 @@ export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection 
   const [isAndroid, setIsAndroid] = useState(false)
   const [isIOS, setIsIOS] = useState(false)
   const [showIOSInstructions, setShowIOSInstructions] = useState(false)
+  const [shakeActive, setShakeActive] = useState(false)
   const installPromptEvent = useAppStore(state => state.installPromptEvent)
   const setInstallPromptEvent = useAppStore(state => state.setInstallPromptEvent)
 
@@ -54,7 +56,7 @@ export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection 
 
   // Removed admin session restrictions - admins can now login from multiple devices/browsers simultaneously
   
-  // Detect platform for install options
+  // Detect platform for install options and shake gesture
   useEffect(() => {
     const ua = window.navigator.userAgent.toLowerCase()
     const isAndroidDevice = /android/.test(ua)
@@ -63,7 +65,51 @@ export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection 
     
     setIsAndroid(isAndroidDevice && !isStandalone)
     setIsIOS(isIOSDevice && !isStandalone)
+    
+    // Setup shake gesture listener for Android app
+    if (isAndroidDevice && isStandalone) {
+      setupShakeGesture()
+    }
   }, [])
+  
+  const setupShakeGesture = async () => {
+    try {
+      await ShakeDetector.startListening()
+      
+      ShakeDetector.addListener('shakeStarted', () => {
+        setShakeActive(true)
+        setError('') // Clear any errors
+      })
+      
+      ShakeDetector.addListener('shakeCompleted', async (event: any) => {
+        setShakeActive(false)
+        // Auto-login with stored credentials
+        await performAutoLogin()
+      })
+      
+      ShakeDetector.addListener('shakeCancelled', () => {
+        setShakeActive(false)
+      })
+    } catch (err) {
+      console.log('Shake gesture not available:', err)
+    }
+  }
+  
+  const performAutoLogin = async () => {
+    // Try to get stored credentials from localStorage
+    const storedEmail = localStorage.getItem('mdrrmo_auto_email')
+    const storedPassword = localStorage.getItem('mdrrmo_auto_password')
+    
+    if (storedEmail && storedPassword) {
+      setLoginData({ email: storedEmail, password: storedPassword })
+      // Small delay to let state update
+      setTimeout(() => {
+        handleLogin(storedEmail, storedPassword)
+      }, 100)
+    } else {
+      setError('No saved credentials. Please login manually first to enable auto-login.')
+    }
+  }
   
   const handleInstallPWA = () => {
     if (!installPromptEvent) return
@@ -76,8 +122,11 @@ export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection 
     setError("") // Clear error on input change
   }
 
-  const handleLogin = async () => {
-    if (!loginData.email || !loginData.password) {
+  const handleLogin = async (autoEmail?: string, autoPassword?: string) => {
+    const email = autoEmail || loginData.email
+    const password = autoPassword || loginData.password
+    
+    if (!email || !password) {
       setError("Please fill in all fields")
       return
     }
@@ -87,8 +136,8 @@ export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection 
 
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: loginData.email,
-        password: loginData.password,
+        email: email,
+        password: password,
       })
 
       if (error) {
@@ -165,6 +214,12 @@ export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection 
           ...profile,
           user_type: profile.user_type || 'user' // Default to 'user' if not specified
         };
+
+        // Store credentials for auto-login if this is a successful manual login
+        if (!autoEmail) {
+          localStorage.setItem('mdrrmo_auto_email', email)
+          localStorage.setItem('mdrrmo_auto_password', password)
+        }
 
         // Store user data in localStorage and notify parent component
         localStorage.setItem("mdrrmo_user", JSON.stringify(userWithType));
@@ -398,6 +453,14 @@ export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection 
                 )}
                 
                 <p className="text-xs text-gray-500 mt-2">Copyright © 2025 | Jolo Gracilla</p>
+                
+                {/* Shake Gesture Indicator */}
+                {shakeActive && (
+                  <div className="mt-3 p-2 bg-orange-100 border border-orange-300 rounded-md text-center">
+                    <Smartphone className="w-4 h-4 mx-auto mb-1 text-orange-600 animate-bounce" />
+                    <p className="text-xs text-orange-700 font-medium">Shaking... Keep shaking for auto-login!</p>
+                  </div>
+                )}
               </div>
             </>
           )}

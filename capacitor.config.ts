@@ -18,8 +18,22 @@ const config: CapacitorConfig = {
   android: {
     allowMixedContent: true,
     captureInput: true,
-    webContentsDebuggingEnabled: true
-  }
+    webContentsDebuggingEnabled: true,
+    useLegacyBridge: true,
+    backgroundColor: '#ffffff'
+  },
+  ios: {
+    backgroundColor: '#ffffff',
+    scrollEnabled: true
+  },
+  server: {
+    url: 'https://mdrrmo-system.vercel.app/',
+    cleartext: false,
+    androidScheme: 'https',
+    allowNavigation: ['*.vercel.app']
+  },
+  loggingBehavior: 'production',
+  bundledWebRuntime: false
 };
 
 export default config;

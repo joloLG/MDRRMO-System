@@ -5,6 +5,7 @@ import "./globals.css"
 import { SupabaseListener } from "@/components/supabase-listener"
 import { SWRProvider } from "@/components/providers/SWRProvider"
 import { PushNotificationsProvider } from '@/components/providers/PushNotificationsProvider'
+import { OfflineProvider } from "@/components/offline-provider"
 import { PwaRegistry } from "@/components/PwaRegistry"
 
 const inter = Inter({ subsets: ["latin"] })
@@ -44,7 +45,9 @@ export default function RootLayout({
         <PwaRegistry />
         <SWRProvider>
           <PushNotificationsProvider>
-            {children}
+            <OfflineProvider>
+              {children}
+            </OfflineProvider>
           </PushNotificationsProvider>
         </SWRProvider>
       </body>

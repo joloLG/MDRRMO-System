@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MDRRMO App Colors -->
+    <color name="colorPrimary">#FF8C00</color>
+    <color name="colorPrimaryDark">#E67E00</color>
+    <color name="colorAccent">#FF8C00</color>
+    
+    <!-- Splash Screen Colors -->
+    <color name="splashBackground">#FF8C00</color>
+    <color name="splashBackgroundDark">#E67E00</color>
+    <color name="splashBackgroundWhite">#FFFFFF</color>
+    <color name="splashText">#FFFFFF</color>
+    
+    <!-- Additional UI Colors -->
+    <color name="mdrrmoOrange">#FF8C00</color>
+    <color name="mdrrmoOrangeDark">#E67E00</color>
+    <color name="mdrrmoWhite">#FFFFFF</color>
+    <color name="mdrrmoBlack">#000000</color>
+    <color name="mdrrmoGray">#666666</color>
+</resources>

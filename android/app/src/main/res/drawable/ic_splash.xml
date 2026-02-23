@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Splash screen icon for Android 12+ (API 31+) -->
+<!-- Must be a vector drawable with transparent background -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="288"
+    android:viewportHeight="288">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M144,80 
+                         C120,80 100,100 100,124 
+                         C100,148 120,168 144,168 
+                         C168,168 188,148 188,124 
+                         C188,100 168,80 144,80 
+                         Z
+                         M144,92
+                         C161,92 175,106 175,124
+                         C175,141 161,155 144,155
+                         C126,155 112,141 112,124
+                         C112,106 126,92 144,92
+                         Z" />
+    <!-- Inner circle representing emergency/monitoring -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M144,105 
+                         A18,18 0 1,1 144,141 
+                         A18,18 0 1,1 144,105 
+                         Z" />
+    <!-- Pulse arcs representing alert/signal -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M144,60
+                         A64,64 0 0,1 208,124"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M144,60
+                         A64,64 0 0,0 80,124"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round" />
+</vector>
