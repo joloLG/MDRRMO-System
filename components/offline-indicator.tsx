@@ -1,10 +1,17 @@
 "use client"
 
+import { usePathname } from 'next/navigation';
 import { useOfflineStatus } from '@/hooks/use-offline';
 import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
 
 export function OfflineIndicator() {
   const { isOnline, queueCount } = useOfflineStatus();
+  const pathname = usePathname();
+
+  // Don't show on login page
+  if (pathname === '/login' || pathname?.startsWith('/login')) {
+    return null;
+  }
 
   // Don't show if online and no queued requests
   if (isOnline && queueCount === 0) {

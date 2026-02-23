@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react';
 import { OfflineService } from '@/lib/offline-service';
-import { OfflineIndicator } from '@/components/offline-indicator';
 
 interface OfflineProviderProps {
   children: React.ReactNode;
@@ -36,7 +35,6 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
   return (
     <>
       {children}
-      <OfflineIndicator />
     </>
   );
 }

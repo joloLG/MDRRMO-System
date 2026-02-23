@@ -416,7 +416,7 @@ export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection 
                         variant="outline"
                         size="sm"
                         className="flex-1 text-xs border-orange-300 text-orange-600 hover:bg-orange-50"
-                        onClick={() => window.open('https://github.com/joloLG/MDRRMO-System/releases/tag/1.1.8', '_blank', 'noopener,noreferrer')}
+                        onClick={() => window.open('https://github.com/joloLG/MDRRMO-System/releases/tag/1.1.9', '_blank', 'noopener,noreferrer')}
                       >
                         <Download className="w-3 h-3 mr-1" />
                         Download APK
