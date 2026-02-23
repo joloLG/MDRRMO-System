@@ -209,6 +209,13 @@ export function LoginPage({ onLoginSuccess, onGoToRegister, onGoToRoleSelection 
           return
         }
 
+        // Check if account was deleted (soft delete)
+        if (status === 'deleted' || profile.deleted_at) {
+          setError("This account has been deleted. Please contact support if you believe this is an error.")
+          try { await supabase.auth.signOut() } catch {}
+          return
+        }
+
         // Include the user_type in the profile data
         const userWithType = {
           ...profile,

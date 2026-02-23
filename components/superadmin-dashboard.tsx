@@ -57,6 +57,14 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
   const [unbanReason, setUnbanReason] = useState<string>('')
   const [isSubmittingUnban, setIsSubmittingUnban] = useState(false)
   const [unbanError, setUnbanError] = useState<string | null>(null)
+
+  // Delete user modal state
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<UserWithDisplayInfo | null>(null)
+  const [deleteConfirmText, setDeleteConfirmText] = useState<string>('')
+  const [isSubmittingDelete, setIsSubmittingDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
   const [searchTerm, setSearchTerm] = useState('')
   const [roleFilter, setRoleFilter] = useState<'all' | User['user_type']>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'banned'>('all')
@@ -686,6 +694,40 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
     }
   }
 
+  // Delete user helpers
+  const openDeleteDialog = (user: UserWithDisplayInfo) => {
+    setDeleteTarget(user)
+    setDeleteConfirmText('')
+    setDeleteError(null)
+    setShowDeleteModal(true)
+  }
+
+  const handleDeleteUser = async () => {
+    if (!deleteTarget) return
+
+    // Require confirmation text to prevent accidental deletion
+    if (deleteConfirmText !== deleteTarget.email) {
+      setDeleteError(`Please type "${deleteTarget.email}" to confirm deletion`)
+      return
+    }
+
+    setIsSubmittingDelete(true)
+    setDeleteError(null)
+    try {
+      await userQueries.softDeleteUser(deleteTarget.id)
+
+      // Remove user from local state
+      setUsers(currentUsers => currentUsers.filter(user => user.id !== deleteTarget.id))
+
+      setShowDeleteModal(false)
+      setDeleteTarget(null)
+    } catch (e: any) {
+      setDeleteError(e?.message || 'Failed to delete user.')
+    } finally {
+      setIsSubmittingDelete(false)
+    }
+  }
+
   const filteredUsers = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
     return users.filter((user) => {
@@ -1020,11 +1062,16 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         {user.user_type !== 'superadmin' && (
-                          user.is_banned ? (
-                            <Button variant="outline" size="sm" onClick={() => openUnbanDialog(user)}>Unban</Button>
-                          ) : (
-                            <Button variant="destructive" size="sm" onClick={() => openBanDialog(user)}>Ban</Button>
-                          )
+                          <>
+                            {user.is_banned ? (
+                              <Button variant="outline" size="sm" onClick={() => openUnbanDialog(user)}>Unban</Button>
+                            ) : (
+                              <Button variant="destructive" size="sm" onClick={() => openBanDialog(user)}>Ban</Button>
+                            )}
+                            <Button variant="outline" size="sm" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => openDeleteDialog(user)}>
+                              Delete
+                            </Button>
+                          </>
                         )}
                       </div>
                     </TableCell>
@@ -1265,6 +1312,46 @@ export function SuperadminDashboard({ onLogoutAction }: { onLogoutAction: () => 
               <Button variant="outline" onClick={() => setShowUnbanModal(false)} disabled={isSubmittingUnban}>Cancel</Button>
               <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={handleUnban} disabled={isSubmittingUnban || !unbanReason.trim()}>
                 {isSubmittingUnban ? 'Unbanning...' : 'Confirm Unban'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete User Dialog */}
+      <Dialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">Delete User Account</DialogTitle>
+            <DialogDescription>
+              This will soft-delete the user account. The user will no longer be able to log in, but all submitted data (reports, incidents, etc.) will be preserved.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="text-sm text-gray-700">
+              User to delete: <strong>{deleteTarget ? `${deleteTarget.firstName} ${deleteTarget.lastName} (${deleteTarget.email})` : ''}</strong>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 p-3 rounded text-sm text-amber-800">
+              <strong>Warning:</strong> This action cannot be undone. The account will be permanently marked as deleted and the user will lose access immediately.
+            </div>
+            <div>
+              <label className="text-sm font-medium">Type the user's email to confirm</label>
+              <Input 
+                value={deleteConfirmText} 
+                onChange={(e) => setDeleteConfirmText(e.target.value)} 
+                placeholder={`Type "${deleteTarget?.email}" to confirm`}
+                className="mt-1"
+              />
+            </div>
+            {deleteError && <div className="text-sm text-red-600">{deleteError}</div>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowDeleteModal(false)} disabled={isSubmittingDelete}>Cancel</Button>
+              <Button 
+                className="bg-red-600 hover:bg-red-700 text-white" 
+                onClick={handleDeleteUser} 
+                disabled={isSubmittingDelete || deleteConfirmText !== deleteTarget?.email}
+              >
+                {isSubmittingDelete ? 'Deleting...' : 'Delete User Account'}
               </Button>
             </div>
           </div>

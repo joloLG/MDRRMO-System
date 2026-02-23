@@ -285,22 +285,22 @@ export const userQueries = {
     }
   },
 
-  // Delete user (only for superadmin)
-  deleteUser: async (userId: string): Promise<boolean> => {
+  // Soft delete user (only for superadmin) - preserves submitted data
+  softDeleteUser: async (userId: string): Promise<boolean> => {
     try {
       if (!userId) {
         throw new DatabaseError('User ID is required');
       }
 
-      const { error } = await supabase
-        .from('users')
-        .delete()
-        .eq('id', userId);
+      // Call the soft_delete_user function from the migration
+      const { error } = await supabase.rpc('soft_delete_user', {
+        target_user_id: userId
+      });
 
       if (error) throw error;
       return true;
     } catch (error) {
-      return handleSupabaseError(error, 'deleteUser');
+      return handleSupabaseError(error, 'softDeleteUser');
     }
   },
 
